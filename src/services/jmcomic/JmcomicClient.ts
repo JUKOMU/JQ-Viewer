@@ -54,6 +54,7 @@ export interface ImageReadyEvent {
   photoId: string
   sortOrder: number
   type: string
+  sessionId: string
 }
 
 export type ImageFailedEvent = ImageReadyEvent

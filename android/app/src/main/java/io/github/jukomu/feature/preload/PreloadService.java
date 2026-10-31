@@ -181,7 +181,8 @@ public class PreloadService {
                         continue;
                     }
                     generateThumbnailFromCachedImage(
-                        photoId, sortOrder, type, scopeKey, cacheKey, taskPendingKey, generation, original);
+                        photoId, sortOrder, type, scopeKey, cacheKey, taskPendingKey,
+                        generation, requiredSession, original);
                     continue;
                 }
             }
@@ -206,7 +207,7 @@ public class PreloadService {
                 pendingKeys.remove(taskPendingKey, generation);
                 logImageFailure("queue-file", photoId, sortOrder, type, error, 0L);
                 if (!isStale(scopeKey, generation)) {
-                    notifyImageFailed(photoId, sortOrder, type);
+                    notifyImageFailed(photoId, sortOrder, type, requiredSession);
                 }
             }
         }
@@ -233,7 +234,8 @@ public class PreloadService {
 
     private void generateThumbnailFromCachedImage(
         String photoId, int sortOrder, String type, String scopeKey,
-        String cacheKey, String taskPendingKey, long generation, ImageCache.ImageEntry original
+        String cacheKey, String taskPendingKey, long generation, String sessionId,
+        ImageCache.ImageEntry original
     ) {
         try {
             imageExecutor.execute(() -> {
@@ -251,12 +253,12 @@ public class PreloadService {
                     if (!imageCache.put(cacheKey, thumbBytes, "image/jpeg")) {
                         throw new IOException("缓存缩略图无法写入内存缓存");
                     }
-                    notifyImageReady(photoId, sortOrder, type);
+                    notifyImageReady(photoId, sortOrder, type, sessionId);
                     logImageCompleted("thumbnail-cache", photoId, sortOrder, type, startedNanos);
                 } catch (Exception error) {
                     logImageFailure("thumbnail-cache", photoId, sortOrder, type, error, startedNanos);
                     if (!isStale(scopeKey, generation)) {
-                        notifyImageFailed(photoId, sortOrder, type);
+                        notifyImageFailed(photoId, sortOrder, type, sessionId);
                     }
                 } finally {
                     pendingKeys.remove(taskPendingKey, generation);
@@ -266,7 +268,7 @@ public class PreloadService {
             pendingKeys.remove(taskPendingKey, generation);
             logImageFailure("queue-thumbnail", photoId, sortOrder, type, error, 0L);
             if (!isStale(scopeKey, generation)) {
-                notifyImageFailed(photoId, sortOrder, type);
+                notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
         }
     }
@@ -300,13 +302,13 @@ public class PreloadService {
                 ImageCache.IncomingReservation transferredReservation = reservation;
                 imageExecutor.execute(() -> cacheImageBytes(
                     photoId, sortOrder, type, scopeKey, imageKey, cacheKey, taskPendingKey,
-                    generation, createThumbnail, localBytes, mimeType,
+                    generation, sessionId, createThumbnail, localBytes, mimeType,
                     transferredReservation));
                 reservation = null;
                 handedOff = true;
             } else {
                 if (imageCache.has(cacheKey)) {
-                    notifyImageReady(photoId, sortOrder, type);
+                    notifyImageReady(photoId, sortOrder, type, sessionId);
                     return;
                 }
                 submitNetworkImage(photoId, sortOrder, type, scopeKey, imageKey, cacheKey,
@@ -317,7 +319,7 @@ public class PreloadService {
         } catch (Exception error) {
             logImageFailure("resolve-source", photoId, sortOrder, type, error, startedNanos);
             if (!isStale(scopeKey, generation)) {
-                notifyImageFailed(photoId, sortOrder, type);
+                notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
         } finally {
             if (reservation != null) {
@@ -418,15 +420,15 @@ public class PreloadService {
                     if (retryCallback != null) {
                         retryCallback.onSuccess();
                     } else {
-                        if (createThumbnail) notifyImageReady(photoId, sortOrder, "image");
-                        notifyImageReady(photoId, sortOrder, type);
+                        if (createThumbnail) notifyImageReady(photoId, sortOrder, "image", sessionId);
+                        notifyImageReady(photoId, sortOrder, type, sessionId);
                     }
                 } catch (Exception error) {
                     logImageFailure("network-result", photoId, sortOrder, type, error, 0L);
                     if (retryCallback != null) {
                         retryCallback.onError(error);
                     } else if (!isStale(scopeKey, generation)) {
-                        notifyImageFailed(photoId, sortOrder, type);
+                        notifyImageFailed(photoId, sortOrder, type, sessionId);
                     }
                 } finally {
                     if (taskPendingKey != null) pendingKeys.remove(taskPendingKey, generation);
@@ -438,7 +440,7 @@ public class PreloadService {
                 if (retryCallback != null) {
                     retryCallback.onError(error);
                 } else if (!isStale(scopeKey, generation)) {
-                    notifyImageFailed(photoId, sortOrder, type);
+                    notifyImageFailed(photoId, sortOrder, type, sessionId);
                 }
             });
         if (!accepted && taskPendingKey != null) pendingKeys.remove(taskPendingKey, generation);
@@ -462,7 +464,7 @@ public class PreloadService {
     private void cacheImageBytes(
         String photoId, int sortOrder, String type, String scopeKey,
         String imageKey, String cacheKey, String taskPendingKey, long generation,
-        boolean createThumbnail,
+        String sessionId, boolean createThumbnail,
         byte[] imageBytes, String mimeType,
         ImageCache.IncomingReservation existingReservation
     ) {
@@ -494,17 +496,17 @@ public class PreloadService {
                     throw new IOException("缩略图无法写入内存缓存");
                 }
                 if (originalCached && imageCache.has(imageKey)) {
-                    notifyImageReady(photoId, sortOrder, "image");
+                    notifyImageReady(photoId, sortOrder, "image", sessionId);
                 }
             } else if (!imageCache.put(cacheKey, imageBytes, mimeType, reservation)) {
                 throw new IOException("图片无法写入内存缓存");
             }
-            notifyImageReady(photoId, sortOrder, type);
+            notifyImageReady(photoId, sortOrder, type, sessionId);
             logImageCompleted("local-cache", photoId, sortOrder, type, startedNanos);
         } catch (Exception error) {
             logImageFailure("local-cache", photoId, sortOrder, type, error, startedNanos);
             if (!isStale(scopeKey, generation)) {
-                notifyImageFailed(photoId, sortOrder, type);
+                notifyImageFailed(photoId, sortOrder, type, sessionId);
             }
         } finally {
             if (reservation != null) {
@@ -716,17 +718,17 @@ public class PreloadService {
 
     // ---- 内部 ----
 
-    private void notifyImageReady(String photoId, int sortOrder, String type) {
+    private void notifyImageReady(String photoId, int sortOrder, String type, String sessionId) {
         PreloadEventSink current = eventSink;
         if (current != null) {
-            current.onImageReady(photoId, sortOrder, type);
+            current.onImageReady(photoId, sortOrder, type, sessionId);
         }
     }
 
-    private void notifyImageFailed(String photoId, int sortOrder, String type) {
+    private void notifyImageFailed(String photoId, int sortOrder, String type, String sessionId) {
         PreloadEventSink current = eventSink;
         if (current != null) {
-            current.onImageFailed(photoId, sortOrder, type);
+            current.onImageFailed(photoId, sortOrder, type, sessionId);
         }
     }
 

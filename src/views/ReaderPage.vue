@@ -654,28 +654,34 @@ const exposeImagesIfAllowed = (
   if (changed) applyImageMap()
 }
 
-const onPreloadImageReady = (context: ImageExposureContext, sortOrder: number) => {
+const onPreloadImageReady = (
+  context: ImageExposureContext,
+  sortOrder: number,
+  sessionId: string,
+) => {
   if (!isCurrentImageExposureContext(context)) return
   const request = requestedSortOrders.get(sortOrder)
+  if (!request || request.sessionId !== sessionId) return
   requestedSortOrders.delete(sortOrder)
-  if (request) {
-    activePreloadSessionIds.delete(request.sessionId)
-    if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
-  }
+  activePreloadSessionIds.delete(request.sessionId)
+  if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
   if (failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, false)
   exposeImagesIfAllowed(context, [sortOrder], 'image')
 }
 
-const onPreloadImageFailed = (context: ImageExposureContext, sortOrder: number) => {
+const onPreloadImageFailed = (
+  context: ImageExposureContext,
+  sortOrder: number,
+  sessionId: string,
+) => {
   if (!isCurrentImageExposureContext(context) || sortOrder < 1 || sortOrder > totalCount.value)
     return
 
   const request = requestedSortOrders.get(sortOrder)
+  if (!request || request.sessionId !== sessionId) return
   requestedSortOrders.delete(sortOrder)
-  if (request) {
-    activePreloadSessionIds.delete(request.sessionId)
-    if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
-  }
+  activePreloadSessionIds.delete(request.sessionId)
+  if (request.previousSessionId) activePreloadSessionIds.delete(request.previousSessionId)
   imageMap.value.delete(sortOrder)
   loadedSortOrders.delete(sortOrder)
   if (!failedSortOrders.value.has(sortOrder)) setFailedSortOrder(sortOrder, true)
@@ -1009,7 +1015,7 @@ const setupImageReadyListener = async () => {
     try {
       readyHandle = await JmcomicService.addImageReadyListener(
         context.photoId,
-        (sortOrder) => onPreloadImageReady(context, sortOrder),
+        (sortOrder, sessionId) => onPreloadImageReady(context, sortOrder, sessionId),
         { type: 'image' },
       )
       if (!isCurrentSetup()) {
@@ -1019,7 +1025,7 @@ const setupImageReadyListener = async () => {
 
       failedHandle = await JmcomicService.addImageFailedListener(
         context.photoId,
-        (sortOrder) => onPreloadImageFailed(context, sortOrder),
+        (sortOrder, sessionId) => onPreloadImageFailed(context, sortOrder, sessionId),
         { type: 'image' },
       )
       if (!isCurrentSetup()) {

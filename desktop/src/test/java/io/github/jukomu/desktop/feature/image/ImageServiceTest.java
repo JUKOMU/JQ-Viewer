@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.feature.image;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.EventHub;
+import io.github.jukomu.desktop.feature.image.model.ImageEvent;
 import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
@@ -19,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -44,6 +46,14 @@ class ImageServiceTest {
             retryFetchStarted, releaseRetryFetch);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         EventHub events = new EventHub(new ObjectMapper());
+        CountDownLatch thumbReady = new CountDownLatch(1);
+        AtomicReference<ImageEvent> thumbReadyEvent = new AtomicReference<>();
+        AutoCloseable subscription = events.subscribe("imageReady", payload -> {
+            if (payload instanceof ImageEvent event && "thumb".equals(event.type())) {
+                thumbReadyEvent.set(event);
+                thumbReady.countDown();
+            }
+        });
         ImageService service = new ImageService(client, executor, events);
 
         try {
@@ -63,6 +73,8 @@ class ImageServiceTest {
             assertArrayEquals(imageBytes, reader.get(1, TimeUnit.SECONDS).bytes());
             assertArrayEquals(imageBytes, service.cache().get("photo/1/image").bytes());
             assertNotNull(service.cache().get("photo/1/thumb"));
+            assertTrue(thumbReady.await(1, TimeUnit.SECONDS));
+            assertEquals("preview", thumbReadyEvent.get().sessionId());
             assertEquals(1, fetchCount.get());
 
             CompletableFuture<Void> retry = CompletableFuture.runAsync(
@@ -78,6 +90,7 @@ class ImageServiceTest {
             releaseFirstFetch.countDown();
             releaseRetryFetch.countDown();
             service.close();
+            subscription.close();
             events.close();
             executor.shutdownNow();
         }

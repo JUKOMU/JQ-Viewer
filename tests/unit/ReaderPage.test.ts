@@ -22,8 +22,8 @@ const mocks = vi.hoisted(() => ({
   addImageReadyListener: vi.fn(),
   addImageFailedListener: vi.fn(),
   addVolumeKeyListener: vi.fn(),
-  imageReadyHandler: null as null | ((sortOrder: number) => void),
-  imageFailedHandler: null as null | ((sortOrder: number) => void),
+  imageReadyHandler: null as null | ((sortOrder: number, sessionId: string) => void),
+  imageFailedHandler: null as null | ((sortOrder: number, sessionId: string) => void),
   listenerRemove: vi.fn(() => Promise.resolve()),
   getImageUrl: vi.fn(
     (photoId: string, sortOrder: number, type: string) =>
@@ -251,6 +251,9 @@ const preloadCallsFor = (sortOrder: number) =>
     (call[1] as ImageInfo[]).some((image) => image.sortOrder === sortOrder),
   )
 
+const preloadSessionFor = (sortOrder: number, callIndex = -1) =>
+  preloadCallsFor(sortOrder).at(callIndex)?.[3]?.sessionId as string | undefined
+
 describe('ReaderPage 在线/离线统一图片加载', () => {
   beforeEach(() => {
     vi.useRealTimers()
@@ -266,13 +269,13 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     mocks.cancelPreload.mockResolvedValue({ success: true })
     mocks.retryImage.mockResolvedValue({ success: true })
     mocks.addImageReadyListener.mockImplementation(
-      (_photoId: string, handler: (sortOrder: number) => void) => {
+      (_photoId: string, handler: (sortOrder: number, sessionId: string) => void) => {
         mocks.imageReadyHandler = handler
         return Promise.resolve({ remove: mocks.listenerRemove })
       },
     )
     mocks.addImageFailedListener.mockImplementation(
-      (_photoId: string, handler: (sortOrder: number) => void) => {
+      (_photoId: string, handler: (sortOrder: number, sessionId: string) => void) => {
         mocks.imageFailedHandler = handler
         return Promise.resolve({ remove: mocks.listenerRemove })
       },
@@ -302,7 +305,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
   test('离线章节等待 imageReady 监听注册后再预加载，并通过 cached 暴露图片', async () => {
     const listener = deferred<{ remove: () => Promise<void> }>()
     mocks.addImageReadyListener.mockImplementationOnce(
-      (_photoId: string, handler: (sortOrder: number) => void) => {
+      (_photoId: string, handler: (sortOrder: number, sessionId: string) => void) => {
         mocks.imageReadyHandler = handler
         return listener.promise
       },
@@ -410,7 +413,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     const listener = deferred<{ remove: () => Promise<void> }>()
     const remove = vi.fn(() => Promise.reject(new Error('remove failed')))
     mocks.addImageReadyListener.mockImplementationOnce(
-      (_photoId: string, handler: (sortOrder: number) => void) => {
+      (_photoId: string, handler: (sortOrder: number, sessionId: string) => void) => {
         mocks.imageReadyHandler = handler
         return listener.promise
       },
@@ -434,6 +437,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     const wrapper = mountReader()
     await settle()
+    const staleSessionId = preloadSessionFor(2)
     const initialCallCount = mocks.preloadImages.mock.calls.length
 
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('update:current-index', 60)
@@ -443,7 +447,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
 
     initialPreload.resolve({ cached: [1], pending: [2] })
     await settle()
-    mocks.imageReadyHandler?.(2)
+    mocks.imageReadyHandler?.(2, staleSessionId ?? '')
     await nextTick()
     expect(currentImageMap(wrapper).has(1)).toBe(false)
     expect(currentImageMap(wrapper).has(2)).toBe(false)
@@ -461,6 +465,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     mocks.preloadImages.mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
     const wrapper = mountReader()
     await settle()
+    const staleSessionId = preloadSessionFor(2)
     vi.useFakeTimers()
 
     const toolbar = wrapper.findComponent(ReaderBottomToolbarStub)
@@ -476,11 +481,37 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     await nextTick()
     vi.advanceTimersByTime(500)
     await settle()
-    mocks.imageReadyHandler?.(2)
+    mocks.imageReadyHandler?.(2, staleSessionId ?? '')
     await nextTick()
 
     expect(currentImageMap(wrapper).has(2)).toBe(false)
 
+    wrapper.unmount()
+  })
+
+  test('优先级更新后旧 session 事件不会清理当前需求', async () => {
+    mocks.preloadImages.mockResolvedValue({ cached: [], pending: [1, 2] } satisfies PreloadResult)
+    const wrapper = mountReader()
+    await settle()
+
+    const oldSessionId = preloadSessionFor(2)
+    vi.useFakeTimers()
+    const toolbar = wrapper.findComponent(ReaderBottomToolbarStub)
+    toolbar.vm.$emit('progress-drag-start')
+    toolbar.vm.$emit('update:current-input', 2)
+    await nextTick()
+    vi.advanceTimersByTime(500)
+    await settle()
+    const currentSessionId = preloadSessionFor(2)
+    expect(currentSessionId).not.toBe(oldSessionId)
+
+    mocks.imageReadyHandler?.(2, oldSessionId ?? '')
+    await nextTick()
+    expect(currentImageMap(wrapper).has(2)).toBe(false)
+
+    mocks.imageReadyHandler?.(2, currentSessionId ?? '')
+    await nextTick()
+    expect(currentImageMap(wrapper).has(2)).toBe(true)
     wrapper.unmount()
   })
 
@@ -625,8 +656,8 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     const wrapper = mountReader()
     await settle()
 
-    mocks.imageFailedHandler?.(1)
-    mocks.imageFailedHandler?.(2)
+    mocks.imageFailedHandler?.(1, preloadSessionFor(1) ?? '')
+    mocks.imageFailedHandler?.(2, preloadSessionFor(2) ?? '')
     await nextTick()
 
     const view = wrapper.findComponent(VerticalScrollViewStub)

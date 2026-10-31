@@ -297,7 +297,7 @@ public final class ImageService {
                             try {
                                 readLocal(photoId, image.getSortOrder(), type, local.get());
                                 if (publishEvents) {
-                                    publishLoaded(photoId, image.getSortOrder(), type);
+                                    publishLoaded(photoId, image.getSortOrder(), type, sessionId);
                                 }
                                 logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "local");
                                 return;
@@ -307,7 +307,7 @@ public final class ImageService {
                         }
                     }
                     if (cache.get(key(photoId, image.getSortOrder(), type)) != null) {
-                        if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type);
+                        if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type, sessionId);
                         return;
                     }
                     String demandId = sessionId + "/" + key(photoId, image.getSortOrder(), type);
@@ -318,7 +318,7 @@ public final class ImageService {
                                 if ("thumb".equals(type)) {
                                     ensureThumbnail(photoId, image.getSortOrder(), bytes);
                                 }
-                                if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type);
+                                if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type, sessionId);
                                 logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "remote");
                             } catch (Exception error) {
                                 LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} errorType={}",
@@ -326,7 +326,7 @@ public final class ImageService {
                                     error.getClass().getSimpleName());
                                 if (publishEvents) {
                                     events.publish("imageFailed", new ImageEvent(
-                                        photoId, image.getSortOrder(), type));
+                                        photoId, image.getSortOrder(), type, sessionId));
                                 }
                             } finally {
                                 pending.remove(pendingKey, currentGeneration);
@@ -340,7 +340,7 @@ public final class ImageService {
                             if (!closed && publishEvents
                                 && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                                 events.publish("imageFailed", new ImageEvent(
-                                    photoId, image.getSortOrder(), type));
+                                    photoId, image.getSortOrder(), type, sessionId));
                             }
                         });
                     if (!accepted) pending.remove(pendingKey, currentGeneration);
@@ -355,7 +355,8 @@ public final class ImageService {
                         events.publish("imageFailed", new ImageEvent(
                             photoId,
                             image.getSortOrder(),
-                            type
+                            type,
+                            sessionId
                         ));
                     }
                 } finally {
@@ -387,13 +388,14 @@ public final class ImageService {
                     if (closed) return;
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     ensureThumbnail(photoId, sortOrder, original.bytes());
-                    publish(photoId, sortOrder, "thumb");
+                    publish(photoId, sortOrder, "thumb", sessionId);
                     logSlowPreload(photoId, sortOrder, "thumb", startedNanos, "cached-image");
                 } catch (Exception exception) {
                     LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
                         clean(photoId), sortOrder, elapsed(startedNanos), exception.getClass().getSimpleName());
                     if (!closed && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
-                        events.publish("imageFailed", new ImageEvent(photoId, sortOrder, "thumb"));
+                        events.publish("imageFailed", new ImageEvent(
+                            photoId, sortOrder, "thumb", sessionId));
                     }
                 } finally {
                     pending.remove(pendingKey, currentGeneration);
@@ -405,14 +407,14 @@ public final class ImageService {
         }
     }
 
-    private void publish(String photoId, int sortOrder, String type) {
+    private void publish(String photoId, int sortOrder, String type, String sessionId) {
         if (closed) return;
-        events.publish("imageReady", new ImageEvent(photoId, sortOrder, type));
+        events.publish("imageReady", new ImageEvent(photoId, sortOrder, type, sessionId));
     }
 
-    private void publishLoaded(String photoId, int sortOrder, String type) {
-        if ("thumb".equals(type)) publish(photoId, sortOrder, "image");
-        publish(photoId, sortOrder, type);
+    private void publishLoaded(String photoId, int sortOrder, String type, String sessionId) {
+        if ("thumb".equals(type)) publish(photoId, sortOrder, "image", sessionId);
+        publish(photoId, sortOrder, type, sessionId);
     }
 
     private Optional<Path> findLocalImage(String photoId, int sortOrder) {

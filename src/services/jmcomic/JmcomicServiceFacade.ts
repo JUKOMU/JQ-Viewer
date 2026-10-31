@@ -227,12 +227,12 @@ export const JmcomicService = {
    */
   addImageReadyListener(
     photoId: string,
-    handler: (sortOrder: number) => void,
+    handler: (sortOrder: number, sessionId: string) => void,
     options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageReady', (data: ImageReadyEvent) => {
       if (data.photoId === photoId && (!options.type || data.type === options.type)) {
-        handler(data.sortOrder)
+        handler(data.sortOrder, data.sessionId)
       }
     })
   },
@@ -240,12 +240,12 @@ export const JmcomicService = {
   /** 注册图片预载失败监听。 */
   addImageFailedListener(
     photoId: string,
-    handler: (sortOrder: number) => void,
+    handler: (sortOrder: number, sessionId: string) => void,
     options: { type?: 'image' | 'thumb' } = {},
   ): Promise<JmcomicListenerHandle> {
     return native.addListener('imageFailed', (data: ImageFailedEvent) => {
       if (data.photoId === photoId && (!options.type || data.type === options.type)) {
-        handler(data.sortOrder)
+        handler(data.sortOrder, data.sessionId)
       }
     })
   },

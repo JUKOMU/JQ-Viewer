@@ -313,7 +313,7 @@ public class PreloadServiceTest {
         CountDownLatch ready = new CountDownLatch(2);
         PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
             @Override
-            public void onImageReady(String photoId, int sortOrder, String type) {
+            public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
                 assertEquals("network-thumb", photoId);
                 assertEquals(1, sortOrder);
                 if ("image".equals(type)) {
@@ -325,7 +325,7 @@ public class PreloadServiceTest {
             }
 
             @Override
-            public void onImageFailed(String photoId, int sortOrder, String type) {
+            public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                 fail("有效缩略图不应发送 imageFailed");
             }
         });
@@ -427,7 +427,7 @@ public class PreloadServiceTest {
         CountDownLatch ready = new CountDownLatch(2);
         PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
             @Override
-            public void onImageReady(String photoId, int sortOrder, String type) {
+            public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
                 assertEquals("local-thumb", photoId);
                 assertEquals(1, sortOrder);
                 if ("image".equals(type)) {
@@ -439,7 +439,7 @@ public class PreloadServiceTest {
             }
 
             @Override
-            public void onImageFailed(String photoId, int sortOrder, String type) {
+            public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                 fail("有效本地缩略图不应发送 imageFailed");
             }
         });
@@ -463,11 +463,11 @@ public class PreloadServiceTest {
         CountDownLatch failed = new CountDownLatch(1);
         PreloadService service = createService(image -> createPng(), new PreloadEventSink() {
             @Override
-            public void onImageReady(String photoId, int sortOrder, String type) {
+            public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
             }
 
             @Override
-            public void onImageFailed(String photoId, int sortOrder, String type) {
+            public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                 assertEquals("local-cache-admission-failed", photoId);
                 assertEquals(1, sortOrder);
                 assertEquals("image", type);
@@ -492,11 +492,11 @@ public class PreloadServiceTest {
             throw new IOException("network failed");
         }, new PreloadEventSink() {
             @Override
-            public void onImageReady(String photoId, int sortOrder, String type) {
+            public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
             }
 
             @Override
-            public void onImageFailed(String photoId, int sortOrder, String type) {
+            public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                 failedPhotoId.set(photoId);
                 failedSortOrder.set(sortOrder);
                 failed.countDown();
@@ -516,12 +516,12 @@ public class PreloadServiceTest {
         PreloadService service = createService(image -> new byte[]{1, 2, 3, 4},
             new PreloadEventSink() {
                 @Override
-                public void onImageReady(String photoId, int sortOrder, String type) {
+                public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
                     fail("无效网络图片不应发送 imageReady");
                 }
 
                 @Override
-                public void onImageFailed(String photoId, int sortOrder, String type) {
+                public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                     assertEquals("invalid-network-image", photoId);
                     assertEquals(1, sortOrder);
                     assertEquals("image", type);
@@ -615,12 +615,12 @@ public class PreloadServiceTest {
             return imageBytes;
         }, new PreloadEventSink() {
             @Override
-            public void onImageReady(String photoId, int sortOrder, String type) {
+            public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
                 events.incrementAndGet();
             }
 
             @Override
-            public void onImageFailed(String photoId, int sortOrder, String type) {
+            public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
                 events.incrementAndGet();
             }
         });

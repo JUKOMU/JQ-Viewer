@@ -11,6 +11,8 @@ public record PreloadImagesRequest(
     String photoId,
     String type,
     List<JmImage> images,
-    Boolean replacePending
+    Boolean replacePending,
+    String sessionId,
+    Integer priority
 ) {
 }

@@ -72,6 +72,7 @@ describe('runtime', () => {
       'toggleAlbumFavorite',
       'manageFavoriteFolder',
       'preloadImages',
+      'cancelPreload',
       'retryImage',
       'setCacheCapacity',
       'getCacheCapacityInfo',
@@ -829,13 +830,22 @@ describe('runtime', () => {
     expect(invalidated).not.toHaveBeenCalled()
     FakeEventSource.instances[0].emit('open', null)
     expect(invalidated).toHaveBeenCalledOnce()
-    FakeEventSource.instances[0].emit('imageReady', { photoId: 'p1', sortOrder: 2, type: 'image' })
+    FakeEventSource.instances[0].emit('imageReady', {
+      photoId: 'p1',
+      sortOrder: 2,
+      type: 'image',
+      sessionId: 'reader-1',
+    })
     FakeEventSource.instances[0].emit('clientStateChanged', {
       state: 'ready',
       timestamp: 123,
     })
-    expect(first).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
-    expect(second).toHaveBeenCalledWith({ photoId: 'p1', sortOrder: 2, type: 'image' })
+    expect(first).toHaveBeenCalledWith({
+      photoId: 'p1', sortOrder: 2, type: 'image', sessionId: 'reader-1',
+    })
+    expect(second).toHaveBeenCalledWith({
+      photoId: 'p1', sortOrder: 2, type: 'image', sessionId: 'reader-1',
+    })
     expect(clientState).toHaveBeenCalledWith({ state: 'ready', timestamp: 123 })
 
     await firstHandle.remove()

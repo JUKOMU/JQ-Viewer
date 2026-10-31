@@ -87,6 +87,8 @@ export function createBackendClient(
       call<'manageFavoriteFolder'>('manageFavoriteFolder', options),
     preloadImages: (options: Parameters<JmcomicClient['preloadImages']>[0]) =>
       call<'preloadImages'>('preloadImages', options),
+    cancelPreload: (options: Parameters<JmcomicClient['cancelPreload']>[0]) =>
+      call<'cancelPreload'>('cancelPreload', options),
     retryImage: (options: Parameters<JmcomicClient['retryImage']>[0]) =>
       call<'retryImage'>('retryImage', options),
     setCacheCapacity: (options: Parameters<JmcomicClient['setCacheCapacity']>[0]) =>

@@ -16,6 +16,7 @@ export const COMMON_BACKEND_METHODS = [
   'toggleAlbumFavorite',
   'manageFavoriteFolder',
   'preloadImages',
+  'cancelPreload',
   'retryImage',
   'setCacheCapacity',
   'getCacheCapacityInfo',

@@ -107,6 +107,7 @@ public final class Backend implements AutoCloseable {
     private Javalin app;
     private JmcomicSessionManager clientSession;
     private DownloadService downloadService;
+    private ImageService imageService;
     private ExportService exportService;
     private NetworkService networkService;
     private OcrService ocrService;
@@ -237,6 +238,7 @@ public final class Backend implements AutoCloseable {
         EventHub startedEventHub = null;
         JmcomicSessionManager startedClientSession = null;
         DownloadService startedDownloadService = null;
+        ImageService startedImageService = null;
         ExportService startedExportService = null;
         NetworkService startedNetworkService = null;
         OcrService startedOcrService = null;
@@ -340,6 +342,7 @@ public final class Backend implements AutoCloseable {
                 executors.imagePreload(),
                 eventHub,
                 downloadService::findCompletedImage);
+            startedImageService = imageService;
             RequestExecutor apiRequests = new RequestExecutor(executors.api(), mapper);
             RequestExecutor imageRequests = new RequestExecutor(executors.imageCommand(), mapper);
             RequestExecutor settingsRequests = new RequestExecutor(executors.settings(), mapper);
@@ -435,6 +438,7 @@ public final class Backend implements AutoCloseable {
             this.app = candidate;
             this.clientSession = clientSession;
             this.downloadService = downloadService;
+            this.imageService = startedImageService;
             this.exportService = startedExportService;
             this.networkService = startedNetworkService;
             this.ocrService = startedOcrService;
@@ -453,6 +457,7 @@ public final class Backend implements AutoCloseable {
                 elapsedMs(startedAt), exception.getClass().getSimpleName());
             Javalin failedApp = candidate;
             DownloadService failedDownloadService = startedDownloadService;
+            ImageService failedImageService = startedImageService;
             ExportService failedExportService = startedExportService;
             NetworkService failedNetworkService = startedNetworkService;
             OcrService failedOcrService = startedOcrService;
@@ -462,6 +467,9 @@ public final class Backend implements AutoCloseable {
             EventHub failedEventHub = startedEventHub;
             JmcomicSessionManager failedClientSession = startedClientSession;
             CloseSequence.run(LOGGER,
+                step("图片服务", () -> {
+                    if (failedImageService != null) failedImageService.close();
+                }),
                 step("启动中的本地后端", () -> {
                     if (failedApp != null) failedApp.stop();
                 }),
@@ -858,10 +866,15 @@ public final class Backend implements AutoCloseable {
         eventHub = null;
         DownloadService closingDownloadService = downloadService;
         downloadService = null;
+        ImageService closingImageService = imageService;
+        imageService = null;
         JmcomicSessionManager closingClientSession = clientSession;
         clientSession = null;
 
         CloseSequence.run(LOGGER,
+            step("图片服务", () -> {
+                if (closingImageService != null) closingImageService.close();
+            }),
             step("任务通知", () -> {
                 if (closingTaskNotifications != null) closingTaskNotifications.close();
             }),

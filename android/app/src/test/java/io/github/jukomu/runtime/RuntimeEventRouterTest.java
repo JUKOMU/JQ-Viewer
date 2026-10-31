@@ -72,8 +72,8 @@ public class RuntimeEventRouterTest {
     private static void emitAll(RuntimeEventRouter router) {
         router.onDownloadProgress(new DownloadProgressData(
             "task", "album", "chapter", 1, 2, "downloading", null, 3, 4, 5));
-        router.onImageReady("photo", 6, "image");
-        router.onImageFailed("photo", 6, "image");
+        router.onImageReady("photo", 6, "image", "ready-session");
+        router.onImageFailed("photo", 6, "image", "failed-session");
         router.onRelocationProgress(7, 8, "copy", "file");
     }
 
@@ -93,13 +93,13 @@ public class RuntimeEventRouterTest {
         }
 
         @Override
-        public void onImageReady(String photoId, int sortOrder, String type) {
+        public void onImageReady(String photoId, int sortOrder, String type, String sessionId) {
             preloadCount++;
             lastThread = Thread.currentThread();
         }
 
         @Override
-        public void onImageFailed(String photoId, int sortOrder, String type) {
+        public void onImageFailed(String photoId, int sortOrder, String type, String sessionId) {
             preloadCount++;
             lastThread = Thread.currentThread();
         }

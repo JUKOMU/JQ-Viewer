@@ -54,6 +54,7 @@ export interface ImageReadyEvent {
   photoId: string
   sortOrder: number
   type: string
+  sessionId: string
 }
 
 export type ImageFailedEvent = ImageReadyEvent
@@ -133,7 +134,11 @@ export interface JmcomicClient {
     images: ImageInfo[]
     type: string
     replacePending?: boolean
+    sessionId?: string
+    priority?: number
   }): Promise<PreloadResult>
+
+  cancelPreload(options: { sessionId: string }): Promise<{ success: boolean }>
 
   retryImage(options: { photoId: string; image: ImageInfo }): Promise<{ success: boolean }>
 

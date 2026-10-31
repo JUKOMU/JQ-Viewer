@@ -143,4 +143,36 @@ public class NetworkLoadGateTest {
         thirdPermit.close();
         first.close();
     }
+
+    @Test
+    public void detachedLoadDoesNotBlockReplacementPermit() throws Exception {
+        NetworkLoadGate gate = new NetworkLoadGate(1);
+        AtomicBoolean detached = new AtomicBoolean();
+        NetworkLoadGate.Permit original = gate.acquire(() -> false, detached::get);
+        AtomicReference<NetworkLoadGate.Permit> replacement = new AtomicReference<>();
+        CountDownLatch acquired = new CountDownLatch(1);
+        Thread waiter = new Thread(() -> {
+            try {
+                replacement.set(gate.acquire(() -> false, () -> false));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                acquired.countDown();
+            }
+        });
+        waiter.start();
+
+        try {
+            assertFalse(acquired.await(100, TimeUnit.MILLISECONDS));
+            detached.set(true);
+            assertTrue(acquired.await(1, TimeUnit.SECONDS));
+            assertNotNull(replacement.get());
+            assertEquals(2, gate.getActiveLoads());
+        } finally {
+            original.close();
+            if (replacement.get() != null) replacement.get().close();
+            gate.close();
+            waiter.join(1_000L);
+        }
+    }
 }

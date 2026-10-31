@@ -25,8 +25,12 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static io.github.jukomu.desktop.util.TextUtils.text;
@@ -48,7 +52,9 @@ public final class ImageService {
     private final Map<String, Map<Integer, JmImage>> images = new ConcurrentHashMap<>();
     private final Map<String, Long> generations = new ConcurrentHashMap<>();
     private final Map<String, Long> pending = new ConcurrentHashMap<>();
+    private final NetworkImageTaskScheduler networkTasks;
     private long generation;
+    private volatile boolean closed;
 
     public ImageService(JmClient client, Executor executor, EventHub events) {
         this(() -> client, executor, events, (photoId, sortOrder) -> Optional.empty());
@@ -68,6 +74,7 @@ public final class ImageService {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.events = Objects.requireNonNull(events, "events");
         this.localImageFinder = Objects.requireNonNull(localImageFinder, "localImageFinder");
+        this.networkTasks = new NetworkImageTaskScheduler(maxConcurrency(executor));
         ImageIO.scanForPlugins();
     }
 
@@ -83,13 +90,28 @@ public final class ImageService {
         List<JmImage> input,
         boolean replacePending
     ) {
+        return preload(photoId, type, input, replacePending,
+            "legacy-" + UUID.randomUUID(), "thumb".equals(type) ? 100 : 200);
+    }
+
+    public PreloadImagesResponse preload(
+        String photoId,
+        String type,
+        List<JmImage> input,
+        boolean replacePending,
+        String sessionId,
+        int priority
+    ) {
+        ensureOpen();
         validateType(type);
         if (input == null) throw ApiException.invalidRequest("images必须是数组");
+        String requiredSession = requiredSession(sessionId);
         Map<Integer, JmImage> photoImages = images.computeIfAbsent(photoId, ignored -> new ConcurrentHashMap<>());
         long currentGeneration;
         synchronized (this) {
-            currentGeneration = replacePending ? ++generation : generations.getOrDefault(photoId + "/" + type, 0L);
-            if (replacePending) generations.put(photoId + "/" + type, currentGeneration);
+            String scope = scopeKey(photoId, type, requiredSession);
+            currentGeneration = replacePending ? ++generation : generations.getOrDefault(scope, 0L);
+            if (replacePending) generations.put(scope, currentGeneration);
         }
 
         List<Integer> cached = new ArrayList<>();
@@ -107,18 +129,27 @@ public final class ImageService {
             if ("thumb".equals(type) && original != null) {
                 waiting.add(image.getSortOrder());
                 scheduleCachedThumbnail(
-                    photoId, image.getSortOrder(), currentGeneration, original);
+                    photoId, image.getSortOrder(), currentGeneration, requiredSession, priority, original);
                 continue;
             }
             waiting.add(image.getSortOrder());
-            schedule(photoId, type, image, currentGeneration, true, true);
+            schedule(photoId, type, image, currentGeneration, requiredSession, priority, true, true);
         }
-        LOGGER.info("image.preload event=scheduled photoId={} type={} requested={} cached={} pending={} replacePending={}",
-            clean(photoId), type, input.size(), cached.size(), waiting.size(), replacePending);
+        LOGGER.info("image.preload event=scheduled session={} photoId={} type={} requested={} cached={} pending={} replacePending={}",
+            sessionFingerprint(requiredSession), clean(photoId), type, input.size(), cached.size(), waiting.size(),
+            replacePending);
         return new PreloadImagesResponse(List.copyOf(cached), List.copyOf(waiting));
     }
 
+    public SuccessResponse cancelPreload(String sessionId) {
+        String requiredSession = requiredSession(sessionId);
+        LOGGER.debug("image.preload event=cancelled session={}", sessionFingerprint(requiredSession));
+        networkTasks.cancelSession(requiredSession);
+        return SuccessResponse.ok();
+    }
+
     public SuccessResponse retry(String photoId, JmImage value) {
+        ensureOpen();
         if (value == null) throw ApiException.invalidRequest("image必须是对象");
         JmImage image = toImage(photoId, value);
         cache.remove(key(photoId, image.getSortOrder(), "image"));
@@ -129,11 +160,12 @@ public final class ImageService {
             currentGeneration = ++generation;
             generations.put(photoId + "/image", currentGeneration);
         }
-        schedule(photoId, "image", image, currentGeneration, false, false);
+        awaitNetworkImage(image, "legacy-retry-" + UUID.randomUUID(), 300, true);
         return SuccessResponse.ok();
     }
 
     public ImageCache.Entry read(String photoId, int sortOrder, String type) {
+        ensureOpen();
         validateType(type);
         ImageCache.Entry cached = cache.get(key(photoId, sortOrder, type));
         if (cached != null) {
@@ -161,20 +193,16 @@ public final class ImageService {
             throw new ApiException("not-found", 404, "图片不存在");
         }
         try {
-            byte[] bytes = client().fetchImageBytes(image);
-            if (!ImageFileValidator.validateQuick(bytes)) {
-                throw new IOException("无法解析图片");
-            }
-            String mime = mime(image);
-            cache.put(key(photoId, sortOrder, "image"), bytes, mime);
+            byte[] bytes = awaitNetworkImage(image,
+                "resource-" + UUID.randomUUID(), 300);
             if ("thumb".equals(type)) {
-                byte[] thumb = thumbnail(bytes);
-                cache.put(key(photoId, sortOrder, "thumb"), thumb, "image/jpeg");
+                ensureThumbnail(photoId, sortOrder, bytes);
                 logSlowRead(photoId, sortOrder, type, startedNanos);
-                return new ImageCache.Entry(thumb, "image/jpeg");
+                return cache.get(key(photoId, sortOrder, "thumb"));
             }
+            ImageCache.Entry result = cache.get(key(photoId, sortOrder, "image"));
             logSlowRead(photoId, sortOrder, type, startedNanos);
-            return new ImageCache.Entry(bytes, mime);
+            return result == null ? new ImageCache.Entry(bytes, mime(image)) : result;
         } catch (IOException exception) {
             LOGGER.warn("image.read event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
                 clean(photoId), sortOrder, type, elapsed(startedNanos), exception.getClass().getSimpleName());
@@ -240,22 +268,31 @@ public final class ImageService {
         return cache;
     }
 
+    public void close() {
+        closed = true;
+        networkTasks.close();
+    }
+
     private void schedule(
         String photoId,
         String type,
         JmImage image,
         long currentGeneration,
+        String sessionId,
+        int priority,
         boolean preferLocal,
         boolean publishEvents
     ) {
-        String scope = photoId + "/" + type;
-        String pendingKey = key(photoId, image.getSortOrder(), type);
+        String scope = scopeKey(photoId, type, sessionId);
+        String pendingKey = sessionId + "/" + key(photoId, image.getSortOrder(), type);
         Long old = pending.put(pendingKey, currentGeneration);
         if (old != null && old == currentGeneration) return;
         try {
             executor.execute(() -> {
                 long startedNanos = System.nanoTime();
+                boolean delegated = false;
                 try {
+                    if (closed) return;
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
                     if (preferLocal) {
                         Optional<Path> local = findLocalImage(photoId, image.getSortOrder());
@@ -263,42 +300,73 @@ public final class ImageService {
                             try {
                                 readLocal(photoId, image.getSortOrder(), type, local.get());
                                 if (publishEvents) {
-                                    publishLoaded(photoId, image.getSortOrder(), type);
+                                    publishLoaded(photoId, image.getSortOrder(), type, sessionId);
                                 }
-                                logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "local");
+                                logSlowPreload(photoId, image.getSortOrder(), type, sessionId,
+                                    startedNanos, "local");
                                 return;
                             } catch (Exception ignored) {
                                 // 本地文件不可读时按 Android 语义回退到网络来源。
                             }
                         }
                     }
-                    byte[] bytes = client().fetchImageBytes(image);
-                    if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
-                    if (!ImageFileValidator.validateQuick(bytes)) {
-                        throw new IOException("无法解析图片");
+                    if (cache.get(key(photoId, image.getSortOrder(), type)) != null) {
+                        if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type, sessionId);
+                        return;
                     }
-                    String mime = mime(image);
-                    byte[] thumb = "thumb".equals(type) ? thumbnail(bytes) : null;
-                    cache.put(key(photoId, image.getSortOrder(), "image"), bytes, mime);
-                    if (thumb != null) cache.put(pendingKey, thumb, "image/jpeg");
-                    if (publishEvents) {
-                        publishLoaded(photoId, image.getSortOrder(), type);
-                    }
-                    logSlowPreload(photoId, image.getSortOrder(), type, startedNanos, "remote");
+                    String demandId = sessionId + "/" + key(photoId, image.getSortOrder(), type);
+                    boolean accepted = submitNetworkImage(image, demandId, sessionId, priority,
+                        bytes -> {
+                            if (closed || generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
+                            try {
+                                if ("thumb".equals(type)) {
+                                    ensureThumbnail(photoId, image.getSortOrder(), bytes);
+                                }
+                                if (publishEvents) publishLoaded(photoId, image.getSortOrder(), type, sessionId);
+                                logSlowPreload(photoId, image.getSortOrder(), type, sessionId,
+                                    startedNanos, "remote");
+                            } catch (Exception error) {
+                                LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} errorType={}",
+                                    sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
+                                    error.getClass().getSimpleName());
+                                if (publishEvents) {
+                                    events.publish("imageFailed", new ImageEvent(
+                                        photoId, image.getSortOrder(), type, sessionId));
+                                }
+                            } finally {
+                                pending.remove(pendingKey, currentGeneration);
+                            }
+                        },
+                        error -> {
+                            pending.remove(pendingKey, currentGeneration);
+                            LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} errorType={}",
+                                sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
+                                error.getClass().getSimpleName());
+                            if (!closed && publishEvents
+                                && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
+                                events.publish("imageFailed", new ImageEvent(
+                                    photoId, image.getSortOrder(), type, sessionId));
+                            }
+                        });
+                    if (!accepted) pending.remove(pendingKey, currentGeneration);
+                    delegated = true;
+                    return;
                 } catch (Exception exception) {
-                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
-                        clean(photoId), image.getSortOrder(), type, elapsed(startedNanos),
+                    LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type={} elapsedMs={} errorClass={}",
+                        sessionFingerprint(sessionId), clean(photoId), image.getSortOrder(), type,
+                        elapsed(startedNanos),
                         exception.getClass().getSimpleName());
-                    if (publishEvents
+                    if (!closed && publishEvents
                         && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
                         events.publish("imageFailed", new ImageEvent(
                             photoId,
                             image.getSortOrder(),
-                            type
+                            type,
+                            sessionId
                         ));
                     }
                 } finally {
-                    pending.remove(pendingKey, currentGeneration);
+                    if (!delegated) pending.remove(pendingKey, currentGeneration);
                 }
             });
         } catch (RejectedExecutionException exception) {
@@ -311,25 +379,30 @@ public final class ImageService {
         String photoId,
         int sortOrder,
         long currentGeneration,
+        String sessionId,
+        int priority,
         ImageCache.Entry original
     ) {
-        String scope = photoId + "/thumb";
-        String pendingKey = key(photoId, sortOrder, "thumb");
+        String scope = scopeKey(photoId, "thumb", sessionId);
+        String pendingKey = sessionId + "/" + key(photoId, sortOrder, "thumb");
         Long old = pending.put(pendingKey, currentGeneration);
         if (old != null && old == currentGeneration) return;
         try {
             executor.execute(() -> {
                 long startedNanos = System.nanoTime();
                 try {
+                    if (closed) return;
                     if (generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
-                    cache.put(pendingKey, thumbnail(original.bytes()), "image/jpeg");
-                    publish(photoId, sortOrder, "thumb");
-                    logSlowPreload(photoId, sortOrder, "thumb", startedNanos, "cached-image");
+                    ensureThumbnail(photoId, sortOrder, original.bytes());
+                    publish(photoId, sortOrder, "thumb", sessionId);
+                    logSlowPreload(photoId, sortOrder, "thumb", sessionId, startedNanos, "cached-image");
                 } catch (Exception exception) {
-                    LOGGER.warn("image.preload event=failed photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
-                        clean(photoId), sortOrder, elapsed(startedNanos), exception.getClass().getSimpleName());
-                    if (generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
-                        events.publish("imageFailed", new ImageEvent(photoId, sortOrder, "thumb"));
+                    LOGGER.warn("image.preload event=failed session={} photoId={} sortOrder={} type=thumb elapsedMs={} errorClass={}",
+                        sessionFingerprint(sessionId), clean(photoId), sortOrder, elapsed(startedNanos),
+                        exception.getClass().getSimpleName());
+                    if (!closed && generations.getOrDefault(scope, currentGeneration) == currentGeneration) {
+                        events.publish("imageFailed", new ImageEvent(
+                            photoId, sortOrder, "thumb", sessionId));
                     }
                 } finally {
                     pending.remove(pendingKey, currentGeneration);
@@ -341,13 +414,14 @@ public final class ImageService {
         }
     }
 
-    private void publish(String photoId, int sortOrder, String type) {
-        events.publish("imageReady", new ImageEvent(photoId, sortOrder, type));
+    private void publish(String photoId, int sortOrder, String type, String sessionId) {
+        if (closed) return;
+        events.publish("imageReady", new ImageEvent(photoId, sortOrder, type, sessionId));
     }
 
-    private void publishLoaded(String photoId, int sortOrder, String type) {
-        if ("thumb".equals(type)) publish(photoId, sortOrder, "image");
-        publish(photoId, sortOrder, type);
+    private void publishLoaded(String photoId, int sortOrder, String type, String sessionId) {
+        if ("thumb".equals(type)) publish(photoId, sortOrder, "image", sessionId);
+        publish(photoId, sortOrder, type, sessionId);
     }
 
     private Optional<Path> findLocalImage(String photoId, int sortOrder) {
@@ -380,6 +454,102 @@ public final class ImageService {
 
     private static String key(String photoId, int sortOrder, String type) {
         return photoId + "/" + sortOrder + "/" + type;
+    }
+
+    private static String scopeKey(String photoId, String type, String sessionId) {
+        return sessionId + "/" + photoId + "/" + type;
+    }
+
+    private static String requiredSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw ApiException.invalidRequest("sessionId必须是非空字符串");
+        }
+        return sessionId;
+    }
+
+    private static int maxConcurrency(Executor executor) {
+        if (executor instanceof ThreadPoolExecutor pool) {
+            return pool.getMaximumPoolSize();
+        }
+        return io.github.jukomu.desktop.feature.settings.SettingsService.DEFAULT_CONCURRENCY;
+    }
+
+    private boolean submitNetworkImage(
+        JmImage image,
+        String demandId,
+        String sessionId,
+        int priority,
+        Consumer<byte[]> onSuccess,
+        Consumer<Exception> onFailure
+    ) {
+        return submitNetworkImage(image, demandId, sessionId, priority, false,
+            onSuccess, onFailure);
+    }
+
+    private boolean submitNetworkImage(
+        JmImage image,
+        String demandId,
+        String sessionId,
+        int priority,
+        boolean replaceCache,
+        Consumer<byte[]> onSuccess,
+        Consumer<Exception> onFailure
+    ) {
+        return networkTasks.submit(image, demandId, sessionId, priority, replaceCache,
+            (taskImage, forceNetwork, cacheLookup, networkFetcher) -> {
+            String imageKey = key(taskImage.getPhotoId(), taskImage.getSortOrder(), "image");
+            byte[] cached = cacheLookup.read(() -> {
+                ImageCache.Entry entry = cache.get(imageKey);
+                return entry == null ? null : entry.bytes();
+            });
+            if (cached != null) return cached;
+            byte[] bytes = networkFetcher.fetch(taskImage);
+            if (!ImageFileValidator.validateQuick(bytes)) throw new IOException("无法解析图片");
+            synchronized (cache) {
+                ImageCache.Entry latest = cache.get(imageKey);
+                if (!forceNetwork.getAsBoolean() && latest != null) return latest.bytes();
+                cache.put(imageKey, bytes, mime(taskImage));
+            }
+            return bytes;
+        }, taskImage -> client().fetchImageBytes(taskImage), onSuccess, onFailure);
+    }
+
+    private byte[] awaitNetworkImage(JmImage image, String sessionId, int priority) {
+        return awaitNetworkImage(image, sessionId, priority, false);
+    }
+
+    private byte[] awaitNetworkImage(
+        JmImage image, String sessionId, int priority, boolean replaceCache
+    ) {
+        CompletableFuture<byte[]> result = new CompletableFuture<>();
+        boolean accepted = submitNetworkImage(image, sessionId + "/" + key(
+                image.getPhotoId(), image.getSortOrder(), "image"), sessionId, priority, replaceCache,
+            result::complete, result::completeExceptionally);
+        if (!accepted) throw ApiException.unavailable("图片服务不可用");
+        try {
+            return result.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw ApiException.unavailable("图片请求已中断");
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) throw runtimeException;
+            throw new ApiException("internal", 502, "图片处理失败: " + cause.getMessage());
+        }
+    }
+
+    private void ensureThumbnail(String photoId, int sortOrder, byte[] fallback) throws IOException {
+        synchronized (cache) {
+            String thumbKey = key(photoId, sortOrder, "thumb");
+            if (cache.get(thumbKey) != null) return;
+            ImageCache.Entry original = cache.get(key(photoId, sortOrder, "image"));
+            byte[] source = original == null ? fallback : original.bytes();
+            cache.put(thumbKey, thumbnail(source), "image/jpeg");
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed) throw ApiException.unavailable("图片服务不可用");
     }
 
     private static String mime(JmImage image) {
@@ -429,12 +599,17 @@ public final class ImageService {
     }
 
     private static void logSlowPreload(
-        String photoId, int sortOrder, String type, long startedNanos, String source
+        String photoId,
+        int sortOrder,
+        String type,
+        String sessionId,
+        long startedNanos,
+        String source
     ) {
         long elapsedMs = elapsed(startedNanos);
         if (elapsedMs >= SLOW_OPERATION_MS) {
-            LOGGER.warn("image.preload event=slow photoId={} sortOrder={} type={} source={} elapsedMs={}",
-                clean(photoId), sortOrder, type, source, elapsedMs);
+            LOGGER.warn("image.preload event=slow session={} photoId={} sortOrder={} type={} source={} elapsedMs={}",
+                sessionFingerprint(sessionId), clean(photoId), sortOrder, type, source, elapsedMs);
         }
     }
 
@@ -445,5 +620,9 @@ public final class ImageService {
 
     private static String clean(String value) {
         return value == null || value.isBlank() ? "empty" : "present";
+    }
+
+    private static String sessionFingerprint(String sessionId) {
+        return Integer.toHexString(sessionId.hashCode());
     }
 }

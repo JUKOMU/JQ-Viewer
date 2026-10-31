@@ -145,15 +145,15 @@ public class NetworkLoadGateTest {
     }
 
     @Test
-    public void detachedLoadDoesNotBlockReplacementPermit() throws Exception {
+    public void detachedLoadStillCountsAgainstPhysicalConcurrency() throws Exception {
         NetworkLoadGate gate = new NetworkLoadGate(1);
-        AtomicBoolean detached = new AtomicBoolean();
-        NetworkLoadGate.Permit original = gate.acquire(() -> false, detached::get);
+        gate.setPressureLevel(CacheCapacityPolicy.PressureLevel.RUNNING_CRITICAL);
+        NetworkLoadGate.Permit original = gate.acquire(() -> false);
         AtomicReference<NetworkLoadGate.Permit> replacement = new AtomicReference<>();
         CountDownLatch acquired = new CountDownLatch(1);
         Thread waiter = new Thread(() -> {
             try {
-                replacement.set(gate.acquire(() -> false, () -> false));
+                replacement.set(gate.acquire(() -> false));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } finally {
@@ -164,10 +164,11 @@ public class NetworkLoadGateTest {
 
         try {
             assertFalse(acquired.await(100, TimeUnit.MILLISECONDS));
-            detached.set(true);
+            assertEquals(1, gate.getActiveLoads());
+            original.close();
             assertTrue(acquired.await(1, TimeUnit.SECONDS));
             assertNotNull(replacement.get());
-            assertEquals(2, gate.getActiveLoads());
+            assertEquals(1, gate.getActiveLoads());
         } finally {
             original.close();
             if (replacement.get() != null) replacement.get().close();

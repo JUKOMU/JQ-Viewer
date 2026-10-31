@@ -22,6 +22,7 @@ import java.util.function.Supplier;
  * Desktop 图片网络请求合并器。已开始的物理请求继续完成，逻辑槽位可被高优先级任务复用。
  */
 final class NetworkImageTaskScheduler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NetworkImageTaskScheduler.class);
     private static final int MAX_TOTAL_RUNNING = 12;
 
     private final Object lock = new Object();
@@ -154,49 +155,72 @@ final class NetworkImageTaskScheduler {
     private void execute(Task task) {
         byte[] result = null;
         Exception failure = null;
+        Error fatalError = null;
+        List<Demand> completedDemands = List.of();
+        Error callbackError = null;
         try {
-            result = task.fetcher.fetch(task.image, () -> task.replaceCache,
-                reader -> {
-                    synchronized (lock) {
-                        if (task.replaceCache) {
-                            task.fetchPhase = FetchPhase.CACHE_MISS;
-                            return null;
+            try {
+                result = task.fetcher.fetch(task.image, () -> task.replaceCache,
+                    reader -> {
+                        synchronized (lock) {
+                            if (task.replaceCache) {
+                                task.fetchPhase = FetchPhase.CACHE_MISS;
+                                return null;
+                            }
+                            byte[] cached = reader.get();
+                            task.fetchPhase = cached == null
+                                ? FetchPhase.CACHE_MISS : FetchPhase.CACHE_HIT;
+                            return cached;
                         }
-                        byte[] cached = reader.get();
-                        task.fetchPhase = cached == null
-                            ? FetchPhase.CACHE_MISS : FetchPhase.CACHE_HIT;
-                        return cached;
+                    }, image -> {
+                        synchronized (lock) {
+                            task.fetchPhase = FetchPhase.NETWORK;
+                        }
+                        return task.networkFetcher.fetch(image);
+                    });
+                synchronized (lock) {
+                    if (task.fetchPhase != FetchPhase.CACHE_HIT) {
+                        task.fetchPhase = FetchPhase.RESULT_READY;
                     }
-                }, image -> {
-                    synchronized (lock) {
-                        task.fetchPhase = FetchPhase.NETWORK;
-                    }
-                    return task.networkFetcher.fetch(image);
-                });
+                }
+            } catch (Exception error) {
+                failure = error;
+            } catch (Error error) {
+                fatalError = error;
+                failure = new IllegalStateException("图片任务发生致命错误", error);
+            }
             synchronized (lock) {
-                if (task.fetchPhase != FetchPhase.CACHE_HIT) {
-                    task.fetchPhase = FetchPhase.RESULT_READY;
+                completedDemands = new ArrayList<>(task.demands.values());
+                running.remove(task);
+                activeTasks.remove(task);
+                tasks.remove(task.image, task);
+                task.state = State.DONE;
+                task.demands.clear();
+            }
+            for (Demand demand : completedDemands) {
+                try {
+                    if (failure == null) demand.onSuccess.accept(result);
+                    else demand.onFailure.accept(failure);
+                } catch (RuntimeException error) {
+                    LOGGER.warn("网络图片需求回调失败: sortOrder={}",
+                        task.image.getSortOrder(), error);
+                } catch (Error error) {
+                    if (callbackError == null) callbackError = error;
+                    else callbackError.addSuppressed(error);
                 }
             }
-        } catch (Exception error) {
-            failure = error;
-        }
-        List<Demand> completedDemands;
-        synchronized (lock) {
-            running.remove(task);
-            activeTasks.remove(task);
-            completedDemands = new ArrayList<>(task.demands.values());
-            tasks.remove(task.image, task);
-            task.state = State.DONE;
-            task.demands.clear();
-        }
-        try {
-            for (Demand demand : completedDemands) {
-                if (failure == null) demand.onSuccess.accept(result);
-                else demand.onFailure.accept(failure);
+            if (fatalError != null) {
+                if (callbackError != null) fatalError.addSuppressed(callbackError);
+                throw fatalError;
             }
+            if (callbackError != null) throw callbackError;
         } finally {
             synchronized (lock) {
+                running.remove(task);
+                activeTasks.remove(task);
+                tasks.remove(task.image, task);
+                task.state = State.DONE;
+                task.demands.clear();
                 totalRunning--;
                 pumpLocked();
             }

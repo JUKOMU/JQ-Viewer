@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -357,7 +358,7 @@ public class PreloadService {
         String demandId = sessionId + "/" + cacheKey;
         boolean accepted = networkTasks.submit(image, demandId, sessionId, priority,
             replaceCache,
-            (taskImage, detached, forceNetwork, cacheLookup, networkFetch) -> {
+            (taskImage, abandoned, forceNetwork, cacheLookup, networkFetch) -> {
                 if (!forceNetwork.getAsBoolean()) {
                     byte[] cached = cacheLookup.read(() -> {
                         ImageCache.ImageEntry entry = imageCache.get(imageKey);
@@ -367,8 +368,11 @@ public class PreloadService {
                 }
                 NetworkLoadGate.Permit permit = null;
                 try {
-                    permit = networkLoadGate.acquire(null, detached);
+                    permit = networkLoadGate.acquire(abandoned);
                     if (permit == null) {
+                        if (abandoned.getAsBoolean()) {
+                            throw new CancellationException("已取消且尚未开始网络请求");
+                        }
                         throw new IOException("当前内存压力过高，暂时无法加载图片");
                     }
                     if (!forceNetwork.getAsBoolean()) {

@@ -32,12 +32,6 @@ public final class NetworkLoadGate {
      * 等待一个网络加载名额。请求已过期时返回 null，不会留下占用的名额。
      */
     public Permit acquire(BooleanSupplier cancelled) throws InterruptedException {
-        return acquire(cancelled, () -> false);
-    }
-
-    /** 等待有效网络任务的名额；已让出逻辑槽位的旧请求不占用门禁名额。 */
-    public Permit acquire(BooleanSupplier cancelled, BooleanSupplier detached)
-        throws InterruptedException {
         synchronized (lock) {
             while (!closed) {
                 if (cancelled != null && cancelled.getAsBoolean()) {
@@ -47,8 +41,8 @@ public final class NetworkLoadGate {
                     return null;
                 }
                 int allowedLoads = getAllowedLoads();
-                if (allowedLoads > activeLogicalLoads()) {
-                    Permit permit = new Permit(this, detached);
+                if (allowedLoads > permits.size()) {
+                    Permit permit = new Permit(this);
                     permits.add(permit);
                     return permit;
                 }
@@ -103,22 +97,12 @@ public final class NetworkLoadGate {
         }
     }
 
-    private int activeLogicalLoads() {
-        int active = 0;
-        for (Permit permit : permits) {
-            if (!permit.detached.getAsBoolean()) active++;
-        }
-        return active;
-    }
-
     public static final class Permit implements AutoCloseable {
         private final NetworkLoadGate owner;
-        private final BooleanSupplier detached;
         private final AtomicBoolean released = new AtomicBoolean();
 
-        private Permit(NetworkLoadGate owner, BooleanSupplier detached) {
+        private Permit(NetworkLoadGate owner) {
             this.owner = owner;
-            this.detached = detached;
         }
 
         @Override

@@ -179,6 +179,60 @@ class NetworkImageTaskSchedulerTest {
     }
 
     @Test
+    void fatalFetchErrorCleansTaskAndReleasesRunningCount() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch failed = new CountDownLatch(1);
+        CountDownLatch retried = new CountDownLatch(1);
+        AtomicInteger attempts = new AtomicInteger();
+
+        scheduler.submit(IMAGE, "first/image", "first", 100, false,
+            (image, replaceCache, cacheLookup, networkFetcher) -> networkFetcher.fetch(image),
+            image -> {
+                if (attempts.incrementAndGet() == 1) throw new AssertionError("fatal fetch error");
+                return new byte[]{2};
+            },
+            bytes -> { },
+            error -> failed.countDown());
+        assertTrue(failed.await(1, TimeUnit.SECONDS));
+
+        scheduler.submit(IMAGE, "second/image", "second", 100, false,
+            (image, replaceCache, cacheLookup, networkFetcher) -> networkFetcher.fetch(image),
+            image -> {
+                attempts.incrementAndGet();
+                return new byte[]{3};
+            },
+            bytes -> retried.countDown(), error -> { throw new AssertionError(error); });
+
+        assertTrue(retried.await(1, TimeUnit.SECONDS));
+        assertEquals(2, attempts.get());
+    }
+
+    @Test
+    void callbackFailureDoesNotSkipOtherDemands() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        CountDownLatch secondCallback = new CountDownLatch(1);
+
+        NetworkImageTaskScheduler.Fetcher fetcher = (image, replaceCache, cacheLookup, networkFetcher) -> {
+            fetchStarted.countDown();
+            assertTrue(releaseFetch.await(1, TimeUnit.SECONDS));
+            return new byte[]{1};
+        };
+        NetworkImageTaskScheduler.NetworkFetcher networkFetcher = image -> new byte[]{1};
+
+        scheduler.submit(IMAGE, "first/image", "first", 100, false, fetcher, networkFetcher,
+            bytes -> { throw new IllegalStateException("callback failure"); },
+            error -> { throw new AssertionError(error); });
+        assertTrue(fetchStarted.await(1, TimeUnit.SECONDS));
+        scheduler.submit(IMAGE, "second/image", "second", 100, false, fetcher, networkFetcher,
+            bytes -> secondCallback.countDown(), error -> { throw new AssertionError(error); });
+        releaseFetch.countDown();
+
+        assertTrue(secondCallback.await(1, TimeUnit.SECONDS));
+    }
+
+    @Test
     void retryDoesNotReuseResolvedCacheResult() throws Exception {
         NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
         CountDownLatch cacheResolved = new CountDownLatch(1);

@@ -4,6 +4,7 @@ import io.github.jukomu.jmcomic.api.model.JmImage;
 import org.junit.Test;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -188,6 +189,108 @@ public class NetworkImageTaskSchedulerTest {
         String filename = String.format("%03d.jpg", sortOrder);
         return new JmImage("photo", "scramble", filename,
             "https://example.invalid/" + filename, "", sortOrder);
+    }
+
+    @Test
+    public void abandonedTaskStopsBeforeStartingNetworkRequest() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch fetchEntered = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        CountDownLatch replacementStarted = new CountDownLatch(1);
+        AtomicInteger networkFetches = new AtomicInteger();
+
+        scheduler.submit(IMAGE, "cancelled/image", "cancelled", 100, false,
+            (image, abandoned, replaceCache, cacheLookup, networkFetcher) -> {
+                fetchEntered.countDown();
+                releaseFetch.await(1, TimeUnit.SECONDS);
+                if (abandoned.getAsBoolean()) throw new CancellationException();
+                return networkFetcher.fetch(image);
+            },
+            image -> {
+                networkFetches.incrementAndGet();
+                return new byte[]{1};
+            },
+            (image, bytes, replaceCache) -> { },
+            bytes -> { throw new AssertionError("cancelled demand received success"); },
+            error -> { throw new AssertionError("cancelled demand received failure"); });
+        assertTrue(fetchEntered.await(1, TimeUnit.SECONDS));
+        scheduler.cancelSession("cancelled");
+
+        scheduler.submit(image(14), "replacement/image", "replacement", 300, false,
+            (image, abandoned, replaceCache, cacheLookup, networkFetcher) -> {
+                replacementStarted.countDown();
+                return new byte[]{2};
+            },
+            image -> new byte[]{2}, (image, bytes, replaceCache) -> { },
+            bytes -> { }, error -> { throw new AssertionError(error); });
+        assertTrue(replacementStarted.await(1, TimeUnit.SECONDS));
+        releaseFetch.countDown();
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (networkFetches.get() == 0 && System.nanoTime() < deadline) Thread.sleep(10L);
+        assertEquals(0, networkFetches.get());
+    }
+
+    @Test
+    public void fatalFetchErrorCleansTaskAndReleasesRunningCount() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch failed = new CountDownLatch(1);
+        CountDownLatch retried = new CountDownLatch(1);
+        AtomicInteger attempts = new AtomicInteger();
+
+        scheduler.submit(IMAGE, "first/image", "first", 100, false,
+            (image, abandoned, replaceCache, cacheLookup, networkFetcher) ->
+                networkFetcher.fetch(image),
+            image -> {
+                if (attempts.incrementAndGet() == 1) throw new AssertionError("fatal fetch error");
+                return new byte[]{2};
+            },
+            (image, bytes, replaceCache) -> { },
+            bytes -> { throw new AssertionError("expected fetch failure"); },
+            error -> failed.countDown());
+        assertTrue(failed.await(1, TimeUnit.SECONDS));
+
+        scheduler.submit(IMAGE, "second/image", "second", 100, false,
+            (image, abandoned, replaceCache, cacheLookup, networkFetcher) ->
+                networkFetcher.fetch(image),
+            image -> {
+                attempts.incrementAndGet();
+                return new byte[]{3};
+            },
+            (image, bytes, replaceCache) -> { },
+            bytes -> retried.countDown(), error -> { throw new AssertionError(error); });
+
+        assertTrue(retried.await(1, TimeUnit.SECONDS));
+        assertEquals(2, attempts.get());
+    }
+
+    @Test
+    public void callbackFailureDoesNotSkipOtherDemands() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        CountDownLatch fetchStarted = new CountDownLatch(1);
+        CountDownLatch releaseFetch = new CountDownLatch(1);
+        CountDownLatch secondCallback = new CountDownLatch(1);
+
+        NetworkImageTaskScheduler.Fetcher fetcher =
+            (image, abandoned, replaceCache, cacheLookup, networkFetcher) -> {
+                fetchStarted.countDown();
+                releaseFetch.await(1, TimeUnit.SECONDS);
+                return new byte[]{1};
+            };
+        NetworkImageTaskScheduler.NetworkFetcher networkFetcher = image -> new byte[]{1};
+        NetworkImageTaskScheduler.ResultHandler resultHandler = (image, bytes, replaceCache) -> { };
+
+        scheduler.submit(IMAGE, "first/image", "first", 100, false,
+            fetcher, networkFetcher, resultHandler,
+            bytes -> { throw new IllegalStateException("callback failure"); },
+            error -> { throw new AssertionError(error); });
+        assertTrue(fetchStarted.await(1, TimeUnit.SECONDS));
+        scheduler.submit(IMAGE, "second/image", "second", 100, false,
+            fetcher, networkFetcher, resultHandler,
+            bytes -> secondCallback.countDown(), error -> { throw new AssertionError(error); });
+        releaseFetch.countDown();
+
+        assertTrue(secondCallback.await(1, TimeUnit.SECONDS));
     }
 
     @Test

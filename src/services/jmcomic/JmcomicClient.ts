@@ -291,6 +291,8 @@ export interface JmcomicClient {
 
   measureLatency(): Promise<{ results: LatencyResult[] }>
 
+  measureDomainLatency(options: { domain: string }): Promise<LatencyResult>
+
   /** 测量当前图片 Host 候选的有效下载吞吐量。 */
   measureImageHosts(): Promise<{
     runId: number
@@ -304,6 +306,15 @@ export interface JmcomicClient {
       bytesPerSecond: number
       error?: string
     }[]
+  }>
+
+  measureImageHost(options: { host: string }): Promise<{
+    host: string
+    available: boolean
+    elapsedMs: number
+    bytes: number
+    bytesPerSecond: number
+    error?: string
   }>
 
   /** 查询当前图片线路测速任务及最近结果。 */

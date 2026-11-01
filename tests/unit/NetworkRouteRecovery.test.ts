@@ -187,6 +187,18 @@ describe('在线客户端初始化后的线路状态恢复', () => {
 })
 
 describe('图片线路手动模式', () => {
+  test('点击选择文字会应用对应的图片 Host', async () => {
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    await wrapper.findAll('.domain-card.image-route-card .domain-list .route-choice')[1].trigger('click')
+    await flushPromises()
+
+    expect(mocks.applyImageRoute).toHaveBeenCalledWith({ mode: 'manual', host: 'fast.example' })
+    wrapper.unmount()
+  })
+
   test('手动模式点击测速只展示结果，不应用测速选出的 Host', async () => {
     mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fixed.example' })
     mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
@@ -199,7 +211,7 @@ describe('图片线路手动模式', () => {
     expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
     expect(mocks.applyImageRoute).not.toHaveBeenCalled()
     expect(wrapper.find('.image-route-card .summary-domain').text()).toBe('fixed.example')
-    expect(wrapper.find('.image-route-card button.domain-row[aria-pressed="true"]').exists()).toBe(true)
+    expect(wrapper.find('.image-route-card .route-row-select[aria-pressed="true"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

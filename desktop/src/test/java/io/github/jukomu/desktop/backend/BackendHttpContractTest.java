@@ -120,6 +120,8 @@ class BackendHttpContractTest {
                     "{\"mode\":\"manual\",\"domain\":\"api.example\"}").statusCode());
             ObjectNode latency = body(post(
                     http, base, requestedMethods, "measureLatency", "{}"));
+            assertEquals(400, post(http, base, requestedMethods, "measureDomainLatency",
+                    "{\"domain\":\"unknown.invalid\"}").statusCode());
             ObjectNode imageHosts = body(post(
                     http, base, requestedMethods, "getImageRouteCandidates", "{}"));
             assertTrue(imageHosts.path("hosts").size() > 0);
@@ -127,6 +129,8 @@ class BackendHttpContractTest {
                     http, base, requestedMethods, "getImageRouteStatus", "{}"));
             assertTrue(imageRouteStatus.has("running"));
             assertEquals(503, post(http, base, requestedMethods, "measureImageHosts", "{}").statusCode());
+            assertEquals(400, post(http, base, requestedMethods, "measureImageHost",
+                    "{\"host\":\"unknown.invalid\"}").statusCode());
             assertEquals(400, post(http, base, requestedMethods, "setImageRoutePreference",
                     "{\"mode\":\"manual\",\"host\":\"missing.invalid\"}").statusCode());
             assertOk(post(http, base, requestedMethods, "reprobeDomains", "{}"));

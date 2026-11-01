@@ -11,8 +11,15 @@ import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.persistence.SettingsStore;
 import io.github.jukomu.runtime.JmcomicSessionManager;
 import io.github.jukomu.runtime.ImageHostOptimizer;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
+import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 在线功能JMComic插件。本地功能在 {@link JqViewerPlugin} 中。
@@ -255,6 +262,36 @@ public class JmcomicPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void measureDomainLatency(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        String domain = call.getString("domain");
+        if (domain == null || domain.isBlank() || !client.getDomainStates().containsKey(domain)) {
+            call.reject("无效的 API 域名");
+            return;
+        }
+        HttpUrl url = new HttpUrl.Builder().scheme("https").host(domain).build();
+        Request request = new Request.Builder().url(url).head().build();
+        OkHttpClient probeClient = new OkHttpClient.Builder()
+            .callTimeout(Duration.ofSeconds(5))
+            .connectTimeout(Duration.ofSeconds(5))
+            .readTimeout(Duration.ofSeconds(5))
+            .build();
+        long started = System.nanoTime();
+        boolean timedOut = false;
+        try (Response ignored = probeClient.newCall(request).execute()) {
+            // HEAD 响应完成即表示该域名的单项延迟测量完成。
+        } catch (IOException error) {
+            timedOut = true;
+        }
+        JSObject result = new JSObject();
+        result.put("domain", domain);
+        result.put("latencyMs", timedOut ? 0 : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        result.put("timedOut", timedOut);
+        call.resolve(result);
+    }
+
     /** 返回当前客户端的图片 Host 候选。 */
     @PluginMethod
     public void getImageRouteCandidates(PluginCall call) {
@@ -312,6 +349,33 @@ public class JmcomicPlugin extends Plugin {
                     result.selectedHost() == null ? "没有可用的图片线路" : "图片线路测速完成",
                     null, result));
                 call.resolve(response);
+            });
+    }
+
+    @PluginMethod
+    public void measureImageHost(PluginCall call) {
+        JmApiClient client = requireClient(call);
+        if (client == null) return;
+        String host = call.getString("host");
+        if (!ImageHostOptimizer.contains(host)) {
+            call.reject("无效的图片 Host");
+            return;
+        }
+        call.setKeepAlive(true);
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> ImageHostOptimizer.measureHost(client, host))
+            .whenComplete((measured, failure) -> {
+                if (failure != null) {
+                    call.reject("图片线路测速失败");
+                    return;
+                }
+                JSObject result = new JSObject();
+                result.put("host", measured.host());
+                result.put("available", measured.available());
+                result.put("elapsedMs", measured.elapsedMs());
+                result.put("bytes", measured.bytes());
+                result.put("bytesPerSecond", measured.bytesPerSecond());
+                result.put("error", measured.error());
+                call.resolve(result);
             });
     }
 

@@ -3,6 +3,8 @@ package io.github.jukomu.desktop.bridge.handler;
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
+import io.github.jukomu.desktop.bridge.model.DomainLatencyRequest;
+import io.github.jukomu.desktop.bridge.model.ImageHostRequest;
 import io.github.jukomu.desktop.bridge.model.LogReadRequest;
 import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
@@ -157,6 +159,11 @@ public final class SystemPluginHandler {
         networkRequests.run(context, () -> requireNetwork().measureLatency());
     }
 
+    public void measureDomainLatency(Context context) {
+        networkRequests.run(context, DomainLatencyRequest.class,
+            request -> requireNetwork().measureDomainLatency(request.domain()));
+    }
+
     /** 返回 jm 默认列表与当前配置合并后的图片 Host 候选。 */
     public void getImageRouteCandidates(Context context) {
         respond(context, "getImageRouteCandidates",
@@ -196,6 +203,20 @@ public final class SystemPluginHandler {
                 result.selectedHost() == null ? "没有可用的图片线路" : "图片线路测速完成",
                 result, result.selectedHost() == null ? "没有可用的图片线路" : null));
             return result;
+        });
+    }
+
+    /** 测量单个图片 Host，不应用测速结果。 */
+    public void measureImageHost(Context context) {
+        imageRouteRequests.runLongOperation(context, ImageHostRequest.class, request -> {
+            if (!ImageHostOptimizer.contains(request.host())) {
+                throw ApiException.invalidRequest("无效的图片 Host");
+            }
+            var client = clientSession.requireClient();
+            if (!(client instanceof io.github.jukomu.jmcomic.core.client.impl.JmApiClient apiClient)) {
+                throw ApiException.unavailable("当前 JMComic 客户端不支持图片线路优选");
+            }
+            return ImageHostOptimizer.measureHost(apiClient, request.host());
         });
     }
 

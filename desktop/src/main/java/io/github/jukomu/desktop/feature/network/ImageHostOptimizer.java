@@ -89,13 +89,23 @@ public final class ImageHostOptimizer {
     /** 使用固定样本测速，并在每个 Host 开始和完成时报告进度。 */
     public static synchronized Result optimize(
         JmApiClient client, Consumer<Progress> progressListener) {
+        return optimize(client, candidates(), progressListener, true);
+    }
+
+    /** 仅测量指定图片 Host，不改变客户端当前 Host。 */
+    public static synchronized HostResult measureHost(JmApiClient client, String host) {
+        return optimize(client, List.of(host), ignored -> { }, false).hosts().get(0);
+    }
+
+    private static Result optimize(
+        JmApiClient client, List<String> hostCandidates, Consumer<Progress> progressListener,
+        boolean publishStatus) {
         long runId = RUN_IDS.incrementAndGet();
         long runStarted = System.nanoTime();
         List<HostResult> results = new ArrayList<>();
-        List<String> hostCandidates = candidates();
         LOGGER.info("image_route operation=optimize status=started runId={} hosts={} hostCount={}",
             runId, hostCandidates, hostCandidates.size());
-        publishProgress(runId, true, null, results, null, progressListener);
+        publishProgress(runId, true, null, results, null, progressListener, publishStatus);
         try {
             long chapterStarted = System.nanoTime();
             JmPhoto photo;
@@ -121,7 +131,7 @@ public final class ImageHostOptimizer {
                 long hostDeadline = hostStarted + Duration.ofSeconds(HOST_PROBE_TIMEOUT_SECONDS).toNanos();
                 LOGGER.info("image_route operation=host_probe status=started runId={} host={} index={} total={}",
                     runId, host, hostIndex + 1, hostCandidates.size());
-                publishProgress(runId, true, host, results, null, progressListener);
+                publishProgress(runId, true, host, results, null, progressListener, publishStatus);
                 List<RoundResult> rounds = new ArrayList<>();
                 String errorMessage = null;
                 boolean hostTimedOut = false;
@@ -204,21 +214,21 @@ public final class ImageHostOptimizer {
                         runId, host, hostIndex + 1, hostCandidates.size(), hostElapsedMs,
                         rounds.size(), bytes, speed);
                 }
-                publishProgress(runId, true, null, results, null, progressListener);
+                publishProgress(runId, true, null, results, null, progressListener, publishStatus);
                 if (available && speed > selectedSpeed) {
                     selectedHost = host;
                     selectedSpeed = speed;
                 }
             }
             Progress completed = publishProgress(
-                runId, false, null, results, null, progressListener);
+                runId, false, null, results, null, progressListener, publishStatus);
             LOGGER.info("image_route operation=optimize status=completed runId={} hosts={} selectedHost={} elapsedMs={}",
                 runId, hostCandidates.size(), selectedHost, elapsedMs(runStarted));
             return new Result(selectedHost, List.copyOf(results), runId, completed.revision());
         } catch (RuntimeException error) {
             LOGGER.warn("image_route operation=optimize status=failed runId={} elapsedMs={} errorType={}",
                 runId, elapsedMs(runStarted), error.getClass().getSimpleName(), error);
-            publishProgress(runId, false, null, results, error.getMessage(), progressListener);
+            publishProgress(runId, false, null, results, error.getMessage(), progressListener, publishStatus);
             throw error;
         }
     }
@@ -256,11 +266,11 @@ public final class ImageHostOptimizer {
 
     private static Progress publishProgress(
         long runId, boolean running, String currentHost, List<HostResult> hosts, String error,
-        Consumer<Progress> progressListener
+        Consumer<Progress> progressListener, boolean publishStatus
     ) {
         Progress progress = new Progress(
             runId, REVISIONS.incrementAndGet(), running, currentHost, List.copyOf(hosts), error);
-        latestProgress = progress;
+        if (publishStatus) latestProgress = progress;
         progressListener.accept(progress);
         return progress;
     }

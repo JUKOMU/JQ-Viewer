@@ -44,7 +44,7 @@
                   class="icon-action speed-btn"
                   :class="{ spinning: measuring }"
                   type="button"
-                  :disabled="measuring"
+                  :disabled="measuring || !!measuringDomain"
                   aria-label="测量线路延迟"
                   title="测量线路延迟"
                   @click="handleMeasureLatency"
@@ -67,33 +67,47 @@
             <div class="card domain-card">
               <div v-if="visibleError" class="operation-error">{{ visibleError }}</div>
               <div v-if="store.domains.value.length" class="domain-list">
-                <button
+                <div
                   v-for="d in store.domains.value"
                   :key="d.domain"
                   class="domain-row route-row"
-                  :aria-pressed="
-                    route.mode.value === 'manual' && route.selectedDomain.value === d.domain
-                  "
-                  :disabled="route.loading.value"
-                  type="button"
-                  @click="selectRoute('manual', d.domain)"
+                  :class="{ selected: route.mode.value === 'manual' && route.selectedDomain.value === d.domain }"
                 >
-                  <span
-                    class="domain-dot"
-                    :class="store.allDeadFallback.value ? 'dead' : d.reachable ? 'alive' : 'dead'"
-                  />
-                  <span class="domain-name">{{ d.domain }}</span>
+                  <button
+                    class="route-row-select"
+                    :aria-pressed="route.mode.value === 'manual' && route.selectedDomain.value === d.domain"
+                    :disabled="route.loading.value"
+                    type="button"
+                    @click="selectRoute('manual', d.domain)"
+                  >
+                    <span
+                      class="domain-dot"
+                      :class="store.allDeadFallback.value ? 'dead' : d.reachable ? 'alive' : 'dead'"
+                    />
+                    <span class="domain-name">{{ d.domain }}</span>
+                  </button>
+                  <button
+                    class="icon-action row-speed-btn"
+                    :class="{ spinning: measuringDomain === d.domain }"
+                    type="button"
+                    :disabled="measuring || !!measuringDomain"
+                    :aria-label="`测速 ${d.domain}`"
+                    :title="`测速 ${d.domain}`"
+                    @click="handleMeasureDomain(d.domain)"
+                  >
+                    <IonIcon :icon="speedometerOutline" aria-hidden="true" />
+                  </button>
                   <span class="latency" :class="latencyClass(d.domain, d.reachable)">
-                    {{ latencyText(d.domain, d.reachable) }}
+                    {{ measuringDomain === d.domain ? '测速中' : latencyText(d.domain, d.reachable) }}
                   </span>
-                  <span class="route-choice">
+                  <span class="route-choice" @click="selectRoute('manual', d.domain)">
                     {{
                       route.mode.value === 'manual' && route.selectedDomain.value === d.domain
                         ? '已选择'
                         : '选择'
                     }}
                   </span>
-                </button>
+                </div>
               </div>
               <div v-else-if="store.loading.value" class="empty-state">正在读取域名状态...</div>
               <div v-else-if="store.clientState.value.state === 'initializing'" class="empty-state">
@@ -120,7 +134,7 @@
                 class="route-mode-row"
                 type="button"
                 :aria-pressed="imageRouteMode === 'auto'"
-                :disabled="!imageRouteSettingsReady || imageMeasuring"
+                :disabled="!imageRouteSettingsReady || imageMeasuring || !!measuringImageHost"
                 @click="selectImageRoute('auto')"
               >
                 <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
@@ -136,7 +150,7 @@
                   class="icon-action speed-btn"
                   :class="{ spinning: imageMeasuring }"
                   type="button"
-                  :disabled="!imageRouteSettingsReady || imageMeasuring"
+                  :disabled="!imageRouteSettingsReady || imageMeasuring || !!measuringImageHost"
                   aria-label="测量图片线路"
                   title="测量图片线路"
                   @click="handleMeasureImageHosts()"
@@ -150,19 +164,35 @@
                 {{ imageApplyError || imageRouteSettingsError || imageRouteError }}
               </div>
               <div v-if="imageHostCandidates.length" class="domain-list">
-                <button
+                <div
                   v-for="host in imageHostCandidates"
                   :key="host"
                   class="domain-row route-row"
-                  :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
-                  :disabled="!imageRouteSettingsReady || imageMeasuring"
-                  type="button"
-                  @click="selectImageRoute('manual', host)"
+                  :class="{ selected: imageRouteMode === 'manual' && imageRouteHost === host }"
                 >
-                  <span class="domain-dot" :class="imageHostStatusClass(host)" />
-                  <span class="domain-name">{{ host }}</span>
+                  <button
+                    class="route-row-select"
+                    :aria-pressed="imageRouteMode === 'manual' && imageRouteHost === host"
+                    :disabled="!imageRouteSettingsReady || imageMeasuring"
+                    type="button"
+                    @click="selectImageRoute('manual', host)"
+                  >
+                    <span class="domain-dot" :class="imageHostStatusClass(host)" />
+                    <span class="domain-name">{{ host }}</span>
+                  </button>
+                  <button
+                    class="icon-action row-speed-btn"
+                    :class="{ spinning: measuringImageHost === host }"
+                    type="button"
+                    :disabled="!imageRouteSettingsReady || imageMeasuring || !!measuringImageHost"
+                    :aria-label="`测速 ${host}`"
+                    :title="`测速 ${host}`"
+                    @click="handleMeasureImageHost(host)"
+                  >
+                    <IonIcon :icon="speedometerOutline" aria-hidden="true" />
+                  </button>
                   <IonSpinner
-                    v-if="imageHostIsMeasuring(host)"
+                    v-if="imageHostIsMeasuring(host) || measuringImageHost === host"
                     class="host-spinner"
                     name="crescent"
                     role="status"
@@ -171,10 +201,10 @@
                   <span v-else class="latency" :class="imageHostLatencyClass(host)">
                     {{ imageHostLatencyText(host) }}
                   </span>
-                  <span class="route-choice">
+                  <span class="route-choice" @click="selectImageRoute('manual', host)">
                     {{ imageRouteMode === 'manual' && imageRouteHost === host ? '已选择' : '选择' }}
                   </span>
-                </button>
+                </div>
               </div>
               <div v-else-if="imageMeasuring" class="empty-state">正在测量图片线路...</div>
               <div v-else-if="!imageRouteError" class="empty-state">暂无图片线路</div>
@@ -228,6 +258,7 @@ const store = useNetworkProbeStore()
 const route = useApiRoute()
 const refreshing = ref(false)
 const measuring = ref(false)
+const measuringDomain = ref('')
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
 const operationError = ref('')
 const visibleError = computed(() => operationError.value || store.errorMessage.value)
@@ -244,6 +275,7 @@ const imageHostResults = ref<Array<{
   error?: string
 }>>([])
 const imageMeasuring = ref(false)
+const measuringImageHost = ref('')
 const imageCurrentHost = ref<string | null>(null)
 const imageRunId = ref(0)
 const imageRevision = ref(0)
@@ -435,7 +467,7 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
 }
 
 async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value === 'auto') {
-  if (!imageRouteSettingsReady.value || imageMeasuring.value) return
+  if (!imageRouteSettingsReady.value || imageMeasuring.value || measuringImageHost.value) return
   imageStatusQuerySequence++
   imageMeasureRequestPending.value = true
   imageMeasuring.value = true
@@ -532,6 +564,34 @@ function handleMeasureLatency() {
     })
 }
 
+async function handleMeasureDomain(domain: string) {
+  if (measuring.value || measuringDomain.value) return
+  measuringDomain.value = domain
+  operationError.value = ''
+  try {
+    const result = await JmcomicService.measureDomainLatency(domain)
+    latencyMap.value = { ...latencyMap.value, [domain]: result }
+  } catch (error) {
+    operationError.value = normalizeRuntimeError(error, '测速失败').message
+  } finally {
+    measuringDomain.value = ''
+  }
+}
+
+async function handleMeasureImageHost(host: string) {
+  if (!imageRouteSettingsReady.value || imageMeasuring.value || measuringImageHost.value) return
+  measuringImageHost.value = host
+  imageRouteError.value = ''
+  try {
+    const result = await JmcomicService.measureImageHost(host)
+    imageHostResults.value = [...imageHostResults.value.filter((item) => item.host !== host), result]
+  } catch (error) {
+    imageRouteError.value = normalizeRuntimeError(error, '图片线路测速失败').message
+  } finally {
+    measuringImageHost.value = ''
+  }
+}
+
 function clearRefreshTimer() {
   if (!refreshTimer) return
   clearTimeout(refreshTimer)
@@ -539,19 +599,15 @@ function clearRefreshTimer() {
 }
 
 function latencyText(domain: string, reachable: boolean): string {
-  if (!reachable) return '不可达'
   const r = latencyMap.value[domain]
-  if (!r) return '/ ms'
-  if (r.timedOut) return '超时'
-  return r.latencyMs + ' ms'
+  if (r) return r.timedOut ? '超时' : r.latencyMs + ' ms'
+  return reachable ? '/ ms' : '不可达'
 }
 
 function latencyClass(domain: string, reachable: boolean): string {
-  if (!reachable) return 'lat-red'
   const r = latencyMap.value[domain]
-  if (!r) return 'lat-yellow'
-  if (r.timedOut) return 'lat-red'
-  return 'lat-green'
+  if (r) return r.timedOut ? 'lat-red' : 'lat-green'
+  return reachable ? 'lat-yellow' : 'lat-red'
 }
 
 function phaseClass(phase: string): string {
@@ -758,12 +814,43 @@ function formatTime(ts: number): string {
   cursor: pointer;
 }
 
-.route-row[aria-pressed='true'] {
-  background: var(--ion-color-step-50, #f5f5f5);
+.route-row-select {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.route-row:disabled {
-  opacity: 0.6;
+.route-row-select:disabled {
+  cursor: default;
+}
+
+.route-row-select[aria-pressed='true'] .domain-name {
+  font-weight: 600;
+}
+
+.route-row-select:focus-visible {
+  outline: 2px solid #e8843c;
+  outline-offset: 2px;
+}
+
+.row-speed-btn {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.route-row.selected {
+  background: var(--ion-color-step-50, #f5f5f5);
 }
 
 .route-choice {
@@ -953,7 +1040,7 @@ function formatTime(ts: number): string {
 .domain-header {
   margin-top: 20px;
 }
-.domain-card .route-row[aria-pressed='true'] {
+.domain-card .route-row.selected {
   background: #fff0e7;
 }
 .domain-card .route-choice {

@@ -15,6 +15,10 @@ import java.util.concurrent.*;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 /**
  * 读取 JMComic 域名状态、合并探活请求并监听 Desktop 网络变化。
@@ -104,6 +108,29 @@ public final class NetworkService implements AutoCloseable {
         LOGGER.info("network_request operation=latency status=success domains={} timedOut={} elapsedMs={}",
             results.size(), timedOut, elapsedMs(started));
         return result;
+    }
+
+    public LatencyResultResponse measureDomainLatency(String domain) {
+        ensureOpen();
+        if (!getDomainStates().domains().stream().anyMatch(item -> item.domain().equals(domain))) {
+            throw ApiException.invalidRequest("无效的 API 域名");
+        }
+        long started = System.nanoTime();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("https://" + domain))
+            .timeout(java.time.Duration.ofSeconds(5))
+            .method("HEAD", HttpRequest.BodyPublishers.noBody())
+            .build();
+        try {
+            HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(5)).build()
+                .send(request, HttpResponse.BodyHandlers.discarding());
+            return new LatencyResultResponse(domain,
+                (int) TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), false);
+        } catch (java.io.IOException error) {
+            return new LatencyResultResponse(domain, 0, true);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            return new LatencyResultResponse(domain, 0, true);
+        }
     }
 
     public void reprobeDomains() {

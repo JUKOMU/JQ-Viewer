@@ -326,7 +326,17 @@
 <script setup lang="ts">
 defineOptions({ name: 'DownloadPage' })
 
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IonContent,
@@ -402,6 +412,34 @@ const exportInitialExportId = computed(() =>
 )
 const exportManagementRef = ref<InstanceType<typeof LocalFileManagementView> | null>(null)
 const exportOverlayTarget = ref<HTMLElement | null>(null)
+const downloadContentRef = ref<InstanceType<typeof IonContent> | null>(null)
+let downloadScrollTop = 0
+
+const resolveDownloadScrollElement = async () => {
+  const ionContentEl = downloadContentRef.value?.$el as any
+  if (!ionContentEl) return null
+  return (await ionContentEl.getScrollElement?.()) ?? null
+}
+
+const saveDownloadScrollPosition = async () => {
+  const el = await resolveDownloadScrollElement()
+  if (el) downloadScrollTop = el.scrollTop
+}
+
+const restoreDownloadScrollPosition = async () => {
+  await nextTick()
+  const el = await resolveDownloadScrollElement()
+  if (el) el.scrollTop = Math.max(0, downloadScrollTop)
+}
+
+onActivated(() => {
+  void restoreDownloadScrollPosition()
+})
+
+onDeactivated(() => {
+  void saveDownloadScrollPosition()
+})
+
 const exportSelectionActive = ref(false)
 const downloadSelection = useMultiSelect<string>()
 const {
@@ -503,7 +541,6 @@ const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState
   failed: createDownloadGroup('failed', '下载失败', true),
 })
 const downloadGroups = computed(() => Object.values(downloadGroupStates))
-const downloadContentRef = ref<any>(null)
 const tasks = ref<DownloadTask[]>([])
 const initialLoading = computed(
   () =>

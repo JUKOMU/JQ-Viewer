@@ -143,7 +143,7 @@
                 :disabled="downloadSelectionActive"
                 :aria-controls="`download-group-${group.key}`"
                 :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
-                @click="toggleGroup(group.key)"
+                @click="toggleGroup(group.key, $event)"
               >
                 <span class="section-title">
                   {{ group.label }} <span class="section-count">({{ group.totalCount }})</span>
@@ -1215,22 +1215,48 @@ const refreshGroupsFirstPage = async (keys: DownloadGroupKey[]) => {
   await Promise.all(keys.map(refreshGroupFirstPage))
 }
 
-const toggleGroup = (key: DownloadGroupKey) => {
+const toggleGroup = async (key: DownloadGroupKey, event?: MouseEvent) => {
   if (downloadSelectionActive.value) return
   const group = downloadGroupStates[key]
   group.collapsed = !group.collapsed
-  if (!group.collapsed && !group.initialized) void loadGroup(key)
+  if (group.collapsed) {
+    const header = event ? (event.currentTarget as HTMLElement).parentElement : null
+    const headerTop = header?.getBoundingClientRect().top
+    if (header && headerTop !== undefined) {
+      await nextTick()
+      const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
+      if (scrollElement) {
+        scrollElement.scrollTop += header.getBoundingClientRect().top - headerTop
+      }
+    }
+  } else if (!group.initialized) {
+    void loadGroup(key)
+  }
 }
 
 const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   const scrollTop = event.detail?.scrollTop ?? 0
+  const isRestoredScroll =
+    restoredDownloadScrollTop !== null && Math.abs(scrollTop - restoredDownloadScrollTop) < 1
   if (restoredDownloadScrollTop !== null) {
-    const restored = restoredDownloadScrollTop
     restoredDownloadScrollTop = null
-    if (Math.abs(scrollTop - restored) < 1) return
   }
   const scrollElement = await downloadContentRef.value?.$el?.getScrollElement?.()
-  if (!scrollElement) return
+  const contentElement = downloadContentRef.value?.$el as HTMLElement | undefined
+  if (!scrollElement || !contentElement) return
+
+  const scrollTopEdge = scrollElement.getBoundingClientRect().top
+  const sections = contentElement.querySelectorAll('.download-group')
+  sections.forEach((section) => {
+    const header = section.querySelector('.section-header') as HTMLElement | null
+    const sectionRect = section.getBoundingClientRect()
+    const isStuck =
+      header !== null &&
+      sectionRect.top <= scrollTopEdge &&
+      sectionRect.bottom > scrollTopEdge + header.offsetHeight
+    header?.classList.toggle('is-stuck', isStuck)
+  })
+  if (isRestoredScroll) return
 
   if (shouldLoadDownloadPreviousPage(scrollTop)) {
     const previousGroup = downloadGroups.value.find(
@@ -2249,12 +2275,28 @@ const clearFailed = async () => {
 
 .section-header {
   display: flex;
+  position: sticky;
+  top: 0;
   align-items: center;
   justify-content: space-between;
   margin: 0;
   min-height: 44px;
   gap: 8px;
   padding: 0 2px;
+}
+
+.section-header.is-stuck {
+  z-index: 10;
+}
+
+.section-header.is-stuck::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto 0 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--ion-background-color);
+  content: '';
 }
 
 .section-toggle {
@@ -2264,7 +2306,7 @@ const clearFailed = async () => {
   flex: 1;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   color: #8a6048;

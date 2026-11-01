@@ -49,8 +49,9 @@
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
         :width-percent="readerWidthPercent"
+        :toolbar-toggle-protected="autoShowToolbarTransitionPending"
         @update:current-index="onPageChange"
-        @toggle-toolbar="toggleToolbar"
+        @toggle-toolbar="onHorizontalToggleToolbar"
         @image-error="onImageError"
         @retry-images="retryFailedImages"
       />
@@ -64,6 +65,7 @@
           :chapters="chapters"
           :current-chapter-id="chapterId"
           @click.stop
+          @transitionend="onAutoShowToolbarTransitionEnd"
           @open-settings="settingsPanelVisible = true"
           @select-chapter="switchChapter"
           @update:current="onProgressDrag"
@@ -160,6 +162,7 @@ const TOOLBAR_DOUBLE_TAP_DIST = 30
 const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
 let autoShowToolbarTimer: ReturnType<typeof setTimeout> | null = null
+const autoShowToolbarTransitionPending = ref(false)
 let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
@@ -266,8 +269,19 @@ const isAtReaderEnd = () => {
 }
 
 const toggleToolbar = () => {
+  if (autoShowToolbarTransitionPending.value) return
   clearAutoShowToolbarTimer()
   setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const onHorizontalToggleToolbar = (protectedAtTap: boolean) => {
+  if (protectedAtTap) return
+  toggleToolbar()
+}
+
+const onAutoShowToolbarTransitionEnd = (event: TransitionEvent) => {
+  if (event.target !== event.currentTarget) return
+  autoShowToolbarTransitionPending.value = false
 }
 
 const restoreReaderFocus = (event: MouseEvent) => {
@@ -282,6 +296,7 @@ const scheduleToolbarAtReaderEnd = () => {
     autoShowToolbarTimer = null
     if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd() || !isAtReaderEnd())
       return
+    autoShowToolbarTransitionPending.value = true
     setToolbarVisible(true)
   }, AUTO_SHOW_TOOLBAR_DELAY_MS)
 }
@@ -311,6 +326,7 @@ const clearToolbarTapTimer = () => {
 const onRootClick = (ev: MouseEvent) => {
   if (!isVertical.value) return
   if (settingsPanelVisible.value) return
+  if (autoShowToolbarTransitionPending.value) return
 
   const now = Date.now()
   const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
@@ -1336,6 +1352,7 @@ onUnmounted(() => {
   chapterLoadVersion++
   clearToolbarTapTimer()
   clearAutoShowToolbarTimer()
+  autoShowToolbarTransitionPending.value = false
   deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)

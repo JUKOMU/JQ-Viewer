@@ -68,6 +68,7 @@ const props = withDefaults(
     currentIndex: number
     widthPercent?: number | null
     enableMouseControls?: boolean
+    toolbarToggleProtected?: boolean
   }>(),
   {
     failedSortOrders: () => new Set<number>(),
@@ -76,12 +77,13 @@ const props = withDefaults(
     retryingSortOrders: () => new Set<number>(),
     enableMouseControls: false,
     widthPercent: null,
+    toolbarToggleProtected: false,
   },
 )
 
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
-  'toggle-toolbar': []
+  'toggle-toolbar': [protectedAtTap: boolean]
   'image-error': [sortOrder: number, failedUrl: string]
   'retry-images': []
 }>()
@@ -246,6 +248,7 @@ let pinchRelX = 0,
   pinchRelY = 0
 let fingers = 0
 let moved = false
+let toolbarToggleProtectedAtTouchStart = false
 let lastTapT = 0,
   lastTapX = 0,
   lastTapY = 0
@@ -385,6 +388,7 @@ function onTouchStart(ev: TouchEvent) {
   refreshAfterResize()
   isAnimating.value = false
   fingers = ev.touches.length
+  toolbarToggleProtectedAtTouchStart = props.toolbarToggleProtected
 
   if (ev.touches.length >= 2) {
     ev.preventDefault()
@@ -509,8 +513,9 @@ function onTouchEnd(ev: TouchEvent) {
         }
       } else {
         if (tapTimer) clearTimeout(tapTimer)
+        const protectedAtTap = toolbarToggleProtectedAtTouchStart
         tapTimer = setTimeout(() => {
-          emit('toggle-toolbar')
+          emit('toggle-toolbar', protectedAtTap)
           tapTimer = null
         }, DOUBLE_TAP_MS)
       }
@@ -567,8 +572,9 @@ function onTouchEnd(ev: TouchEvent) {
         lastTapT = 0
       } else {
         if (tapTimer) clearTimeout(tapTimer)
+        const protectedAtTap = toolbarToggleProtectedAtTouchStart
         tapTimer = setTimeout(() => {
-          emit('toggle-toolbar')
+          emit('toggle-toolbar', protectedAtTap)
           tapTimer = null
         }, DOUBLE_TAP_MS)
         lastTapT = Date.now()
@@ -650,7 +656,7 @@ function onMouseClick(ev: MouseEvent) {
   const rightEdge = zoomScale.value > 1 ? 0.8 : 0.6
   const direction = x < width * leftEdge ? -1 : x > width * rightEdge ? 1 : 0
   if (direction === 0) {
-    emit('toggle-toolbar')
+    emit('toggle-toolbar', false)
     return
   }
   const target = displayIndex.value + direction

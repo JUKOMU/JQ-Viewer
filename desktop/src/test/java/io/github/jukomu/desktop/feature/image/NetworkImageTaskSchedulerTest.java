@@ -59,6 +59,30 @@ class NetworkImageTaskSchedulerTest {
     }
 
     @Test
+    void cancelledSessionMarkersAreBoundedAndKeepRecentSessions() throws Exception {
+        NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
+        for (int index = 0; index <= NetworkImageTaskScheduler.MAX_CANCELLED_SESSIONS; index++) {
+            scheduler.cancelSession("reader-" + index);
+        }
+
+        boolean recentAccepted = scheduler.submit(IMAGE, "recent/image",
+            "reader-" + NetworkImageTaskScheduler.MAX_CANCELLED_SESSIONS, 300, false,
+            (image, replaceCache, cacheLookup, networkFetcher) -> networkFetcher.fetch(image),
+            image -> new byte[]{1}, bytes -> { throw new AssertionError("cancelled session received success"); },
+            error -> { throw new AssertionError("cancelled session received failure"); });
+        assertFalse(recentAccepted);
+
+        CountDownLatch completed = new CountDownLatch(1);
+        boolean oldestAccepted = scheduler.submit(IMAGE, "oldest/image", "reader-0", 300, false,
+            (image, replaceCache, cacheLookup, networkFetcher) -> networkFetcher.fetch(image),
+            image -> new byte[]{1}, bytes -> completed.countDown(),
+            error -> { throw new AssertionError(error); });
+
+        assertTrue(oldestAccepted);
+        assertTrue(completed.await(1, TimeUnit.SECONDS));
+    }
+
+    @Test
     void highPriorityTaskStartsWhileLowerTaskIsStillRunning() throws Exception {
         NetworkImageTaskScheduler scheduler = new NetworkImageTaskScheduler(1);
         CountDownLatch lowStarted = new CountDownLatch(1);

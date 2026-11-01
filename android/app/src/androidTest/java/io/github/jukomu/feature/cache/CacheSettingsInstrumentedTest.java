@@ -34,7 +34,7 @@ public class CacheSettingsInstrumentedTest {
 
         PreloadService preloadService = new PreloadService(
             imageCache, null, settingsStore, null,
-            null, null, null, null, context, policy, 1);
+            null, null, null, context, policy, 1);
         JSONObject capacityInfo = preloadService.getCacheCapacityInfo();
 
         assertEquals(requestedMb, allSettings.getLong("cacheRequestedMb"));

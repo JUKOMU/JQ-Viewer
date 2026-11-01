@@ -441,7 +441,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
                                      CursorBoundary boundary, int limit) throws org.json.JSONException {
         String value = switch (sort) {
             case "title" -> "g.album_title";
-            case "id" -> "g.album_id";
+            case "id" -> "CAST(g.album_id AS INTEGER)";
             case "author" -> "r.author";
             default -> "g.latest_completed_at";
         };
@@ -539,7 +539,8 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     private static String sortColumn(String sort) {
         return switch (sort) {
             case "title" -> COL_ALBUM_TITLE;
-            case "id" -> COL_ALBUM_ID;
+            // ID 保持字符串存储，排序和游标比较统一使用整数值。
+            case "id" -> "CAST(" + COL_ALBUM_ID + " AS INTEGER)";
             case "author" -> COL_AUTHOR;
             default -> COL_CREATED_AT;
         };
@@ -558,11 +559,12 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         String op = "desc".equals(direction) ? "<" : ">";
         String nullOp = reverseNullRank ? "<" : ">";
         String nullFlag = "CASE WHEN " + value + " IS NULL OR TRIM(" + value + ")='' THEN 1 ELSE 0 END";
+        String boundaryValue = value.startsWith("CAST(") ? "CAST(? AS INTEGER)" : "?";
         // NULL 与空字符串共享 null-rank；NULL 没有可比较值时，直接使用稳定键继续分页。
         return "(" + nullFlag + " " + nullOp + " CAST(? AS INTEGER) OR ("
             + nullFlag + "=CAST(? AS INTEGER) AND "
-            + "((" + nullFlag + "=0 AND (" + value + " " + op + " ? OR ("
-            + value + "=? AND " + stable + " " + op + " ?)))"
+            + "((" + nullFlag + "=0 AND (" + value + " " + op + " " + boundaryValue + " OR ("
+            + value + "=" + boundaryValue + " AND " + stable + " " + op + " ?)))"
             + " OR (" + nullFlag + "=1 AND " + stable + " " + op + " ?))))";
     }
 
@@ -619,7 +621,8 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         }
 
         int nullFlag() {
-            return value == null || value.isBlank() ? 1 : 0;
+            // 与 SQLite TRIM 的默认规则一致，只将普通空格视为空值。
+            return value == null || value.replace(" ", "").isEmpty() ? 1 : 0;
         }
 
         String encode(boolean previous, String status, String sort, String direction) {

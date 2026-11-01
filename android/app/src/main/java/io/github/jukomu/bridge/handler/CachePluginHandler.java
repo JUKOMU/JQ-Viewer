@@ -28,6 +28,8 @@ public final class CachePluginHandler {
             String photoId = call.getString("photoId");
             String type = call.getString("type", "image");
             boolean replacePending = call.getBoolean("replacePending", false);
+            String sessionId = call.getString("sessionId");
+            Integer priority = call.getInt("priority");
             JSArray imagesArray = call.getArray("images");
             JSONArray jsonImages = new JSONArray();
             if (imagesArray != null) {
@@ -39,12 +41,28 @@ public final class CachePluginHandler {
                     }
                 }
             }
-            JSONObject result = preloadService.preloadImages(
-                photoId, type, jsonImages, replacePending);
+            int effectivePriority = priority == null ? ("thumb".equals(type) ? 100 : 200) : priority;
+            JSONObject result = sessionId == null
+                ? preloadService.preloadImages(photoId, type, jsonImages, replacePending)
+                : preloadService.preloadImages(photoId, type, jsonImages, replacePending,
+                    sessionId, effectivePriority);
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
+    }
+
+    /** 取消指定图片预载会话的需求，不会中断已开始的网络请求。 */
+    public void cancelPreload(PluginCall call) {
+        String sessionId = call.getString("sessionId");
+        if (sessionId == null || sessionId.isBlank()) {
+            call.reject("sessionId is required");
+            return;
+        }
+        preloadService.cancelPreload(sessionId);
+        JSObject result = new JSObject();
+        result.put("success", true);
+        call.resolve(result);
     }
 
     /**

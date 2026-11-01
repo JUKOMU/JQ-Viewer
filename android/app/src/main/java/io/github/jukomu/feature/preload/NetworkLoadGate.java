@@ -2,13 +2,16 @@ package io.github.jukomu.feature.preload;
 
 import io.github.jukomu.feature.cache.CacheCapacityPolicy;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
 /**
  * 预载网络任务的动态并发门禁。
  *
- * <p>门禁只阻塞专用网络线程池，不占用本地图片处理或下载准备线程。</p>
+ * <p>门禁只约束图片网络加载，不占用本地图片处理或下载准备线程。</p>
  */
 public final class NetworkLoadGate {
 
@@ -16,7 +19,7 @@ public final class NetworkLoadGate {
 
     private final Object lock = new Object();
     private final int configuredConcurrency;
-    private int activeLoads;
+    private final Set<Permit> permits = Collections.newSetFromMap(new IdentityHashMap<>());
     private CacheCapacityPolicy.PressureLevel pressureLevel =
         CacheCapacityPolicy.PressureLevel.NORMAL;
     private boolean closed;
@@ -38,9 +41,10 @@ public final class NetworkLoadGate {
                     return null;
                 }
                 int allowedLoads = getAllowedLoads();
-                if (allowedLoads > activeLoads) {
-                    activeLoads++;
-                    return new Permit(this);
+                if (allowedLoads > permits.size()) {
+                    Permit permit = new Permit(this);
+                    permits.add(permit);
+                    return permit;
                 }
                 lock.wait(WAIT_INTERVAL_MS);
             }
@@ -58,7 +62,7 @@ public final class NetworkLoadGate {
 
     public int getActiveLoads() {
         synchronized (lock) {
-            return activeLoads;
+            return permits.size();
         }
     }
 
@@ -107,9 +111,7 @@ public final class NetworkLoadGate {
                 return;
             }
             synchronized (owner.lock) {
-                if (owner.activeLoads > 0) {
-                    owner.activeLoads--;
-                }
+                owner.permits.remove(this);
                 owner.lock.notifyAll();
             }
         }

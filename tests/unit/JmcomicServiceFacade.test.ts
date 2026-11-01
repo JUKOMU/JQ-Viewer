@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   addListener: vi.fn(),
+  preloadImages: vi.fn(),
+  cancelPreload: vi.fn(),
   retryImage: vi.fn(),
   getBrowseHistory: vi.fn(),
   getBrowseHistoryOverview: vi.fn(),
@@ -15,6 +17,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/runtime/facadeClient', () => ({
   createActiveFacadeClient: () => ({
     addListener: mocks.addListener,
+    preloadImages: mocks.preloadImages,
+    cancelPreload: mocks.cancelPreload,
     retryImage: mocks.retryImage,
     getBrowseHistory: mocks.getBrowseHistory,
     getBrowseHistoryOverview: mocks.getBrowseHistoryOverview,
@@ -32,6 +36,7 @@ vi.mock('@/services/NotificationPermissionService', () => ({
 }))
 
 import type { ImageReadyEvent } from '@/services/jmcomic/JmcomicClient'
+import type { ImageInfo } from '@/services/JmcomicTypes'
 import { JmcomicService } from '@/services/jmcomic/JmcomicServiceFacade'
 
 describe('JmcomicService.addImageReadyListener', () => {
@@ -52,22 +57,22 @@ describe('JmcomicService.addImageReadyListener', () => {
     const handler = vi.fn()
     await JmcomicService.addImageReadyListener('chapter-1', handler, { type: 'image' })
 
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageReadyHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image' })
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 's1' })
+    imageReadyHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image', sessionId: 's2' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image', sessionId: 's3' })
 
     expect(handler).toHaveBeenCalledTimes(1)
-    expect(handler).toHaveBeenCalledWith(3)
+    expect(handler).toHaveBeenCalledWith(3, 's3')
   })
 
   test('未传类型时保持原有兼容行为', async () => {
     const handler = vi.fn()
     await JmcomicService.addImageReadyListener('chapter-1', handler)
 
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 2, type: 'image' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 's1' })
+    imageReadyHandler?.({ photoId: 'chapter-1', sortOrder: 2, type: 'image', sessionId: 's2' })
 
-    expect(handler.mock.calls).toEqual([[1], [2]])
+    expect(handler.mock.calls).toEqual([[1, 's1'], [2, 's2']])
   })
 })
 
@@ -85,13 +90,13 @@ describe('JmcomicService.addImageFailedListener', () => {
 
     await JmcomicService.addImageFailedListener('chapter-1', handler, { type: 'image' })
 
-    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb' })
-    imageFailedHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image' })
-    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image' })
+    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 1, type: 'thumb', sessionId: 's1' })
+    imageFailedHandler?.({ photoId: 'chapter-2', sortOrder: 2, type: 'image', sessionId: 's2' })
+    imageFailedHandler?.({ photoId: 'chapter-1', sortOrder: 3, type: 'image', sessionId: 's3' })
 
     expect(mocks.addListener).toHaveBeenCalledWith('imageFailed', expect.any(Function))
     expect(handler).toHaveBeenCalledTimes(1)
-    expect(handler).toHaveBeenCalledWith(3)
+    expect(handler).toHaveBeenCalledWith(3, 's3')
   })
 })
 
@@ -109,6 +114,29 @@ describe('JmcomicService.retryImage', () => {
 
     await expect(JmcomicService.retryImage('chapter-1', image)).resolves.toEqual({ success: true })
     expect(mocks.retryImage).toHaveBeenCalledWith({ photoId: 'chapter-1', image })
+  })
+})
+
+describe('JmcomicService 图片预载会话', () => {
+  test('传递调度优先级和 session，并可取消 session', async () => {
+    mocks.preloadImages.mockResolvedValueOnce({ cached: [], pending: [1] })
+    mocks.cancelPreload.mockResolvedValueOnce({ success: true })
+
+    await JmcomicService.preloadImages('chapter-1', [{ sortOrder: 1 } as ImageInfo], 'image', {
+      sessionId: 'reader-session',
+      priority: 300,
+    })
+    await JmcomicService.cancelPreload('reader-session')
+
+    expect(mocks.preloadImages).toHaveBeenCalledWith({
+      photoId: 'chapter-1',
+      images: [{ sortOrder: 1 }],
+      type: 'image',
+      replacePending: undefined,
+      sessionId: 'reader-session',
+      priority: 300,
+    })
+    expect(mocks.cancelPreload).toHaveBeenCalledWith({ sessionId: 'reader-session' })
   })
 })
 

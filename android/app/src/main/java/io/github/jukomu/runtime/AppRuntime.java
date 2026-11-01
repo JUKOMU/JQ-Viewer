@@ -34,7 +34,6 @@ public final class AppRuntime {
     private final RuntimeEventRouter eventRouter = new RuntimeEventRouter();
     private final ExecutorService imageExecutor;
     private final ExecutorService imageFileExecutor;
-    private final ExecutorService networkExecutor;
     private final ExecutorService downloadPrepareExecutor;
     private final PreloadService preloadService;
     private final DownloadService downloadService;
@@ -51,12 +50,11 @@ public final class AppRuntime {
             preloadConcurrency);
         imageExecutor = ServiceExecutors.fixed("image", preloadConcurrency);
         imageFileExecutor = ServiceExecutors.fixed("image-file", preloadConcurrency);
-        networkExecutor = ServiceExecutors.fixed("image-network", preloadConcurrency);
         downloadPrepareExecutor = ServiceExecutors.fixed(
             "download-prepare", DOWNLOAD_PREPARE_EXECUTOR_SIZE);
         preloadService = new PreloadService(
             imageCache, fileStore, settingsDb, sessionManager::getClient,
-            imageExecutor, imageFileExecutor, networkExecutor, eventRouter,
+            imageExecutor, imageFileExecutor, eventRouter,
             applicationContext, cachePolicy, preloadConcurrency);
         downloadService = new DownloadService(
             downloadDb, fileStore, sessionManager::getClient,
@@ -64,7 +62,7 @@ public final class AppRuntime {
         ExportService.getInstance(applicationContext)
             .setMetadataResolver(downloadService::prepareExportMetadata);
         updateService = new UpdateService(applicationContext);
-        LOGGER.info("app_runtime event=create phase=complete pools=4 durationMs={} status=ready",
+        LOGGER.info("app_runtime event=create phase=complete pools=3 durationMs={} status=ready",
             elapsedMs(startedAt));
     }
 

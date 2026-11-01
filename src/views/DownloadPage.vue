@@ -1580,7 +1580,7 @@ onIonViewWillEnter(() => {
   ionEnterCount++
   activeMainView.value =
     route.query.view === 'pdf' || route.query.view === 'export' ? 'export' : 'downloads'
-  void syncDownloadState()
+  if (ionEnterCount === 1) void syncDownloadState()
   if (activeMainView.value === 'export' && ionEnterCount > 1) {
     void exportManagementRef.value?.refresh()
   }

@@ -143,4 +143,37 @@ public class NetworkLoadGateTest {
         thirdPermit.close();
         first.close();
     }
+
+    @Test
+    public void detachedLoadStillCountsAgainstPhysicalConcurrency() throws Exception {
+        NetworkLoadGate gate = new NetworkLoadGate(1);
+        gate.setPressureLevel(CacheCapacityPolicy.PressureLevel.RUNNING_CRITICAL);
+        NetworkLoadGate.Permit original = gate.acquire(() -> false);
+        AtomicReference<NetworkLoadGate.Permit> replacement = new AtomicReference<>();
+        CountDownLatch acquired = new CountDownLatch(1);
+        Thread waiter = new Thread(() -> {
+            try {
+                replacement.set(gate.acquire(() -> false));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                acquired.countDown();
+            }
+        });
+        waiter.start();
+
+        try {
+            assertFalse(acquired.await(100, TimeUnit.MILLISECONDS));
+            assertEquals(1, gate.getActiveLoads());
+            original.close();
+            assertTrue(acquired.await(1, TimeUnit.SECONDS));
+            assertNotNull(replacement.get());
+            assertEquals(1, gate.getActiveLoads());
+        } finally {
+            original.close();
+            if (replacement.get() != null) replacement.get().close();
+            gate.close();
+            waiter.join(1_000L);
+        }
+    }
 }

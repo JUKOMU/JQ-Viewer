@@ -64,23 +64,25 @@ public class FeatureEventAdapterInstrumentedTest {
 
     @Test
     public void imageReadyUsesExpectedPayload() {
-        adapter.onImageReady("photo", 9, "thumbnail");
+        adapter.onImageReady("photo", 9, "thumbnail", "reader-session");
 
         assertEquals("imageReady", eventName);
         assertEquals("photo", eventData.getString("photoId"));
         assertEquals(9, eventData.getInteger("sortOrder").intValue());
         assertEquals("thumbnail", eventData.getString("type"));
+        assertEquals("reader-session", eventData.getString("sessionId"));
         assertEquals(1, eventCount);
     }
 
     @Test
     public void imageFailedUsesExpectedPayload() {
-        adapter.onImageFailed("photo", 9, "image");
+        adapter.onImageFailed("photo", 9, "image", "retry-session");
 
         assertEquals("imageFailed", eventName);
         assertEquals("photo", eventData.getString("photoId"));
         assertEquals(9, eventData.getInteger("sortOrder").intValue());
         assertEquals("image", eventData.getString("type"));
+        assertEquals("retry-session", eventData.getString("sessionId"));
         assertEquals(1, eventCount);
     }
 

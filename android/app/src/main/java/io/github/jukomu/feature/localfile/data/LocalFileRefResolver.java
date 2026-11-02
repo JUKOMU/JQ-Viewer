@@ -93,7 +93,9 @@ public final class LocalFileRefResolver {
         }
     }
 
-    /** 查询失败不是空目录或缺失。调用方拥有返回的 cursor。 */
+    /**
+     * 查询失败不是空目录或缺失。调用方拥有返回的 cursor。
+     */
     public static Cursor queryDocument(Context context, Uri uri, String... columns)
         throws IOException {
         try {
@@ -167,7 +169,9 @@ public final class LocalFileRefResolver {
         return null;
     }
 
-    /** documentId 是不透明标识，只有 provider 返回的路径才可用于定位父目录。 */
+    /**
+     * documentId 是不透明标识，只有 provider 返回的路径才可用于定位父目录。
+     */
     public static Uri parentDocumentUri(Context context, Uri file) throws IOException {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
             && DocumentsContract.isTreeUri(file)) {

@@ -4,17 +4,7 @@ import io.github.jukomu.jmcomic.api.model.JmImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -53,7 +43,7 @@ final class NetworkImageTaskScheduler {
             Task task = tasks.get(image);
             if (task != null && replaceCache && task.state != State.QUEUED
                 && (task.fetchPhase == FetchPhase.CACHE_HIT
-                    || task.fetchPhase == FetchPhase.RESULT_READY)) {
+                || task.fetchPhase == FetchPhase.RESULT_READY)) {
                 tasks.remove(image, task);
                 if (task.state == State.RUNNING) {
                     running.remove(task);
@@ -252,9 +242,9 @@ final class NetworkImageTaskScheduler {
         byte[] fetch(JmImage image) throws Exception;
     }
 
-    private enum State { QUEUED, RUNNING, DETACHED, DONE, CANCELLED }
+    private enum State {QUEUED, RUNNING, DETACHED, DONE, CANCELLED}
 
-    private enum FetchPhase { QUEUED, RESOLVING_CACHE, CACHE_MISS, CACHE_HIT, NETWORK, RESULT_READY }
+    private enum FetchPhase {QUEUED, RESOLVING_CACHE, CACHE_MISS, CACHE_HIT, NETWORK, RESULT_READY}
 
     private static final class Task {
         private final JmImage image;

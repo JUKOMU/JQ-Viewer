@@ -1,8 +1,8 @@
 package io.github.jukomu.feature.pdf.render;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.provider.DocumentsContract;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;

@@ -29,7 +29,9 @@ final class ServiceExecutors implements AutoCloseable {
     private final ExecutorService pdfCommand;
     private final ExecutorService exportJobs;
     private final ExecutorService networkCommand;
-    /** 承载长时间图片线路测速，与普通线路请求隔离。 */
+    /**
+     * 承载长时间图片线路测速，与普通线路请求隔离。
+     */
     private final ExecutorService imageRoute;
     private final ExecutorService networkProbe;
     private final ExecutorService ocr;

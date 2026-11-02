@@ -1,7 +1,5 @@
 package io.github.jukomu.desktop.bridge.handler;
 
-import java.util.UUID;
-
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
@@ -14,6 +12,7 @@ import io.github.jukomu.desktop.feature.image.model.RetryImageRequest;
 import io.github.jukomu.jmcomic.api.enums.FavoriteFolderType;
 import io.javalin.http.Context;
 
+import java.util.UUID;
 
 import static io.github.jukomu.desktop.util.RequestValidation.requiredText;
 
@@ -111,7 +110,9 @@ public final class ApiPluginHandler {
         });
     }
 
-    /** 取消指定图片预载会话的需求，不会中断已开始的网络请求。 */
+    /**
+     * 取消指定图片预载会话的需求，不会中断已开始的网络请求。
+     */
     public void cancelPreload(Context context) {
         imageRequests.run(context, CancelPreloadRequest.class, request ->
             images.cancelPreload(requiredText(request.sessionId(), "sessionId")));

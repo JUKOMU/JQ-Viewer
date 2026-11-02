@@ -76,8 +76,8 @@ final class PdfBoxExportWriter {
     }
 
     private WriteReport writeVolume(List<ExportImageDescriptor> images, File finalFile, boolean useOriginal,
-                            float compressionRatio, WriteStrategy strategy,
-                            ProgressListener listener, boolean allowOverwrite) throws IOException {
+                                    float compressionRatio, WriteStrategy strategy,
+                                    ProgressListener listener, boolean allowOverwrite) throws IOException {
         if (images.isEmpty()) {
             throw new IOException("没有可写入 PDF 的图片");
         }

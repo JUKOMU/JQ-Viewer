@@ -78,7 +78,7 @@ public class ExportNotificationHelper {
     }
 
     private PendingIntent createOpenIntent(int notificationId, String exportId, String format,
-                                         String outputFileRef) {
+                                           String outputFileRef) {
         try {
             Intent openIntent;
             if ("zip".equals(format)) {

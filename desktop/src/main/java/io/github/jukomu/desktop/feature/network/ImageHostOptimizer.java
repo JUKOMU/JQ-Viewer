@@ -20,7 +20,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-/** 在不改变 JM 库实现的前提下测量并应用图片 CDN Host。 */
+/**
+ * 在不改变 JM 库实现的前提下测量并应用图片 CDN Host。
+ */
 public final class ImageHostOptimizer {
     private static final Logger LOGGER = LoggerFactory.getLogger(ImageHostOptimizer.class);
 
@@ -31,11 +33,15 @@ public final class ImageHostOptimizer {
     private record RoundResult(long elapsedMs, long bytes, long bytesPerSecond) {
     }
 
-    /** 完整测速结果；未选出 Host 时 selectedHost 为 null。 */
+    /**
+     * 完整测速结果；未选出 Host 时 selectedHost 为 null。
+     */
     public record Result(String selectedHost, List<HostResult> hosts, long runId, long revision) {
     }
 
-    /** 当前图片线路测速状态，供事件和页面快照查询共同使用。 */
+    /**
+     * 当前图片线路测速状态，供事件和页面快照查询共同使用。
+     */
     public record Progress(long runId, long revision, boolean running, String currentHost,
                            List<HostResult> hosts, String error) {
     }
@@ -58,43 +64,58 @@ public final class ImageHostOptimizer {
     private ImageHostOptimizer() {
     }
 
-    /** 返回客户端初始化后可用于图片请求的 Host 候选。 */
+    /**
+     * 返回客户端初始化后可用于图片请求的 Host 候选。
+     */
     public static List<String> candidates() {
         LinkedHashSet<String> hosts = new LinkedHashSet<>(INITIAL_HOSTS);
         hosts.addAll(JmConstants.DEFAULT_IMAGE_DOMAINS);
         return List.copyOf(hosts);
     }
 
-    /** 判断 Host 是否仍属于客户端当前候选集合。 */
+    /**
+     * 判断 Host 是否仍属于客户端当前候选集合。
+     */
     public static boolean contains(String host) {
         return host != null && candidates().contains(host);
     }
 
-    /** 将后续由 JM 解析生成的图片 URL 固定到指定 Host。 */
+    /**
+     * 将后续由 JM 解析生成的图片 URL 固定到指定 Host。
+     */
     public static void apply(String host) {
         JmConstants.DEFAULT_IMAGE_DOMAINS = new CopyOnWriteArrayList<>(List.of(host));
     }
 
-    /** 返回最近一次图片线路测速状态。 */
+    /**
+     * 返回最近一次图片线路测速状态。
+     */
     public static Progress status() {
         return latestProgress;
     }
 
-    /** 使用固定章节前五张图片重复两轮，按有效下载吞吐量选择 Host。 */
+    /**
+     * 使用固定章节前五张图片重复两轮，按有效下载吞吐量选择 Host。
+     */
     public static synchronized Result optimize(JmApiClient client) {
         return optimize(client, ignored -> {
         });
     }
 
-    /** 使用固定样本测速，并在每个 Host 开始和完成时报告进度。 */
+    /**
+     * 使用固定样本测速，并在每个 Host 开始和完成时报告进度。
+     */
     public static synchronized Result optimize(
         JmApiClient client, Consumer<Progress> progressListener) {
         return optimize(client, candidates(), progressListener, true);
     }
 
-    /** 仅测量指定图片 Host，不改变客户端当前 Host。 */
+    /**
+     * 仅测量指定图片 Host，不改变客户端当前 Host。
+     */
     public static synchronized HostResult measureHost(JmApiClient client, String host) {
-        return optimize(client, List.of(host), ignored -> { }, false).hosts().get(0);
+        return optimize(client, List.of(host), ignored -> {
+        }, false).hosts().get(0);
     }
 
     private static Result optimize(
@@ -233,7 +254,9 @@ public final class ImageHostOptimizer {
         }
     }
 
-    /** 图片测速使用短时限请求，避免 JM 正常下载策略延长单张图片的等待。 */
+    /**
+     * 图片测速使用短时限请求，避免 JM 正常下载策略延长单张图片的等待。
+     */
     private static byte[] fetchImageBytesWithTimeout(JmImage image, long remainingNanos)
         throws IOException {
         long timeoutNanos = Math.min(

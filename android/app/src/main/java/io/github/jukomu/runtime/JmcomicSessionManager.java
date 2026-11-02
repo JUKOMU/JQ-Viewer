@@ -82,10 +82,10 @@ public final class JmcomicSessionManager {
                 .imageTimeout(Duration.ofSeconds(30))
                 .retryTimes(3)
                 .build()).thenApply(client -> {
-                    applySavedRoute(client, settingsStore);
-                    applySavedImageRoute(settingsStore);
-                    return client;
-                }),
+                applySavedRoute(client, settingsStore);
+                applySavedImageRoute(settingsStore);
+                return client;
+            }),
             new ClientSession.Observer<>() {
                 @Override
                 public void onStateChanged(ClientSession.Snapshot snapshot, JmApiClient client) {
@@ -147,7 +147,9 @@ public final class JmcomicSessionManager {
         return domain != null && !domain.isBlank() && domainStates.containsKey(domain);
     }
 
-    /** 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。 */
+    /**
+     * 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。
+     */
     static void applySavedImageRoute(SettingsStore settingsStore) {
         String host = settingsStore.getString("image_route_host");
         String mode = settingsStore.getString("image_route_mode");
@@ -173,8 +175,8 @@ public final class JmcomicSessionManager {
                         !progress.running() && progress.error() != null
                             ? "image_route_error"
                             : progress.currentHost() == null && progress.hosts().isEmpty()
-                                ? "image_route_probing"
-                                : "image_route_progress",
+                              ? "image_route_probing"
+                              : "image_route_progress",
                         progress.running() && progress.currentHost() == null && progress.hosts().isEmpty()
                             ? "开始图片线路测速"
                             : "",

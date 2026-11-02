@@ -5,8 +5,8 @@ import io.github.jukomu.desktop.bridge.RequestExecutor;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.download.DownloadLocationService;
 import io.github.jukomu.desktop.feature.download.model.DownloadLocationRequest;
-import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
+import io.github.jukomu.desktop.feature.settings.SettingsService;
 import io.github.jukomu.desktop.feature.settings.model.*;
 import io.javalin.http.Context;
 
@@ -44,7 +44,9 @@ public final class SettingsPluginHandler {
         });
     }
 
-    /** 校验并立即应用用户手动选择的图片 Host。 */
+    /**
+     * 校验并立即应用用户手动选择的图片 Host。
+     */
     public void setImageRoutePreference(Context context) {
         settingsRequests.run(context, ImageRouteRequest.class, request -> {
             if (!ImageHostOptimizer.contains(request.host())) {

@@ -45,14 +45,16 @@ public final class CachePluginHandler {
             JSONObject result = sessionId == null
                 ? preloadService.preloadImages(photoId, type, jsonImages, replacePending)
                 : preloadService.preloadImages(photoId, type, jsonImages, replacePending,
-                    sessionId, effectivePriority);
+                sessionId, effectivePriority);
             call.resolve(JSObject.fromJSONObject(result));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
     }
 
-    /** 取消指定图片预载会话的需求，不会中断已开始的网络请求。 */
+    /**
+     * 取消指定图片预载会话的需求，不会中断已开始的网络请求。
+     */
     public void cancelPreload(PluginCall call) {
         String sessionId = call.getString("sessionId");
         if (sessionId == null || sessionId.isBlank()) {

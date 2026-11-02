@@ -5,7 +5,9 @@ import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
 
 import java.util.List;
 
-/** 域名探活与网络恢复过程中的状态变化。 */
+/**
+ * 域名探活与网络恢复过程中的状态变化。
+ */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record NetworkProbeEvent(
     String phase,

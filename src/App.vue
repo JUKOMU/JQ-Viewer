@@ -628,16 +628,10 @@ onBeforeUnmount(() => {
     --desktop-page-min-gap: 24px;
     --desktop-page-offset: clamp(150px, 15cqw, 300px);
     box-sizing: border-box;
-    width: min(
-      var(--desktop-page-max-width, 960px),
-      calc(100% - var(--desktop-page-min-gap) * 2)
-    );
+    width: min(var(--desktop-page-max-width, 960px), calc(100% - var(--desktop-page-min-gap) * 2));
     margin-left: max(
       var(--desktop-page-min-gap),
-      min(
-        var(--desktop-page-offset),
-        calc((100% - var(--desktop-page-max-width, 960px)) / 2)
-      )
+      min(var(--desktop-page-offset), calc((100% - var(--desktop-page-max-width, 960px)) / 2))
     );
     margin-right: auto;
   }
@@ -647,7 +641,6 @@ onBeforeUnmount(() => {
     padding-right: 0;
     padding-left: 0;
   }
-
 }
 
 /* 页面过渡动画 */

@@ -213,7 +213,9 @@ public final class Plugin {
         api.preloadImages(context);
     }
 
-    /** 取消阅读页图片预载会话。 */
+    /**
+     * 取消阅读页图片预载会话。
+     */
     @PluginMethod
     public void cancelPreload(Context context) {
         api.cancelPreload(context);

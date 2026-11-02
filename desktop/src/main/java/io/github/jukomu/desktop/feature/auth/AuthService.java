@@ -115,7 +115,9 @@ public final class AuthService {
         return SuccessResponse.ok();
     }
 
-    /** 自动登录失败只报告认证结果，不修改安全存储中的凭据。 */
+    /**
+     * 自动登录失败只报告认证结果，不修改安全存储中的凭据。
+     */
     public AutoLoginResponse autoLogin() {
         long started = System.nanoTime();
         long expectedGeneration = currentAuthGeneration();
@@ -216,10 +218,12 @@ public final class AuthService {
         return currentUserInfo == null
             ? new LoginStateResponse(false, null, null, hasSavedCredentials())
             : new LoginStateResponse(true, currentUserInfo.username(), currentUserInfo,
-                hasSavedCredentials());
+            hasSavedCredentials());
     }
 
-    /** 返回可用于自动登录的凭据状态；安全存储读取失败时返回 null 表示未知。 */
+    /**
+     * 返回可用于自动登录的凭据状态；安全存储读取失败时返回 null 表示未知。
+     */
     private Boolean hasSavedCredentials() {
         LoginCredentials saved = memoryCredentials;
         if (saved != null) {

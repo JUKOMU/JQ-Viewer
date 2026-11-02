@@ -123,18 +123,24 @@ public class SettingsService {
         settingsDb.putString("api_route_domain", "manual".equals(mode) ? domain : "");
     }
 
-    /** 读取图片线路模式，未保存时默认为自动。 */
+    /**
+     * 读取图片线路模式，未保存时默认为自动。
+     */
     public String getImageRouteMode() {
         return "manual".equals(settingsDb.getString("image_route_mode")) ? "manual" : "auto";
     }
 
-    /** 读取当前图片线路 Host，未保存时返回空字符串。 */
+    /**
+     * 读取当前图片线路 Host，未保存时返回空字符串。
+     */
     public String getImageRouteHost() {
         String host = settingsDb.getString("image_route_host");
         return host == null ? "" : host;
     }
 
-    /** 保存图片线路模式与 Host，自动模式允许暂时没有选定 Host。 */
+    /**
+     * 保存图片线路模式与 Host，自动模式允许暂时没有选定 Host。
+     */
     public void setImageRoute(String mode, String host) {
         if (!"auto".equals(mode) && !"manual".equals(mode)) {
             throw new IllegalArgumentException("mode must be auto or manual");

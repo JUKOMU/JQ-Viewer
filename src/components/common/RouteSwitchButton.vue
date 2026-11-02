@@ -78,7 +78,11 @@
             <h2>{{ item.domain }}</h2>
             <p>
               <span :class="item.reachable ? 'status-ok' : 'status-bad'">
-                {{ measuringDomain === item.domain ? '测速中' : latencyText(item.domain, item.reachable) }}
+                {{
+                  measuringDomain === item.domain
+                    ? '测速中'
+                    : latencyText(item.domain, item.reachable)
+                }}
                 <IonSpinner
                   v-if="(probing || measuringDomains) && item.reachable && !latencyMap[item.domain]"
                   class="status-spinner"
@@ -108,7 +112,9 @@
       <p v-if="imageRouteError" class="route-error" role="alert">{{ imageRouteError }}</p>
       <div class="route-modal-intro">
         <span class="eyebrow">图片线路探测</span>
-        <strong>{{ imageRouteSettingsReady ? imageRouteHost || '尚未优选' : '正在读取当前线路' }}</strong>
+        <strong>{{
+          imageRouteSettingsReady ? imageRouteHost || '尚未优选' : '正在读取当前线路'
+        }}</strong>
       </div>
       <div class="route-group">
         <div class="group-title">图片线路模式</div>
@@ -121,7 +127,13 @@
           <IonRadio slot="start" value="auto" :checked="imageRouteMode === 'auto'" />
           <IonLabel>
             <h2>自动优选</h2>
-            <p>{{ imageRouteMode === 'auto' && imageRouteHost ? `当前：${imageRouteHost}` : '由客户端选择可用图片线路' }}</p>
+            <p>
+              {{
+                imageRouteMode === 'auto' && imageRouteHost
+                  ? `当前：${imageRouteHost}`
+                  : '由客户端选择可用图片线路'
+              }}
+            </p>
           </IonLabel>
         </IonItem>
       </div>
@@ -195,7 +207,16 @@ defineOptions({ name: 'RouteSwitchButton' })
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { IonButton, IonContent, IonIcon, IonItem, IonLabel, IonModal, IonRadio, IonSpinner } from '@ionic/vue'
+import {
+  IonButton,
+  IonContent,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonModal,
+  IonRadio,
+  IonSpinner,
+} from '@ionic/vue'
 import { closeOutline, flashOutline, speedometerOutline } from 'ionicons/icons'
 import { normalizeRuntimeError } from '@/runtime/errors'
 import { useApiRoute } from '@/composables/useApiRoute'
@@ -323,7 +344,10 @@ function openPicker() {
       if (imageCandidatesResult.status === 'fulfilled') {
         imageHosts.value = imageCandidatesResult.value.hosts
       } else {
-        imageRouteError.value = normalizeRuntimeError(imageCandidatesResult.reason, '获取图片线路失败').message
+        imageRouteError.value = normalizeRuntimeError(
+          imageCandidatesResult.reason,
+          '获取图片线路失败',
+        ).message
       }
       if (settingsResult.status === 'fulfilled') {
         imageRouteMode.value = settingsResult.value.imageRouteMode === 'manual' ? 'manual' : 'auto'
@@ -331,7 +355,10 @@ function openPicker() {
         imageRouteSettingsReady.value = true
       } else {
         imageRouteSettingsReady.value = false
-        imageRouteError.value = normalizeRuntimeError(settingsResult.reason, '获取图片线路设置失败').message
+        imageRouteError.value = normalizeRuntimeError(
+          settingsResult.reason,
+          '获取图片线路设置失败',
+        ).message
       }
     })
     .finally(() => {
@@ -348,7 +375,7 @@ function applyImageProbeEvent(event: NetworkProbeEvent) {
   imageProbeRunId = event.runId
   imageProbeRevision = event.revision
   imageMeasuring.value = event.running === true
-  imageCurrentHost.value = event.running ? event.currentHost ?? null : null
+  imageCurrentHost.value = event.running ? (event.currentHost ?? null) : null
   if (event.hosts) {
     imageHostResults.value = {
       ...imageHostResults.value,
@@ -408,7 +435,9 @@ async function handleMeasureImageHosts() {
 }
 
 function imageHostIsMeasuring(host: string) {
-  return measuringImageHost.value === host || (imageMeasuring.value && imageCurrentHost.value === host)
+  return (
+    measuringImageHost.value === host || (imageMeasuring.value && imageCurrentHost.value === host)
+  )
 }
 
 async function handleMeasureImageHost(host: string) {
@@ -661,7 +690,9 @@ onBeforeUnmount(() => {
   animation: route-measure-spin 1s linear infinite;
 }
 @keyframes route-measure-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .route-group ion-item {
   --background: #fff;

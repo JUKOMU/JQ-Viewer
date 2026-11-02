@@ -98,17 +98,23 @@ public final class SettingsService {
         return "manual".equals(text("api_route_mode", "auto")) ? "manual" : "auto";
     }
 
-    /** 读取图片线路模式，未保存时默认为自动。 */
+    /**
+     * 读取图片线路模式，未保存时默认为自动。
+     */
     public synchronized String imageRouteMode() {
         return "manual".equals(text("image_route_mode", "auto")) ? "manual" : "auto";
     }
 
-    /** 读取当前图片线路 Host，未保存时返回空字符串。 */
+    /**
+     * 读取当前图片线路 Host，未保存时返回空字符串。
+     */
     public synchronized String imageRouteHost() {
         return text("image_route_host", "");
     }
 
-    /** 保存图片线路模式与 Host，自动模式允许暂时没有选定 Host。 */
+    /**
+     * 保存图片线路模式与 Host，自动模式允许暂时没有选定 Host。
+     */
     public synchronized void setImageRoute(String mode, String host) {
         if (!"auto".equals(mode) && !"manual".equals(mode)) {
             throw ApiException.invalidRequest("mode must be auto or manual");

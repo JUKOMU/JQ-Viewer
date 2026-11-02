@@ -23,12 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.*;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -319,7 +314,8 @@ public final class ImageService {
                     String demandId = sessionId + "/" + key(photoId, image.getSortOrder(), type);
                     boolean accepted = submitNetworkImage(image, demandId, sessionId, priority,
                         bytes -> {
-                            if (closed || generations.getOrDefault(scope, currentGeneration) != currentGeneration) return;
+                            if (closed || generations.getOrDefault(scope, currentGeneration) != currentGeneration)
+                                return;
                             try {
                                 if ("thumb".equals(type)) {
                                     ensureThumbnail(photoId, image.getSortOrder(), bytes);
@@ -499,21 +495,21 @@ public final class ImageService {
     ) {
         return networkTasks.submit(image, demandId, sessionId, priority, replaceCache,
             (taskImage, forceNetwork, cacheLookup, networkFetcher) -> {
-            String imageKey = key(taskImage.getPhotoId(), taskImage.getSortOrder(), "image");
-            byte[] cached = cacheLookup.read(() -> {
-                ImageCache.Entry entry = cache.get(imageKey);
-                return entry == null ? null : entry.bytes();
-            });
-            if (cached != null) return cached;
-            byte[] bytes = networkFetcher.fetch(taskImage);
-            if (!ImageFileValidator.validateQuick(bytes)) throw new IOException("无法解析图片");
-            synchronized (cache) {
-                ImageCache.Entry latest = cache.get(imageKey);
-                if (!forceNetwork.getAsBoolean() && latest != null) return latest.bytes();
-                cache.put(imageKey, bytes, mime(taskImage));
-            }
-            return bytes;
-        }, taskImage -> client().fetchImageBytes(taskImage), onSuccess, onFailure);
+                String imageKey = key(taskImage.getPhotoId(), taskImage.getSortOrder(), "image");
+                byte[] cached = cacheLookup.read(() -> {
+                    ImageCache.Entry entry = cache.get(imageKey);
+                    return entry == null ? null : entry.bytes();
+                });
+                if (cached != null) return cached;
+                byte[] bytes = networkFetcher.fetch(taskImage);
+                if (!ImageFileValidator.validateQuick(bytes)) throw new IOException("无法解析图片");
+                synchronized (cache) {
+                    ImageCache.Entry latest = cache.get(imageKey);
+                    if (!forceNetwork.getAsBoolean() && latest != null) return latest.bytes();
+                    cache.put(imageKey, bytes, mime(taskImage));
+                }
+                return bytes;
+            }, taskImage -> client().fetchImageBytes(taskImage), onSuccess, onFailure);
     }
 
     private byte[] awaitNetworkImage(JmImage image, String sessionId, int priority) {

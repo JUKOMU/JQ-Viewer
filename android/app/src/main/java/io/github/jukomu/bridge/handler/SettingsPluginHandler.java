@@ -114,7 +114,9 @@ public final class SettingsPluginHandler {
         }
     }
 
-    /** 校验并立即应用用户手动选择的图片 Host。 */
+    /**
+     * 校验并立即应用用户手动选择的图片 Host。
+     */
     public void setImageRoutePreference(PluginCall call) {
         try {
             String mode = call.getString("mode");

@@ -73,11 +73,16 @@
                   v-for="d in store.domains.value"
                   :key="d.domain"
                   class="domain-row route-row"
-                  :class="{ selected: route.mode.value === 'manual' && route.selectedDomain.value === d.domain }"
+                  :class="{
+                    selected:
+                      route.mode.value === 'manual' && route.selectedDomain.value === d.domain,
+                  }"
                 >
                   <button
                     class="route-row-select"
-                    :aria-pressed="route.mode.value === 'manual' && route.selectedDomain.value === d.domain"
+                    :aria-pressed="
+                      route.mode.value === 'manual' && route.selectedDomain.value === d.domain
+                    "
                     :disabled="route.loading.value"
                     type="button"
                     @click="selectRoute('manual', d.domain)"
@@ -102,7 +107,9 @@
                     <IonIcon :icon="speedometerOutline" aria-hidden="true" />
                   </button>
                   <span class="latency" :class="latencyClass(d.domain, d.reachable)">
-                    {{ measuringDomain === d.domain ? '测速中' : latencyText(d.domain, d.reachable) }}
+                    {{
+                      measuringDomain === d.domain ? '测速中' : latencyText(d.domain, d.reachable)
+                    }}
                   </span>
                   <button
                     class="route-choice"
@@ -147,7 +154,9 @@
                 @click="selectImageRoute('auto')"
               >
                 <span class="mode-mark" :class="{ selected: imageRouteMode === 'auto' }">A</span>
-                <span><strong>自动优选</strong><small>启动后沿用有效 Host，失效时后台重选</small></span>
+                <span
+                  ><strong>自动优选</strong><small>启动后沿用有效 Host，失效时后台重选</small></span
+                >
                 <span class="route-choice">{{ imageRouteMode === 'auto' ? '当前' : '切换' }}</span>
               </button>
             </div>
@@ -175,11 +184,15 @@
             </div>
             <div class="card domain-card image-route-card">
               <div
-                v-if="imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError"
+                v-if="
+                  imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError
+                "
                 class="operation-error"
                 role="alert"
               >
-                {{ imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError }}
+                {{
+                  imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError
+                }}
               </div>
               <div v-if="imageClientStateText" class="empty-state" role="status">
                 {{ imageClientStateText }}
@@ -327,14 +340,16 @@ const imageRouteMode = ref<'auto' | 'manual'>(SettingsStore.getImageRouteMode())
 const imageRouteHost = ref(SettingsStore.getImageRouteHost())
 const imageHostCandidates = ref<string[]>([])
 const imageHostsLoading = ref(true)
-const imageHostResults = ref<Array<{
-  host: string
-  available: boolean
-  elapsedMs: number
-  bytes: number
-  bytesPerSecond: number
-  error?: string
-}>>([])
+const imageHostResults = ref<
+  Array<{
+    host: string
+    available: boolean
+    elapsedMs: number
+    bytes: number
+    bytesPerSecond: number
+    error?: string
+  }>
+>([])
 const imageMeasuring = ref(false)
 const measuringImageHost = ref('')
 const imageCurrentHost = ref<string | null>(null)
@@ -451,7 +466,7 @@ function applyImageRouteEvent(data: {
   imageRunId.value = data.runId
   imageRevision.value = data.revision
   imageMeasuring.value = data.running === true
-  imageCurrentHost.value = data.running ? data.currentHost ?? null : null
+  imageCurrentHost.value = data.running ? (data.currentHost ?? null) : null
   if (data.hosts) imageHostResults.value = data.hosts
   if (data.error) imageRouteError.value = data.error
   else if (!data.running) imageRouteError.value = ''
@@ -529,7 +544,10 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
     return
   }
   try {
-    await JmcomicService.applyImageRoute({ mode, host: mode === 'manual' ? host : imageRouteHost.value })
+    await JmcomicService.applyImageRoute({
+      mode,
+      host: mode === 'manual' ? host : imageRouteHost.value,
+    })
     imageRouteMode.value = mode
     imageRouteHost.value = mode === 'manual' ? host : imageRouteHost.value
     SettingsStore.setImageRoute(imageRouteMode.value, imageRouteHost.value)
@@ -544,7 +562,8 @@ async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value 
     store.clientState.value.state !== 'ready' ||
     imageMeasuring.value ||
     measuringImageHost.value
-  ) return
+  )
+    return
   imageStatusQuerySequence++
   imageMeasureRequestPending.value = true
   imageMeasuring.value = true
@@ -662,13 +681,17 @@ async function handleMeasureImageHost(host: string) {
     store.clientState.value.state !== 'ready' ||
     imageMeasuring.value ||
     measuringImageHost.value
-  ) return
+  )
+    return
   measuringImageHost.value = host
   imageRouteError.value = ''
   imageMeasureError.value = ''
   try {
     const result = await JmcomicService.measureImageHost(host)
-    imageHostResults.value = [...imageHostResults.value.filter((item) => item.host !== host), result]
+    imageHostResults.value = [
+      ...imageHostResults.value.filter((item) => item.host !== host),
+      result,
+    ]
   } catch (error) {
     imageMeasureError.value = normalizeRuntimeError(error, '图片线路测速失败').message
   } finally {

@@ -2,18 +2,13 @@ package io.github.jukomu.desktop.bridge.handler;
 
 import io.github.jukomu.desktop.bridge.ApiException;
 import io.github.jukomu.desktop.bridge.RequestExecutor;
-import io.github.jukomu.desktop.bridge.model.InitStatusResponse;
-import io.github.jukomu.desktop.bridge.model.DomainLatencyRequest;
-import io.github.jukomu.desktop.bridge.model.ImageHostRequest;
-import io.github.jukomu.desktop.bridge.model.LogReadRequest;
-import io.github.jukomu.desktop.bridge.model.RouteSelectionRequest;
-import io.github.jukomu.desktop.bridge.model.SuccessResponse;
+import io.github.jukomu.desktop.bridge.model.*;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.auth.AuthService;
 import io.github.jukomu.desktop.feature.client.JmcomicSessionManager;
 import io.github.jukomu.desktop.feature.diagnostics.DiagnosticsService;
-import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
+import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
 import io.github.jukomu.desktop.feature.notification.LaunchRouteService;
 import io.github.jukomu.desktop.logging.ApplicationLogging;
@@ -164,18 +159,24 @@ public final class SystemPluginHandler {
             request -> requireNetwork().measureDomainLatency(request.domain()));
     }
 
-    /** 返回 jm 默认列表与当前配置合并后的图片 Host 候选。 */
+    /**
+     * 返回 jm 默认列表与当前配置合并后的图片 Host 候选。
+     */
     public void getImageRouteCandidates(Context context) {
         respond(context, "getImageRouteCandidates",
             java.util.Map.of("hosts", ImageHostOptimizer.candidates()));
     }
 
-    /** 返回最近一次图片线路测速状态。 */
+    /**
+     * 返回最近一次图片线路测速状态。
+     */
     public void getImageRouteStatus(Context context) {
         respond(context, "getImageRouteStatus", ImageHostOptimizer.status());
     }
 
-    /** 后台下载固定章节样本，测量并验证各图片 Host。 */
+    /**
+     * 后台下载固定章节样本，测量并验证各图片 Host。
+     */
     public void measureImageHosts(Context context) {
         imageRouteRequests.runLongOperation(context, () -> {
             var client = clientSession.requireClient();
@@ -206,7 +207,9 @@ public final class SystemPluginHandler {
         });
     }
 
-    /** 测量单个图片 Host，不应用测速结果。 */
+    /**
+     * 测量单个图片 Host，不应用测速结果。
+     */
     public void measureImageHost(Context context) {
         imageRouteRequests.runLongOperation(context, ImageHostRequest.class, request -> {
             if (!ImageHostOptimizer.contains(request.host())) {

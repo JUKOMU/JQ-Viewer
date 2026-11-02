@@ -5,7 +5,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 
-/** PDF/归档共用的最终文件提交；临时文件完成后再发布到最终路径。 */
+/**
+ * PDF/归档共用的最终文件提交；临时文件完成后再发布到最终路径。
+ */
 public final class OutputFilePublisher {
     private OutputFilePublisher() {
     }

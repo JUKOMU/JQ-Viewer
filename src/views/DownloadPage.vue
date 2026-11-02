@@ -326,16 +326,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'DownloadPage' })
 
-import {
-  computed,
-  nextTick,
-  onActivated,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IonContent,

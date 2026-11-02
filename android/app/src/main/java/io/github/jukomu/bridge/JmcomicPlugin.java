@@ -9,8 +9,8 @@ import io.github.jukomu.feature.catalog.ApiService;
 import io.github.jukomu.feature.settings.SettingsService;
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient;
 import io.github.jukomu.platform.persistence.SettingsStore;
-import io.github.jukomu.runtime.JmcomicSessionManager;
 import io.github.jukomu.runtime.ImageHostOptimizer;
+import io.github.jukomu.runtime.JmcomicSessionManager;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -88,7 +88,9 @@ public class JmcomicPlugin extends Plugin {
         }
     }
 
-    /** 将图片线路测速进度转换为前端网络探测事件。 */
+    /**
+     * 将图片线路测速进度转换为前端网络探测事件。
+     */
     private JSObject imageRouteEventJson(
         String phase, String message, ImageHostOptimizer.Progress progress,
         ImageHostOptimizer.Result result
@@ -132,7 +134,9 @@ public class JmcomicPlugin extends Plugin {
         return hosts;
     }
 
-    /** 返回当前图片线路测速快照，供页面重新打开时恢复进度。 */
+    /**
+     * 返回当前图片线路测速快照，供页面重新打开时恢复进度。
+     */
     @PluginMethod
     public void getImageRouteStatus(PluginCall call) {
         call.resolve(imageRouteStatusJson(ImageHostOptimizer.status()));
@@ -294,7 +298,9 @@ public class JmcomicPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** 返回当前客户端的图片 Host 候选。 */
+    /**
+     * 返回当前客户端的图片 Host 候选。
+     */
     @PluginMethod
     public void getImageRouteCandidates(PluginCall call) {
         JSObject result = new JSObject();
@@ -304,25 +310,27 @@ public class JmcomicPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** 测试固定样本图片并返回各 Host 的有效性与吞吐量。 */
+    /**
+     * 测试固定样本图片并返回各 Host 的有效性与吞吐量。
+     */
     @PluginMethod
     public void measureImageHosts(PluginCall call) {
         JmApiClient client = requireClient(call);
         if (client == null) return;
         call.setKeepAlive(true);
         java.util.concurrent.CompletableFuture.supplyAsync(() -> ImageHostOptimizer.optimize(
-            client,
+                client,
                 progress -> notifyListeners("networkProbe", imageRouteEventJson(
-                !progress.running() && progress.error() != null
-                    ? "image_route_error"
-                    : progress.currentHost() == null && progress.hosts().isEmpty()
-                        ? "image_route_probing"
-                        : "image_route_progress",
-                progress.running() && progress.currentHost() == null && progress.hosts().isEmpty()
-                    ? "开始图片线路测速"
-                    : "",
-                progress,
-                null))))
+                    !progress.running() && progress.error() != null
+                        ? "image_route_error"
+                        : progress.currentHost() == null && progress.hosts().isEmpty()
+                          ? "image_route_probing"
+                          : "image_route_progress",
+                    progress.running() && progress.currentHost() == null && progress.hosts().isEmpty()
+                        ? "开始图片线路测速"
+                        : "",
+                    progress,
+                    null))))
             .whenComplete((result, failure) -> {
                 if (failure != null) {
                     android.util.Log.e(TAG, "图片线路测速失败", failure);

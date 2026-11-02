@@ -524,7 +524,9 @@ public class JqViewerPlugin extends Plugin {
         cacheHandler.preloadImages(call);
     }
 
-    /** 取消阅读页图片预载会话。 */
+    /**
+     * 取消阅读页图片预载会话。
+     */
     @PluginMethod
     public void cancelPreload(PluginCall call) {
         cacheHandler.cancelPreload(call);

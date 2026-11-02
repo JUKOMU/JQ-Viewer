@@ -339,7 +339,10 @@ export interface JmcomicClient {
   getImageRouteCandidates(): Promise<{ hosts: string[] }>
 
   /** 保存并立即应用自动或手动图片 Host。 */
-  setImageRoutePreference(options: { mode: 'auto' | 'manual'; host: string }): Promise<{ success: boolean }>
+  setImageRoutePreference(options: {
+    mode: 'auto' | 'manual'
+    host: string
+  }): Promise<{ success: boolean }>
 
   getInitStatus(): Promise<{ complete: boolean }>
 

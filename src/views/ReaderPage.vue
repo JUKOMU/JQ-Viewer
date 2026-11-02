@@ -330,7 +330,10 @@ const clearToolbarTapTimer = () => {
 // 纵向模式由页面根层区分单击与双击；横向模式由 HorizontalPageView 自行处理
 const onReaderPointerDown = (event: PointerEvent) => {
   toolbarTapProtectedAtPointerDown =
-    isVertical.value && event.isPrimary && event.button === 0 && autoShowToolbarTransitionPending.value
+    isVertical.value &&
+    event.isPrimary &&
+    event.button === 0 &&
+    autoShowToolbarTransitionPending.value
 }
 
 const onRootClick = (ev: MouseEvent) => {
@@ -566,11 +569,7 @@ const retryFailedImages = () => {
     let failedCount = 0
     try {
       const latestPhoto = await JmcomicService.getPhoto(context.chapterId)
-      if (
-        activeRetryBatchId !== batchId ||
-        !isCurrentImageExposureContext(context)
-      )
-        return
+      if (activeRetryBatchId !== batchId || !isCurrentImageExposureContext(context)) return
       if (latestPhoto.id !== context.photoId) {
         failedCount = failedSnapshot.length
         return
@@ -729,7 +728,10 @@ const cleanupRequestedSortOrdersOutsideAllowed = () => {
     if (!activeAllowedSortOrders.has(sortOrder) && !loadedSortOrders.has(sortOrder)) {
       requestedSortOrders.delete(sortOrder)
       cancelPreloadSessions(
-        new Set([request.sessionId, ...(request.previousSessionId ? [request.previousSessionId] : [])]),
+        new Set([
+          request.sessionId,
+          ...(request.previousSessionId ? [request.previousSessionId] : []),
+        ]),
       )
     }
   }

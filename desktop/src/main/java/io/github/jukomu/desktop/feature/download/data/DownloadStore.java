@@ -510,7 +510,7 @@ public final class DownloadStore {
                 "DELETE FROM download_pages WHERE task_id=? AND EXISTS ("
                     + "SELECT 1 FROM download_tasks WHERE task_id=? AND status=?)");
                  PreparedStatement statement = connection.prepareStatement(
-                "DELETE FROM download_tasks WHERE task_id=? AND status=?")) {
+                     "DELETE FROM download_tasks WHERE task_id=? AND status=?")) {
                 for (String taskId : taskIds) {
                     pages.setString(1, taskId);
                     pages.setString(2, taskId);

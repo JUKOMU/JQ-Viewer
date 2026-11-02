@@ -522,8 +522,7 @@ function onTouchEnd(ev: TouchEvent) {
         }
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        const protectedAtTap =
-          toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
+        const protectedAtTap = toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
         tapTimer = setTimeout(() => {
           emit('toggle-toolbar', protectedAtTap)
           tapTimer = null
@@ -582,8 +581,7 @@ function onTouchEnd(ev: TouchEvent) {
         lastTapT = 0
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        const protectedAtTap =
-          toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
+        const protectedAtTap = toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
         tapTimer = setTimeout(() => {
           emit('toggle-toolbar', protectedAtTap)
           tapTimer = null

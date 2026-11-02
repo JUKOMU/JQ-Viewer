@@ -433,11 +433,11 @@ export interface NetworkProbeEvent {
     | 'route_auth_started'
     | 'route_auth_succeeded'
     | 'route_auth_failed'
-      | 'image_route_probing'
-      | 'image_route_progress'
-      | 'image_route_result'
-      | 'image_route_error'
-      | 'image_route_status'
+    | 'image_route_probing'
+    | 'image_route_progress'
+    | 'image_route_result'
+    | 'image_route_error'
+    | 'image_route_status'
     | 'probing'
     | 'result'
     | 'error'
@@ -450,17 +450,17 @@ export interface NetworkProbeEvent {
   runId?: number
   revision?: number
   running?: boolean
-    currentHost?: string
-    selectedHost?: string | null
+  currentHost?: string
+  selectedHost?: string | null
   error?: string
-    hosts?: {
-      host: string
-      available: boolean
-      elapsedMs: number
-      bytes: number
-      bytesPerSecond: number
-      error?: string
-    }[]
+  hosts?: {
+    host: string
+    available: boolean
+    elapsedMs: number
+    bytes: number
+    bytesPerSecond: number
+    error?: string
+  }[]
 }
 
 // --- 应用内更新 ---

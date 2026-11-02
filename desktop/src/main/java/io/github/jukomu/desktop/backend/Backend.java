@@ -31,8 +31,8 @@ import io.github.jukomu.desktop.feature.image.ImageCache;
 import io.github.jukomu.desktop.feature.image.ImageService;
 import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService;
-import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.network.ImageHostOptimizer;
+import io.github.jukomu.desktop.feature.network.NetworkService;
 import io.github.jukomu.desktop.feature.network.model.NetworkProbeEvent;
 import io.github.jukomu.desktop.feature.notification.DesktopNotificationSink;
 import io.github.jukomu.desktop.feature.notification.DesktopTaskNotificationService;
@@ -523,7 +523,9 @@ public final class Backend implements AutoCloseable {
         return client;
     }
 
-    /** 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。 */
+    /**
+     * 启动时应用仍有效的图片 Host，并将失效偏好归一为自动模式。
+     */
     static void applySavedImageRoute(SettingsService settingsService) {
         String host = settingsService.imageRouteHost();
         if (ImageHostOptimizer.contains(host)) {

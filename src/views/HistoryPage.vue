@@ -76,7 +76,7 @@
                     :disabled="browseSelection.active.value || historySelectionExecuting"
                     :aria-controls="browseGroupContentId(group.key)"
                     :aria-label="`${isBrowseGroupCollapsed(group.key) ? '展开' : '收起'}${group.label}`"
-                    @click="toggleBrowseGroup(group.key)"
+                    @click="toggleBrowseGroup(group.key, $event)"
                   >
                     <span>
                       {{ group.label }}
@@ -455,8 +455,10 @@ function isContextMenuInBrowseGroup(key: BrowseGroupKey): boolean {
   return browseGroupStates[key].items.some((item) => item.id === menu.item.id)
 }
 
-async function toggleBrowseGroup(key: BrowseGroupKey) {
+async function toggleBrowseGroup(key: BrowseGroupKey, event: MouseEvent) {
   if (browseSelection.active.value) return
+  const header = (event.currentTarget as HTMLElement).parentElement as HTMLElement
+  const headerTop = header.getBoundingClientRect().top
   const next = new Set(collapsedBrowseGroups.value)
   if (next.has(key)) next.delete(key)
   else {
@@ -464,13 +466,18 @@ async function toggleBrowseGroup(key: BrowseGroupKey) {
     next.add(key)
   }
   collapsedBrowseGroups.value = next
+  await nextTick()
   if (!next.has(key)) {
-    await nextTick()
     const group = browseGroupStates[key]
     if (group.totalCount > 0 && (!group.loaded || group.error)) {
       void loadBrowseGroup(key)
     }
     void checkBrowseGroupSentinels()
+  } else {
+    const scrollElement = await resolveScrollElement()
+    if (scrollElement) {
+      scrollElement.scrollTop += header.getBoundingClientRect().top - headerTop
+    }
   }
 }
 
@@ -761,6 +768,29 @@ function loadMoreParse(allowDuringDelete = false): Promise<void> {
 const onScroll = (event: CustomEvent<{ scrollTop?: number }>) => {
   const tab = activeTab.value
   if (isTabTransitioning.value) return
+
+  if (tab === 'browse') {
+    const scrollElement = scrollEl.value
+    const contentElement = contentRef.value?.$el as HTMLElement | undefined
+    if (scrollElement && contentElement) {
+      const scrollTopEdge = scrollElement.getBoundingClientRect().top
+      const sections = contentElement.querySelectorAll('.date-group')
+      sections.forEach((section) => {
+        const header = section.querySelector('.date-group-heading') as HTMLElement | null
+        const sectionRect = section.getBoundingClientRect()
+        const isStuck =
+          header !== null &&
+          sectionRect.top <= scrollTopEdge &&
+          sectionRect.bottom > scrollTopEdge + header.offsetHeight
+        header?.classList.toggle('is-stuck', isStuck)
+      })
+    }
+  } else {
+    const contentElement = contentRef.value?.$el as HTMLElement | undefined
+    contentElement?.querySelectorAll('.date-group-heading.is-stuck').forEach((header) => {
+      header.classList.remove('is-stuck')
+    })
+  }
 
   const eventScrollTop = event.detail?.scrollTop
   if (typeof eventScrollTop === 'number') tabScrollPositions[tab] = Math.max(0, eventScrollTop)
@@ -1605,7 +1635,23 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 .date-group-heading {
+  position: sticky;
+  top: 0;
   margin: 0;
+}
+
+.date-group-heading.is-stuck {
+  z-index: 10;
+}
+
+.date-group-heading.is-stuck::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0 auto 0 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--ion-background-color);
+  content: '';
 }
 
 .date-group-toggle {
@@ -1614,7 +1660,7 @@ function formatRelativeTime(timestamp: number): string {
   min-height: 44px;
   align-items: center;
   gap: 8px;
-  padding: 12px 4px 8px;
+  padding: 4px;
   border: 0;
   background: transparent;
   color: #8a6048;

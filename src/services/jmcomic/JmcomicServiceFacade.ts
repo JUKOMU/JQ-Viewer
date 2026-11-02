@@ -292,8 +292,16 @@ export const JmcomicService = {
     return native.measureLatency()
   },
 
+  measureDomainLatency(domain: string) {
+    return native.measureDomainLatency({ domain })
+  },
+
   measureImageHosts() {
     return native.measureImageHosts()
+  },
+
+  measureImageHost(host: string) {
+    return native.measureImageHost({ host })
   },
 
   getImageRouteCandidates() {

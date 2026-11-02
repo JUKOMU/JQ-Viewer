@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   addVolumeKeyListener: vi.fn(),
   imageReadyHandler: null as null | ((sortOrder: number, sessionId: string) => void),
   imageFailedHandler: null as null | ((sortOrder: number, sessionId: string) => void),
+  autoShowToolbarAtEnd: false,
+  readerAtBottom: false,
+  transitionAfterEnter: undefined as (() => void) | undefined,
+  transitionEnterCancelled: undefined as (() => void) | undefined,
   listenerRemove: vi.fn(() => Promise.resolve()),
   getImageUrl: vi.fn(
     (photoId: string, sortOrder: number, type: string) =>
@@ -108,7 +112,7 @@ vi.mock('@/services/SettingsService', () => ({
     getReaderScreenOrientation: () => 'auto',
     getReaderBrightness: () => -1,
     getReaderKeepScreenOn: () => false,
-    getReaderAutoShowToolbarAtEnd: () => false,
+    getReaderAutoShowToolbarAtEnd: () => mocks.autoShowToolbarAtEnd,
   },
 }))
 
@@ -138,7 +142,7 @@ const VerticalScrollViewStub = defineComponent({
   setup(_, { expose }) {
     expose({
       scrollToIndex: vi.fn(),
-      isAtBottom: () => false,
+      isAtBottom: () => mocks.readerAtBottom,
     })
     return () => h('div', { class: 'vertical-reader-stub' })
   },
@@ -152,6 +156,7 @@ const HorizontalPageViewStub = defineComponent({
     retryingSortOrders: { type: Object as PropType<Set<number>>, required: true },
     totalCount: { type: Number, required: true },
     currentIndex: { type: Number, required: true },
+    toolbarToggleProtected: { type: Boolean, default: false },
   },
   emits: ['update:current-index', 'toggle-toolbar', 'image-error', 'retry-images'],
   setup(_, { expose }) {
@@ -175,6 +180,7 @@ const ReaderBottomToolbarStub = defineComponent({
     'update:current-input',
     'progress-drag-start',
     'progress-drag-end',
+    'update:display-mode',
   ],
   setup() {
     return () => h('div', { class: 'reader-bottom-toolbar-stub' })
@@ -229,6 +235,15 @@ const mountReader = () =>
   mount(ReaderPage, {
     global: {
       stubs: {
+        transition: defineComponent({
+          inheritAttrs: false,
+          props: { name: { type: String, default: '' } },
+          setup(_, { attrs, slots }) {
+            mocks.transitionAfterEnter = attrs.onAfterEnter as (() => void) | undefined
+            mocks.transitionEnterCancelled = attrs.onEnterCancelled as (() => void) | undefined
+            return () => h('div', slots.default?.())
+          },
+        }),
         ReaderTopToolbar: EmptyStub,
         ReaderBottomToolbar: ReaderBottomToolbarStub,
         VerticalScrollView: VerticalScrollViewStub,
@@ -260,6 +275,10 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     vi.clearAllMocks()
     mocks.setRouteSource?.('download')
     mocks.setRouteChapterId?.('chapter-1')
+    mocks.autoShowToolbarAtEnd = false
+    mocks.readerAtBottom = false
+    mocks.transitionAfterEnter = undefined
+    mocks.transitionEnterCancelled = undefined
     mocks.imageReadyHandler = null
     mocks.imageFailedHandler = null
     mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
@@ -299,6 +318,157 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     settings.vm.$emit('update:display-mode', false)
     await settle()
     expect(wrapper.findComponent(HorizontalPageViewStub).attributes('width-percent')).toBe('45')
+    wrapper.unmount()
+  })
+
+  test('末尾自动展开完成前点击不会关闭工具栏，完成后恢复切换', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
+
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+
+    mocks.transitionAfterEnter?.()
+    await nextTick()
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('自动展开前清除待执行的纵向点击', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(940)
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(60)
+    await nextTick()
+    vi.advanceTimersByTime(220)
+    await nextTick()
+
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('工具栏进入过渡取消后解除点击保护', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    mocks.transitionEnterCancelled?.()
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('纵向点击按下时处于自动展开过渡内则忽略后续点击', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+
+    wrapper.find('.reader-root').trigger('pointerdown', { isPrimary: true, button: 0 })
+    mocks.transitionAfterEnter?.()
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('横向延迟点击在末尾自动展开动画期间发起时不会关闭工具栏', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+
+    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('open-settings')
+    await nextTick()
+    wrapper.findComponent(WidthSettingsStub).vm.$emit('update:display-mode', false)
+    await nextTick()
+    const horizontalView = wrapper.findComponent(HorizontalPageViewStub)
+    horizontalView.vm.$emit('toggle-toolbar', true)
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('末尾自动展开动画结束后横向点击恢复工具栏切换', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    mocks.transitionAfterEnter?.()
+    await nextTick()
+
+    wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('open-settings')
+    await nextTick()
+    wrapper.findComponent(WidthSettingsStub).vm.$emit('update:display-mode', false)
+    await nextTick()
+    const horizontalView = wrapper.findComponent(HorizontalPageViewStub)
+    expect(horizontalView.props('toolbarToggleProtected')).toBe(false)
+    horizontalView.vm.$emit('toggle-toolbar', false)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
     wrapper.unmount()
   })
 

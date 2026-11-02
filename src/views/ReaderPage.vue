@@ -4,6 +4,7 @@
       ref="readerRoot"
       class="reader-root"
       :tabindex="isDesktopRuntime ? -1 : undefined"
+      @pointerdown="onReaderPointerDown"
       @click="onRootClick"
     >
       <!-- 顶部工具栏 -->
@@ -49,14 +50,19 @@
         :current-index="currentIndex"
         :enable-mouse-controls="isDesktopRuntime"
         :width-percent="readerWidthPercent"
+        :toolbar-toggle-protected="autoShowToolbarTransitionPending"
         @update:current-index="onPageChange"
-        @toggle-toolbar="toggleToolbar"
+        @toggle-toolbar="onHorizontalToggleToolbar"
         @image-error="onImageError"
         @retry-images="retryFailedImages"
       />
 
       <!-- 底部工具栏 -->
-      <Transition name="toolbar-slide">
+      <Transition
+        name="toolbar-slide"
+        @after-enter="clearAutoShowToolbarTransitionProtection"
+        @enter-cancelled="clearAutoShowToolbarTransitionProtection"
+      >
         <ReaderBottomToolbar
           v-if="toolbarVisible"
           :current="currentIndex + 1"
@@ -160,6 +166,8 @@ const TOOLBAR_DOUBLE_TAP_DIST = 30
 const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
 let autoShowToolbarTimer: ReturnType<typeof setTimeout> | null = null
+let toolbarTapProtectedAtPointerDown = false
+const autoShowToolbarTransitionPending = ref(false)
 let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
 let lastToolbarTapY = 0
@@ -266,8 +274,18 @@ const isAtReaderEnd = () => {
 }
 
 const toggleToolbar = () => {
+  if (autoShowToolbarTransitionPending.value) return
   clearAutoShowToolbarTimer()
   setToolbarVisible(!toolbarVisible.value, true)
+}
+
+const onHorizontalToggleToolbar = (protectedAtTap: boolean) => {
+  if (protectedAtTap) return
+  toggleToolbar()
+}
+
+const clearAutoShowToolbarTransitionProtection = () => {
+  autoShowToolbarTransitionPending.value = false
 }
 
 const restoreReaderFocus = (event: MouseEvent) => {
@@ -282,6 +300,8 @@ const scheduleToolbarAtReaderEnd = () => {
     autoShowToolbarTimer = null
     if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd() || !isAtReaderEnd())
       return
+    clearToolbarTapTimer()
+    autoShowToolbarTransitionPending.value = true
     setToolbarVisible(true)
   }, AUTO_SHOW_TOOLBAR_DELAY_MS)
 }
@@ -308,9 +328,17 @@ const clearToolbarTapTimer = () => {
 }
 
 // 纵向模式由页面根层区分单击与双击；横向模式由 HorizontalPageView 自行处理
+const onReaderPointerDown = (event: PointerEvent) => {
+  toolbarTapProtectedAtPointerDown =
+    isVertical.value && event.isPrimary && event.button === 0 && autoShowToolbarTransitionPending.value
+}
+
 const onRootClick = (ev: MouseEvent) => {
+  const protectedAtPointerDown = toolbarTapProtectedAtPointerDown
+  toolbarTapProtectedAtPointerDown = false
   if (!isVertical.value) return
   if (settingsPanelVisible.value) return
+  if (protectedAtPointerDown || autoShowToolbarTransitionPending.value) return
 
   const now = Date.now()
   const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
@@ -1329,6 +1357,9 @@ onActivated(() => {
 
 onDeactivated(() => {
   clearAutoShowToolbarTimer()
+  clearToolbarTapTimer()
+  toolbarTapProtectedAtPointerDown = false
+  clearAutoShowToolbarTransitionProtection()
   deactivateReaderRuntime()
 })
 
@@ -1336,6 +1367,7 @@ onUnmounted(() => {
   chapterLoadVersion++
   clearToolbarTapTimer()
   clearAutoShowToolbarTimer()
+  autoShowToolbarTransitionPending.value = false
   deactivateReaderRuntime()
   if (triggerRafId) cancelAnimationFrame(triggerRafId)
   if (revertTimer) clearTimeout(revertTimer)

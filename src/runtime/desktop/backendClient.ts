@@ -203,7 +203,11 @@ export function createBackendClient(
       call<'setApiRoutePreference'>('setApiRoutePreference', options),
     reprobeDomains: () => call<'reprobeDomains'>('reprobeDomains', {}),
     measureLatency: () => call<'measureLatency'>('measureLatency', {}),
+    measureDomainLatency: (options: Parameters<JmcomicClient['measureDomainLatency']>[0]) =>
+      call<'measureDomainLatency'>('measureDomainLatency', options),
     measureImageHosts: () => call<'measureImageHosts'>('measureImageHosts', {}),
+    measureImageHost: (options: Parameters<JmcomicClient['measureImageHost']>[0]) =>
+      call<'measureImageHost'>('measureImageHost', options),
     getImageRouteCandidates: () => call<'getImageRouteCandidates'>('getImageRouteCandidates', {}),
     getImageRouteStatus: () => call<'getImageRouteStatus'>('getImageRouteStatus', {}),
     setImageRoutePreference: (options: Parameters<JmcomicClient['setImageRoutePreference']>[0]) =>

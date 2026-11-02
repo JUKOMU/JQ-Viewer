@@ -79,6 +79,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void measureDomainLatency(Context context) {
+        system.measureDomainLatency(context);
+    }
+
+    @PluginMethod
     public void getImageRouteCandidates(Context context) {
         system.getImageRouteCandidates(context);
     }
@@ -91,6 +96,11 @@ public final class Plugin {
     @PluginMethod
     public void measureImageHosts(Context context) {
         system.measureImageHosts(context);
+    }
+
+    @PluginMethod
+    public void measureImageHost(Context context) {
+        system.measureImageHost(context);
     }
 
     @PluginMethod

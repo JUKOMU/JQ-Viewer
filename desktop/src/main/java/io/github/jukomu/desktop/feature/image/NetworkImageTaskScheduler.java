@@ -8,7 +8,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -24,6 +26,7 @@ import java.util.function.Supplier;
 final class NetworkImageTaskScheduler {
     private static final Logger LOGGER = LoggerFactory.getLogger(NetworkImageTaskScheduler.class);
     private static final int MAX_TOTAL_RUNNING = 12;
+    static final int MAX_CANCELLED_SESSIONS = 4096;
 
     private final Object lock = new Object();
     private final int concurrency;
@@ -33,7 +36,7 @@ final class NetworkImageTaskScheduler {
     private final Set<Task> running = new HashSet<>();
     private final Set<Task> activeTasks = new HashSet<>();
     private final Map<JmImage, Task> tasks = new HashMap<>();
-    private final Set<String> cancelledSessions = new HashSet<>();
+    private final Set<String> cancelledSessions = new LinkedHashSet<>();
     private long sequence;
     private int totalRunning;
     private boolean closed;
@@ -80,7 +83,13 @@ final class NetworkImageTaskScheduler {
 
     void cancelSession(String sessionId) {
         synchronized (lock) {
+            cancelledSessions.remove(sessionId);
             cancelledSessions.add(sessionId);
+            if (cancelledSessions.size() > MAX_CANCELLED_SESSIONS) {
+                Iterator<String> sessions = cancelledSessions.iterator();
+                sessions.next();
+                sessions.remove();
+            }
             for (Task task : List.copyOf(activeTasks)) {
                 task.demands.entrySet().removeIf(entry -> entry.getValue().sessionId.equals(sessionId));
                 if (task.demands.isEmpty() && task.state == State.QUEUED) {

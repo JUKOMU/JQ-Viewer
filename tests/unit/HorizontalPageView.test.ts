@@ -228,7 +228,7 @@ describe('HorizontalPageView', () => {
     await click(181)
     await click(181) // 末页不越界
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1], [2]])
-    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[false], [false]])
     expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
     wrapper.unmount()
   })
@@ -244,7 +244,7 @@ describe('HorizontalPageView', () => {
     wrapper.vm.zoomIn()
     await click(241)
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
-    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[false], [false]])
     expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
     wrapper.unmount()
   })
@@ -262,6 +262,38 @@ describe('HorizontalPageView', () => {
     await vi.advanceTimersByTimeAsync(400)
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0]])
     expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(0px, 0, 0)')
+    wrapper.unmount()
+  })
+
+  test('横向工具栏单击保留点击开始时的保护状态', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container } = mountView()
+    await wrapper.setProps({ toolbarToggleProtected: true })
+    await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+    await wrapper.setProps({ toolbarToggleProtected: false })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 150, clientY: 200 }],
+    })
+
+    await vi.advanceTimersByTimeAsync(280)
+
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[true]])
+    wrapper.unmount()
+  })
+
+  test('自动展开开始时取消横向视图待发的工具栏点击', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container } = mountView()
+    await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 150, clientY: 200 }],
+    })
+    await wrapper.setProps({ toolbarToggleProtected: true })
+    await vi.advanceTimersByTimeAsync(280)
+
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
     wrapper.unmount()
   })
 

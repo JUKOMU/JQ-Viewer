@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, reactive } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, reactive, ref } from 'vue'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -384,6 +384,40 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.ionViewWillEnter!()
     await flushPromises()
     expect(mocks.refreshPdf).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  test('keepAlive 重新激活时恢复下载页滚动位置', async () => {
+    mocks.route.query = { view: 'downloads' }
+    const showDownload = ref(true)
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, [
+            showDownload.value ? h(DownloadPage, { key: 'download' }) : h('div'),
+          ])
+      },
+    })
+    const wrapper = mount(Host)
+    await flushPromises()
+
+    const content = wrapper.findAllComponents({ name: 'IonContent' })[0]
+    const scrollElement = content.element as HTMLElement & {
+      getScrollElement?: () => Promise<HTMLElement>
+    }
+    scrollElement.getScrollElement = async () => scrollElement
+    scrollElement.scrollTop = 640
+    content.vm.$emit('ionScroll', { detail: { scrollTop: 640 } })
+
+    showDownload.value = false
+    await nextTick()
+    await flushPromises()
+    scrollElement.scrollTop = 0
+
+    showDownload.value = true
+    await nextTick()
+    await flushPromises()
+    expect(scrollElement.scrollTop).toBe(640)
     wrapper.unmount()
   })
 

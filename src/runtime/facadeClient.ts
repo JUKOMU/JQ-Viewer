@@ -194,6 +194,9 @@ const PUBLIC_ONLINE_METHODS = new Set([
   'getDomainStates',
   'getUsedDomain',
   'measureLatency',
+  'measureDomainLatency',
+  'measureImageHosts',
+  'measureImageHost',
   'preloadImages',
 ])
 

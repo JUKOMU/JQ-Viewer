@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getImageRouteCandidates: vi.fn(),
   getImageRouteStatus: vi.fn(),
   measureImageHosts: vi.fn(),
+  measureImageHost: vi.fn(),
   applyImageRoute: vi.fn(),
   routeRefresh: vi.fn(),
   routeSelect: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('@ionic/vue', () => {
   return {
     IonBackButton: withSlot('IonBackButton', 'button'),
     IonButtons: withSlot('IonButtons'),
+    IonButton: withSlot('IonButton', 'button'),
     IonContent: withSlot('IonContent', 'main'),
     IonHeader: withSlot('IonHeader', 'header'),
     IonIcon: withSlot('IonIcon', 'span'),
@@ -49,6 +51,7 @@ vi.mock('@ionic/vue', () => {
     IonModal: withSlot('IonModal'),
     IonPage: withSlot('IonPage'),
     IonRadio: withSlot('IonRadio'),
+    IonSpinner: withSlot('IonSpinner'),
     IonTitle: withSlot('IonTitle'),
     IonToolbar: withSlot('IonToolbar'),
   }
@@ -80,6 +83,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getImageRouteCandidates: mocks.getImageRouteCandidates,
     getImageRouteStatus: mocks.getImageRouteStatus,
     measureImageHosts: mocks.measureImageHosts,
+    measureImageHost: mocks.measureImageHost,
     applyImageRoute: mocks.applyImageRoute,
   },
 }))
@@ -141,6 +145,13 @@ beforeEach(() => {
     hosts: [{ host: 'fast.example', available: true, elapsedMs: 100, bytes: 1000, bytesPerSecond: 10000 }],
     runId: 1,
     revision: 1,
+  })
+  mocks.measureImageHost.mockResolvedValue({
+    host: 'fast.example',
+    available: true,
+    elapsedMs: 100,
+    bytes: 1000,
+    bytesPerSecond: 10000,
   })
   mocks.routeState = {
     mode: ref('auto'),
@@ -221,6 +232,72 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     expect(wrapper.find('.domain-card:not(.image-route-card) .latency').text()).toBe('不可达')
     wrapper.unmount()
   })
+})
+
+describe('线路弹窗测速能力', () => {
+  test('API 线路支持批量和单项测速', async () => {
+    mocks.routeState!.domains.value = [{ domain: 'api.example', reachable: true }]
+    mocks.measureLatency.mockResolvedValue({
+      results: [{ domain: 'api.example', latencyMs: 35, timedOut: false }],
+    })
+    const wrapper = mount(RouteSwitchButton)
+    await flushPromises()
+    await wrapper.find('button.route-switch-button').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="测量线路延迟"]').trigger('click')
+    expect(mocks.measureLatency).toHaveBeenCalledTimes(2)
+
+    await wrapper.find('button[aria-label="测速 api.example"]').trigger('click')
+    expect(mocks.measureDomainLatency).toHaveBeenCalledWith('api.example')
+    wrapper.unmount()
+  })
+
+  test('图片线路支持批量和单项测速并显示吞吐量', async () => {
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fast.example' })
+    const wrapper = mount(RouteSwitchButton)
+    await flushPromises()
+    await wrapper.find('button.route-switch-button').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
+    expect(mocks.applyImageRoute).not.toHaveBeenCalled()
+
+    await wrapper.find('button[aria-label="测速 fast.example"]').trigger('click')
+    expect(mocks.measureImageHost).toHaveBeenCalledWith('fast.example')
+    wrapper.unmount()
+  })
+
+  test('图片批量测速期间仍允许切换线路', async () => {
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
+    mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fixed.example' })
+    mocks.measureImageHosts.mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(RouteSwitchButton)
+    await flushPromises()
+    await wrapper.find('button.route-switch-button').trigger('click')
+    await flushPromises()
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
+    await wrapper.findAllComponents({ name: 'IonItem' }).find((item) => item.text().includes('fast.example'))!.trigger('click')
+    expect(mocks.applyImageRoute).toHaveBeenCalledWith({ mode: 'manual', host: 'fast.example' })
+    wrapper.unmount()
+  })
+
+  test('图片线路支持选择自动模式和手动 Host', async () => {
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
+    mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fixed.example' })
+    const wrapper = mount(RouteSwitchButton)
+    await flushPromises()
+    await wrapper.find('button.route-switch-button').trigger('click')
+    await flushPromises()
+
+    await wrapper.findAllComponents({ name: 'IonItem' }).find((item) => item.text().includes('fast.example'))!.trigger('click')
+    expect(mocks.applyImageRoute).toHaveBeenCalledWith({ mode: 'manual', host: 'fast.example' })
+    wrapper.unmount()
+  })
+
 })
 
 describe('图片线路手动模式', () => {

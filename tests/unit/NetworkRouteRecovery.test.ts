@@ -198,7 +198,7 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     wrapper.unmount()
   })
 
-  test('域名变为不可达时清除之前的成功测速结果', async () => {
+  test('域名消失后重新出现时清除之前的成功测速结果', async () => {
     mocks.getDomainStates.mockResolvedValue({
       domains: [{ domain: 'api.example', reachable: true }],
       alive: 1,
@@ -212,7 +212,10 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     await flushPromises()
 
     expect(wrapper.find('.domain-card:not(.image-route-card) .latency').text()).toBe('42 ms')
-    useNetworkProbeStore().domains.value = [{ domain: 'api.example', reachable: false }]
+    const store = useNetworkProbeStore()
+    store.domains.value = []
+    await nextTick()
+    store.domains.value = [{ domain: 'api.example', reachable: false }]
     await nextTick()
 
     expect(wrapper.find('.domain-card:not(.image-route-card) .latency').text()).toBe('不可达')

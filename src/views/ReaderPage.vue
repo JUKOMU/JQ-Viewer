@@ -4,6 +4,7 @@
       ref="readerRoot"
       class="reader-root"
       :tabindex="isDesktopRuntime ? -1 : undefined"
+      @pointerdown="onReaderPointerDown"
       @click="onRootClick"
     >
       <!-- 顶部工具栏 -->
@@ -165,6 +166,7 @@ const TOOLBAR_DOUBLE_TAP_DIST = 30
 const AUTO_SHOW_TOOLBAR_DELAY_MS = 1000
 let toolbarTapTimer: ReturnType<typeof setTimeout> | null = null
 let autoShowToolbarTimer: ReturnType<typeof setTimeout> | null = null
+let toolbarTapProtectedAtPointerDown = false
 const autoShowToolbarTransitionPending = ref(false)
 let lastToolbarTapTime = 0
 let lastToolbarTapX = 0
@@ -326,10 +328,17 @@ const clearToolbarTapTimer = () => {
 }
 
 // 纵向模式由页面根层区分单击与双击；横向模式由 HorizontalPageView 自行处理
+const onReaderPointerDown = (event: PointerEvent) => {
+  toolbarTapProtectedAtPointerDown =
+    isVertical.value && event.isPrimary && event.button === 0 && autoShowToolbarTransitionPending.value
+}
+
 const onRootClick = (ev: MouseEvent) => {
+  const protectedAtPointerDown = toolbarTapProtectedAtPointerDown
+  toolbarTapProtectedAtPointerDown = false
   if (!isVertical.value) return
   if (settingsPanelVisible.value) return
-  if (autoShowToolbarTransitionPending.value) return
+  if (protectedAtPointerDown || autoShowToolbarTransitionPending.value) return
 
   const now = Date.now()
   const tapDist = Math.abs(ev.clientX - lastToolbarTapX) + Math.abs(ev.clientY - lastToolbarTapY)
@@ -1349,6 +1358,7 @@ onActivated(() => {
 onDeactivated(() => {
   clearAutoShowToolbarTimer()
   clearToolbarTapTimer()
+  toolbarTapProtectedAtPointerDown = false
   clearAutoShowToolbarTransitionProtection()
   deactivateReaderRuntime()
 })

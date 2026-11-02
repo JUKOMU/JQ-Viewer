@@ -274,8 +274,15 @@ watch(
   () => store.domains.value.map(({ domain, reachable }) => [domain, reachable] as const),
   (domains, previousDomains) => {
     const previousReachability = new Map(previousDomains)
+    const currentDomains = new Set(domains.map(([domain]) => domain))
     const nextLatencyMap = { ...latencyMap.value }
     let changed = false
+    for (const domain of Object.keys(nextLatencyMap)) {
+      if (!currentDomains.has(domain)) {
+        delete nextLatencyMap[domain]
+        changed = true
+      }
+    }
     for (const [domain, reachable] of domains) {
       if (previousReachability.has(domain) && previousReachability.get(domain) !== reachable) {
         delete nextLatencyMap[domain]

@@ -237,7 +237,7 @@ const mountReader = () =>
       stubs: {
         transition: defineComponent({
           inheritAttrs: false,
-          props: { name: { type: String, required: false } },
+          props: { name: { type: String, default: '' } },
           setup(_, { attrs, slots }) {
             mocks.transitionAfterEnter = attrs.onAfterEnter as (() => void) | undefined
             mocks.transitionEnterCancelled = attrs.onEnterCancelled as (() => void) | undefined
@@ -392,6 +392,30 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     vi.advanceTimersByTime(280)
     await nextTick()
     expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('纵向点击按下时处于自动展开过渡内则忽略后续点击', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+
+    wrapper.find('.reader-root').trigger('pointerdown', { isPrimary: true, button: 0 })
+    mocks.transitionAfterEnter?.()
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 

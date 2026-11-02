@@ -263,6 +263,15 @@ let mouseStartTx = 0
 let mouseStartTy = 0
 let mouseDragged = false
 
+watch(
+  () => props.toolbarToggleProtected,
+  (protectedState) => {
+    if (!protectedState || !tapTimer) return
+    clearTimeout(tapTimer)
+    tapTimer = null
+  },
+)
+
 // ---- 可见槽位 ----
 const visibleIndices = computed(() => {
   const di = displayIndex.value
@@ -513,7 +522,8 @@ function onTouchEnd(ev: TouchEvent) {
         }
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        const protectedAtTap = toolbarToggleProtectedAtTouchStart
+        const protectedAtTap =
+          toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
         tapTimer = setTimeout(() => {
           emit('toggle-toolbar', protectedAtTap)
           tapTimer = null
@@ -572,7 +582,8 @@ function onTouchEnd(ev: TouchEvent) {
         lastTapT = 0
       } else {
         if (tapTimer) clearTimeout(tapTimer)
-        const protectedAtTap = toolbarToggleProtectedAtTouchStart
+        const protectedAtTap =
+          toolbarToggleProtectedAtTouchStart || props.toolbarToggleProtected
         tapTimer = setTimeout(() => {
           emit('toggle-toolbar', protectedAtTap)
           tapTimer = null

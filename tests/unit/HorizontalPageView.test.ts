@@ -282,6 +282,21 @@ describe('HorizontalPageView', () => {
     wrapper.unmount()
   })
 
+  test('自动展开开始时取消横向视图待发的工具栏点击', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container } = mountView()
+    await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 150, clientY: 200 }],
+    })
+    await wrapper.setProps({ toolbarToggleProtected: true })
+    await vi.advanceTimersByTimeAsync(280)
+
+    expect(wrapper.emitted('toggle-toolbar')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   test('中间区域双击按 1 倍、2 倍、3 倍、5 倍循环缩放', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)

@@ -330,7 +330,6 @@ import {
   computed,
   nextTick,
   onActivated,
-  onDeactivated,
   onMounted,
   onUnmounted,
   reactive,
@@ -421,11 +420,6 @@ const resolveDownloadScrollElement = async () => {
   return (await ionContentEl.getScrollElement?.()) ?? null
 }
 
-const saveDownloadScrollPosition = async () => {
-  const el = await resolveDownloadScrollElement()
-  if (el) downloadScrollTop = el.scrollTop
-}
-
 const restoreDownloadScrollPosition = async () => {
   await nextTick()
   const el = await resolveDownloadScrollElement()
@@ -434,10 +428,6 @@ const restoreDownloadScrollPosition = async () => {
 
 onActivated(() => {
   void restoreDownloadScrollPosition()
-})
-
-onDeactivated(() => {
-  void saveDownloadScrollPosition()
 })
 
 const exportSelectionActive = ref(false)
@@ -1236,6 +1226,7 @@ const toggleGroup = async (key: DownloadGroupKey, event?: MouseEvent) => {
 
 const onDownloadScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   const scrollTop = event.detail?.scrollTop ?? 0
+  downloadScrollTop = scrollTop
   const isRestoredScroll =
     restoredDownloadScrollTop !== null && Math.abs(scrollTop - restoredDownloadScrollTop) < 1
   if (restoredDownloadScrollTop !== null) {

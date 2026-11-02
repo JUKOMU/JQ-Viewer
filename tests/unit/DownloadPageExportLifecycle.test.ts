@@ -407,6 +407,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     }
     scrollElement.getScrollElement = async () => scrollElement
     scrollElement.scrollTop = 640
+    content.vm.$emit('ionScroll', { detail: { scrollTop: 640 } })
 
     showDownload.value = false
     await nextTick()

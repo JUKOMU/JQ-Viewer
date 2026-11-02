@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- test-only Ionic fixtures */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, ref } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getUsedDomain: vi.fn(),
   reprobeDomains: vi.fn(),
   measureLatency: vi.fn(),
+  measureDomainLatency: vi.fn(),
   getAllSettings: vi.fn(),
   getImageRouteCandidates: vi.fn(),
   getImageRouteStatus: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getUsedDomain: mocks.getUsedDomain,
     reprobeDomains: mocks.reprobeDomains,
     measureLatency: mocks.measureLatency,
+    measureDomainLatency: mocks.measureDomainLatency,
     getAllSettings: mocks.getAllSettings,
     getImageRouteCandidates: mocks.getImageRouteCandidates,
     getImageRouteStatus: mocks.getImageRouteStatus,
@@ -100,7 +102,7 @@ vi.mock('@/composables/useTimedReveal', () => ({
 
 import NetworkStatusPage from '@/views/NetworkStatusPage.vue'
 import RouteSwitchButton from '@/components/common/RouteSwitchButton.vue'
-import { disposeNetworkProbeStore } from '@/composables/networkProbeStore'
+import { disposeNetworkProbeStore, useNetworkProbeStore } from '@/composables/networkProbeStore'
 
 let clientStateListener: ((snapshot: { state: string; timestamp: number }) => void) | undefined
 
@@ -125,6 +127,7 @@ beforeEach(() => {
   mocks.getUsedDomain.mockResolvedValue({ domain: 'api.example' })
   mocks.reprobeDomains.mockResolvedValue({ success: true })
   mocks.measureLatency.mockResolvedValue({ results: [] })
+  mocks.measureDomainLatency.mockResolvedValue({ domain: 'api.example', latencyMs: 42, timedOut: false })
   mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'auto', imageRouteHost: '' })
   mocks.getImageRouteCandidates.mockResolvedValue({ hosts: [] })
   mocks.getImageRouteStatus.mockResolvedValue({
@@ -184,6 +187,37 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     expect(wrapper.text()).not.toContain('在线客户端不可用')
     wrapper.unmount()
   })
+
+  test('API 线路选择入口在切换期间禁用', async () => {
+    mocks.routeState!.loading.value = true
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    expect(wrapper.find('.domain-card:not(.image-route-card) .route-choice').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  test('域名变为不可达时清除之前的成功测速结果', async () => {
+    mocks.getDomainStates.mockResolvedValue({
+      domains: [{ domain: 'api.example', reachable: true }],
+      alive: 1,
+      total: 1,
+      allDeadFallback: false,
+    })
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+    await wrapper.find('button[aria-label="测速 api.example"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.domain-card:not(.image-route-card) .latency').text()).toBe('42 ms')
+    useNetworkProbeStore().domains.value = [{ domain: 'api.example', reachable: false }]
+    await nextTick()
+
+    expect(wrapper.find('.domain-card:not(.image-route-card) .latency').text()).toBe('不可达')
+    wrapper.unmount()
+  })
 })
 
 describe('图片线路手动模式', () => {
@@ -214,6 +248,20 @@ describe('图片线路手动模式', () => {
     expect(wrapper.find('.image-route-card .route-row-select[aria-pressed="true"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  test('图片测速期间禁用线路选择入口', async () => {
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    mocks.measureImageHosts.mockReturnValue(new Promise(() => {}))
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    await nextTick()
+
+    expect(mocks.measureImageHosts).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.image-route-card .domain-list .route-choice').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
 
   test('设置读取失败时保留错误并禁用图片线路操作', async () => {
     mocks.getAllSettings.mockRejectedValue(new Error('设置读取失败'))

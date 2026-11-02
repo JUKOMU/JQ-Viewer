@@ -228,7 +228,7 @@ describe('HorizontalPageView', () => {
     await click(181)
     await click(181) // 末页不越界
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1], [2]])
-    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[false], [false]])
     expect(wrapper.get('.strip').attributes('style')).toContain('translate3d(-600px, 0, 0)')
     wrapper.unmount()
   })
@@ -244,7 +244,7 @@ describe('HorizontalPageView', () => {
     wrapper.vm.zoomIn()
     await click(241)
     expect(wrapper.emitted('update:currentIndex')).toEqual([[0], [1]])
-    expect(wrapper.emitted('toggle-toolbar')).toEqual([[], []])
+    expect(wrapper.emitted('toggle-toolbar')).toEqual([[false], [false]])
     expect(wrapper.findAll('.page-content').every((page) => !page.attributes('style'))).toBe(true)
     wrapper.unmount()
   })

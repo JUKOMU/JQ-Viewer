@@ -100,13 +100,18 @@
                   <span class="latency" :class="latencyClass(d.domain, d.reachable)">
                     {{ measuringDomain === d.domain ? '测速中' : latencyText(d.domain, d.reachable) }}
                   </span>
-                  <span class="route-choice" @click="selectRoute('manual', d.domain)">
+                  <button
+                    class="route-choice"
+                    type="button"
+                    :disabled="route.loading.value"
+                    @click="selectRoute('manual', d.domain)"
+                  >
                     {{
                       route.mode.value === 'manual' && route.selectedDomain.value === d.domain
                         ? '已选择'
                         : '选择'
                     }}
-                  </span>
+                  </button>
                 </div>
               </div>
               <div v-else-if="store.loading.value" class="empty-state">正在读取域名状态...</div>
@@ -201,9 +206,14 @@
                   <span v-else class="latency" :class="imageHostLatencyClass(host)">
                     {{ imageHostLatencyText(host) }}
                   </span>
-                  <span class="route-choice" @click="selectImageRoute('manual', host)">
+                  <button
+                    class="route-choice"
+                    type="button"
+                    :disabled="!imageRouteSettingsReady || imageMeasuring"
+                    @click="selectImageRoute('manual', host)"
+                  >
                     {{ imageRouteMode === 'manual' && imageRouteHost === host ? '已选择' : '选择' }}
-                  </span>
+                  </button>
                 </div>
               </div>
               <div v-else-if="imageMeasuring" class="empty-state">正在测量图片线路...</div>
@@ -260,6 +270,22 @@ const refreshing = ref(false)
 const measuring = ref(false)
 const measuringDomain = ref('')
 const latencyMap = ref<Record<string, { latencyMs: number; timedOut: boolean }>>({})
+watch(
+  () => store.domains.value.map(({ domain, reachable }) => [domain, reachable] as const),
+  (domains, previousDomains) => {
+    const previousReachability = new Map(previousDomains)
+    const nextLatencyMap = { ...latencyMap.value }
+    let changed = false
+    for (const [domain, reachable] of domains) {
+      if (previousReachability.has(domain) && previousReachability.get(domain) !== reachable) {
+        delete nextLatencyMap[domain]
+        changed = true
+      }
+    }
+    if (changed) latencyMap.value = nextLatencyMap
+  },
+  { flush: 'sync' },
+)
 const operationError = ref('')
 const visibleError = computed(() => operationError.value || store.errorMessage.value)
 const routeError = ref('')
@@ -855,8 +881,17 @@ function formatTime(ts: number): string {
 
 .route-choice {
   flex-shrink: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: var(--ion-color-primary);
+  font: inherit;
   font-size: 12px;
+  cursor: pointer;
+}
+
+.route-choice:disabled {
+  cursor: default;
 }
 
 .domain-row + .domain-row {

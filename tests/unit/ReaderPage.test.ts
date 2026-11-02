@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   imageFailedHandler: null as null | ((sortOrder: number, sessionId: string) => void),
   autoShowToolbarAtEnd: false,
   readerAtBottom: false,
+  transitionAfterEnter: undefined as (() => void) | undefined,
+  transitionEnterCancelled: undefined as (() => void) | undefined,
   listenerRemove: vi.fn(() => Promise.resolve()),
   getImageUrl: vi.fn(
     (photoId: string, sortOrder: number, type: string) =>
@@ -233,6 +235,15 @@ const mountReader = () =>
   mount(ReaderPage, {
     global: {
       stubs: {
+        transition: defineComponent({
+          inheritAttrs: false,
+          props: { name: { type: String, required: false } },
+          setup(_, { attrs, slots }) {
+            mocks.transitionAfterEnter = attrs.onAfterEnter as (() => void) | undefined
+            mocks.transitionEnterCancelled = attrs.onEnterCancelled as (() => void) | undefined
+            return () => h('div', slots.default?.())
+          },
+        }),
         ReaderTopToolbar: EmptyStub,
         ReaderBottomToolbar: ReaderBottomToolbarStub,
         VerticalScrollView: VerticalScrollViewStub,
@@ -266,6 +277,8 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     mocks.setRouteChapterId?.('chapter-1')
     mocks.autoShowToolbarAtEnd = false
     mocks.readerAtBottom = false
+    mocks.transitionAfterEnter = undefined
+    mocks.transitionEnterCancelled = undefined
     mocks.imageReadyHandler = null
     mocks.imageFailedHandler = null
     mocks.getDownloadedPhoto.mockResolvedValue(makePhoto())
@@ -330,8 +343,51 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     await nextTick()
     expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
 
-    wrapper.find('.reader-bottom-toolbar-stub').element.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    mocks.transitionAfterEnter?.()
     await nextTick()
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('自动展开前清除待执行的纵向点击', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(940)
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(60)
+    await nextTick()
+    vi.advanceTimersByTime(220)
+    await nextTick()
+
+    expect(wrapper.find('.reader-bottom-toolbar-stub').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('工具栏进入过渡取消后解除点击保护', async () => {
+    vi.useFakeTimers()
+    mocks.autoShowToolbarAtEnd = true
+    mocks.readerAtBottom = true
+    const wrapper = mountReader()
+    await settle()
+
+    wrapper.find('.reader-root').trigger('click')
+    vi.advanceTimersByTime(280)
+    await nextTick()
+    wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    mocks.transitionEnterCancelled?.()
     wrapper.find('.reader-root').trigger('click')
     vi.advanceTimersByTime(280)
     await nextTick()
@@ -377,7 +433,7 @@ describe('ReaderPage 在线/离线统一图片加载', () => {
     wrapper.findComponent(VerticalScrollViewStub).vm.$emit('reached-bottom')
     vi.advanceTimersByTime(1000)
     await nextTick()
-    wrapper.findComponent(ReaderBottomToolbarStub).element.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    mocks.transitionAfterEnter?.()
     await nextTick()
 
     wrapper.findComponent(ReaderBottomToolbarStub).vm.$emit('open-settings')

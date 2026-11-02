@@ -57,7 +57,11 @@
       />
 
       <!-- 底部工具栏 -->
-      <Transition name="toolbar-slide">
+      <Transition
+        name="toolbar-slide"
+        @after-enter="clearAutoShowToolbarTransitionProtection"
+        @enter-cancelled="clearAutoShowToolbarTransitionProtection"
+      >
         <ReaderBottomToolbar
           v-if="toolbarVisible"
           :current="currentIndex + 1"
@@ -65,7 +69,6 @@
           :chapters="chapters"
           :current-chapter-id="chapterId"
           @click.stop
-          @transitionend="onAutoShowToolbarTransitionEnd"
           @open-settings="settingsPanelVisible = true"
           @select-chapter="switchChapter"
           @update:current="onProgressDrag"
@@ -279,8 +282,7 @@ const onHorizontalToggleToolbar = (protectedAtTap: boolean) => {
   toggleToolbar()
 }
 
-const onAutoShowToolbarTransitionEnd = (event: TransitionEvent) => {
-  if (event.target !== event.currentTarget) return
+const clearAutoShowToolbarTransitionProtection = () => {
   autoShowToolbarTransitionPending.value = false
 }
 
@@ -296,6 +298,7 @@ const scheduleToolbarAtReaderEnd = () => {
     autoShowToolbarTimer = null
     if (toolbarVisible.value || !SettingsStore.getReaderAutoShowToolbarAtEnd() || !isAtReaderEnd())
       return
+    clearToolbarTapTimer()
     autoShowToolbarTransitionPending.value = true
     setToolbarVisible(true)
   }, AUTO_SHOW_TOOLBAR_DELAY_MS)
@@ -1345,6 +1348,8 @@ onActivated(() => {
 
 onDeactivated(() => {
   clearAutoShowToolbarTimer()
+  clearToolbarTapTimer()
+  clearAutoShowToolbarTransitionProtection()
   deactivateReaderRuntime()
 })
 

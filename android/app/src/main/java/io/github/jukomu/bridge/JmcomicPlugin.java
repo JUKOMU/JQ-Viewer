@@ -271,7 +271,9 @@ public class JmcomicPlugin extends Plugin {
             call.reject("无效的 API 域名");
             return;
         }
-        HttpUrl url = new HttpUrl.Builder().scheme("https").host(domain).build();
+        HttpUrl parsedUrl = HttpUrl.get(domain.contains("://") ? domain : "https://" + domain);
+        // 域名状态键可能包含协议，测速请求只使用其 Host。
+        HttpUrl url = new HttpUrl.Builder().scheme("https").host(parsedUrl.host()).build();
         Request request = new Request.Builder().url(url).head().build();
         OkHttpClient probeClient = new OkHttpClient.Builder()
             .callTimeout(Duration.ofSeconds(5))

@@ -209,6 +209,64 @@ describe('在线客户端初始化后的线路状态恢复', () => {
     wrapper.unmount()
   })
 
+  test('图片线路候选加载期间显示加载态而不是空列表', async () => {
+    let resolveCandidates!: (result: { hosts: string[] }) => void
+    mocks.getImageRouteCandidates.mockReturnValue(new Promise<{ hosts: string[] }>((resolve) => {
+      resolveCandidates = resolve
+    }))
+    const wrapper = mount(NetworkStatusPage)
+
+    expect(wrapper.find('.domain-card.image-route-card').text()).toContain('正在读取图片线路...')
+    expect(wrapper.find('.domain-card.image-route-card').text()).not.toContain('暂无图片线路')
+
+    resolveCandidates({ hosts: ['fast.example'] })
+    await flushPromises()
+
+    expect(wrapper.find('.domain-card.image-route-card').text()).toContain('fast.example')
+    wrapper.unmount()
+  })
+
+  test('客户端离线时两类线路都提示不可用并禁用测速', async () => {
+    mocks.getClientState.mockResolvedValue({
+      state: 'unavailable',
+      reason: 'no_network',
+      timestamp: 2,
+    })
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前网络不可用，离线功能仍可使用')
+    expect(wrapper.find('button[aria-label="测量线路延迟"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button[aria-label="测量图片线路"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.domain-card.image-route-card').text()).toContain('暂不可测速')
+    wrapper.unmount()
+  })
+
+  test('空闲图片测速状态不会清除本次测速错误', async () => {
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    mocks.measureImageHosts.mockRejectedValue(new Error('在线客户端不可用'))
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    await wrapper.find('button[aria-label="测量图片线路"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.domain-card.image-route-card').text()).toContain('在线客户端不可用')
+    wrapper.unmount()
+  })
+
+  test('ready 状态下未测量的图片线路明确显示未测速', async () => {
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
+    mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
+    const wrapper = mount(NetworkStatusPage)
+    await flushPromises()
+
+    expect(wrapper.find('.image-route-card .latency').text()).toBe('未测速')
+    wrapper.unmount()
+  })
+
   test('域名消失后重新出现时清除之前的成功测速结果', async () => {
     mocks.getDomainStates.mockResolvedValue({
       domains: [{ domain: 'api.example', reachable: true }],
@@ -314,6 +372,7 @@ describe('图片线路手动模式', () => {
   })
 
   test('手动模式点击测速只展示结果，不应用测速选出的 Host', async () => {
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
     mocks.getAllSettings.mockResolvedValue({ imageRouteMode: 'manual', imageRouteHost: 'fixed.example' })
     mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fixed.example', 'fast.example'] })
     const wrapper = mount(NetworkStatusPage)
@@ -330,6 +389,7 @@ describe('图片线路手动模式', () => {
   })
 
   test('图片测速期间禁用线路选择入口', async () => {
+    mocks.getClientState.mockResolvedValue({ state: 'ready', timestamp: 2 })
     mocks.getImageRouteCandidates.mockResolvedValue({ hosts: ['fast.example'] })
     mocks.measureImageHosts.mockReturnValue(new Promise(() => {}))
     const wrapper = mount(NetworkStatusPage)

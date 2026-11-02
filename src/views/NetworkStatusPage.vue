@@ -44,7 +44,9 @@
                   class="icon-action speed-btn"
                   :class="{ spinning: measuring }"
                   type="button"
-                  :disabled="measuring || !!measuringDomain"
+                  :disabled="
+                    store.clientState.value.state !== 'ready' || measuring || !!measuringDomain
+                  "
                   aria-label="测量线路延迟"
                   title="测量线路延迟"
                   @click="handleMeasureLatency"
@@ -90,7 +92,9 @@
                     class="icon-action row-speed-btn"
                     :class="{ spinning: measuringDomain === d.domain }"
                     type="button"
-                    :disabled="measuring || !!measuringDomain"
+                    :disabled="
+                      store.clientState.value.state !== 'ready' || measuring || !!measuringDomain
+                    "
                     :aria-label="`测速 ${d.domain}`"
                     :title="`测速 ${d.domain}`"
                     @click="handleMeasureDomain(d.domain)"
@@ -155,7 +159,12 @@
                   class="icon-action speed-btn"
                   :class="{ spinning: imageMeasuring }"
                   type="button"
-                  :disabled="!imageRouteSettingsReady || imageMeasuring || !!measuringImageHost"
+                  :disabled="
+                    !imageRouteSettingsReady ||
+                    store.clientState.value.state !== 'ready' ||
+                    imageMeasuring ||
+                    !!measuringImageHost
+                  "
                   aria-label="测量图片线路"
                   title="测量图片线路"
                   @click="handleMeasureImageHosts()"
@@ -165,8 +174,15 @@
               </div>
             </div>
             <div class="card domain-card image-route-card">
-              <div v-if="imageApplyError || imageRouteSettingsError || imageRouteError" class="operation-error">
-                {{ imageApplyError || imageRouteSettingsError || imageRouteError }}
+              <div
+                v-if="imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError"
+                class="operation-error"
+                role="alert"
+              >
+                {{ imageApplyError || imageRouteSettingsError || imageMeasureError || imageRouteError }}
+              </div>
+              <div v-if="imageClientStateText" class="empty-state" role="status">
+                {{ imageClientStateText }}
               </div>
               <div v-if="imageHostCandidates.length" class="domain-list">
                 <div
@@ -189,7 +205,12 @@
                     class="icon-action row-speed-btn"
                     :class="{ spinning: measuringImageHost === host }"
                     type="button"
-                    :disabled="!imageRouteSettingsReady || imageMeasuring || !!measuringImageHost"
+                    :disabled="
+                      !imageRouteSettingsReady ||
+                      store.clientState.value.state !== 'ready' ||
+                      imageMeasuring ||
+                      !!measuringImageHost
+                    "
                     :aria-label="`测速 ${host}`"
                     :title="`测速 ${host}`"
                     @click="handleMeasureImageHost(host)"
@@ -216,8 +237,14 @@
                   </button>
                 </div>
               </div>
+              <div v-else-if="imageHostsLoading" class="empty-state">正在读取图片线路...</div>
               <div v-else-if="imageMeasuring" class="empty-state">正在测量图片线路...</div>
-              <div v-else-if="!imageRouteError" class="empty-state">暂无图片线路</div>
+              <div
+                v-else-if="!imageRouteError && store.clientState.value.state === 'ready'"
+                class="empty-state"
+              >
+                暂无图片线路
+              </div>
             </div>
           </section>
 
@@ -299,6 +326,7 @@ const routeError = ref('')
 const imageRouteMode = ref<'auto' | 'manual'>(SettingsStore.getImageRouteMode())
 const imageRouteHost = ref(SettingsStore.getImageRouteHost())
 const imageHostCandidates = ref<string[]>([])
+const imageHostsLoading = ref(true)
 const imageHostResults = ref<Array<{
   host: string
   available: boolean
@@ -314,6 +342,7 @@ const imageRunId = ref(0)
 const imageRevision = ref(0)
 const imageMeasureRequestPending = ref(false)
 const imageRouteError = ref('')
+const imageMeasureError = ref('')
 const imageApplyError = ref('')
 const imageRouteSettingsReady = ref(false)
 const imageRouteSettingsError = ref('')
@@ -322,6 +351,11 @@ const clientUnavailableText = computed(() =>
     ? '当前网络不可用，离线功能仍可使用'
     : '在线客户端暂不可用，离线功能仍可使用',
 )
+const imageClientStateText = computed(() => {
+  if (store.clientState.value.state === 'initializing') return '在线客户端正在初始化'
+  if (store.clientState.value.state === 'unavailable') return clientUnavailableText.value
+  return ''
+})
 let probeHandle: ListenerHandle | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
@@ -373,6 +407,9 @@ onMounted(() => {
     })
     .catch((error) => {
       imageRouteError.value = normalizeRuntimeError(error, '获取图片线路失败').message
+    })
+    .finally(() => {
+      imageHostsLoading.value = false
     })
   JmcomicService.addNetworkProbeListener((data) => {
     applyImageRouteEvent(data)
@@ -457,8 +494,9 @@ function imageHostIsMeasuring(host: string): boolean {
 
 /** 将图片线路测速返回的字节吞吐量转换为便于阅读的速率文本。 */
 function imageHostLatencyText(host: string): string {
+  if (store.clientState.value.state !== 'ready') return '暂不可测速'
   const result = imageHostResult(host)
-  if (!result) return '/'
+  if (!result) return '未测速'
   if (!result.available) return '不可用'
   const speed = result.bytesPerSecond
   if (speed >= 1024 * 1024) return `${(speed / (1024 * 1024)).toFixed(1)} MB/s`
@@ -467,6 +505,7 @@ function imageHostLatencyText(host: string): string {
 }
 
 function imageHostLatencyClass(host: string): string {
+  if (store.clientState.value.state !== 'ready') return 'lat-muted'
   const result = imageHostResult(host)
   if (!result) return 'lat-yellow'
   return result.available ? 'lat-green' : 'lat-red'
@@ -500,13 +539,19 @@ async function selectImageRoute(mode: 'auto' | 'manual', host = '') {
 }
 
 async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value === 'auto') {
-  if (!imageRouteSettingsReady.value || imageMeasuring.value || measuringImageHost.value) return
+  if (
+    !imageRouteSettingsReady.value ||
+    store.clientState.value.state !== 'ready' ||
+    imageMeasuring.value ||
+    measuringImageHost.value
+  ) return
   imageStatusQuerySequence++
   imageMeasureRequestPending.value = true
   imageMeasuring.value = true
   imageCurrentHost.value = null
   imageHostResults.value = []
   imageRouteError.value = ''
+  imageMeasureError.value = ''
   imageApplyError.value = ''
   try {
     const result = await JmcomicService.measureImageHosts()
@@ -520,7 +565,7 @@ async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value 
       hosts: result.hosts,
     })
     if (!result.selectedHost) {
-      imageRouteError.value = '没有可用的图片线路'
+      imageMeasureError.value = '没有可用的图片线路'
       return
     }
     if (!applySelectedHost || !imageRouteSettingsReady.value) return
@@ -536,7 +581,7 @@ async function handleMeasureImageHosts(applySelectedHost = imageRouteMode.value 
   } catch (error) {
     imageMeasuring.value = false
     imageCurrentHost.value = null
-    imageRouteError.value = normalizeRuntimeError(error, '图片线路测速失败').message
+    imageMeasureError.value = normalizeRuntimeError(error, '图片线路测速失败').message
   } finally {
     imageMeasureRequestPending.value = false
     void syncImageRouteStatus(true)
@@ -577,7 +622,7 @@ function handleRefresh() {
 }
 
 function handleMeasureLatency() {
-  if (measuring.value) return
+  if (store.clientState.value.state !== 'ready' || measuring.value) return
   measuring.value = true
   operationError.value = ''
   latencyMap.value = {}
@@ -598,7 +643,7 @@ function handleMeasureLatency() {
 }
 
 async function handleMeasureDomain(domain: string) {
-  if (measuring.value || measuringDomain.value) return
+  if (store.clientState.value.state !== 'ready' || measuring.value || measuringDomain.value) return
   measuringDomain.value = domain
   operationError.value = ''
   try {
@@ -612,14 +657,20 @@ async function handleMeasureDomain(domain: string) {
 }
 
 async function handleMeasureImageHost(host: string) {
-  if (!imageRouteSettingsReady.value || imageMeasuring.value || measuringImageHost.value) return
+  if (
+    !imageRouteSettingsReady.value ||
+    store.clientState.value.state !== 'ready' ||
+    imageMeasuring.value ||
+    measuringImageHost.value
+  ) return
   measuringImageHost.value = host
   imageRouteError.value = ''
+  imageMeasureError.value = ''
   try {
     const result = await JmcomicService.measureImageHost(host)
     imageHostResults.value = [...imageHostResults.value.filter((item) => item.host !== host), result]
   } catch (error) {
-    imageRouteError.value = normalizeRuntimeError(error, '图片线路测速失败').message
+    imageMeasureError.value = normalizeRuntimeError(error, '图片线路测速失败').message
   } finally {
     measuringImageHost.value = ''
   }
@@ -943,6 +994,10 @@ function formatTime(ts: number): string {
   color: #bd652a;
 }
 
+.latency.lat-muted {
+  color: var(--ion-color-medium, #92949c);
+}
+
 .latency.lat-red {
   color: #d15d55;
 }
@@ -970,7 +1025,11 @@ function formatTime(ts: number): string {
     Consolas,
     monospace;
   flex-shrink: 0;
-  width: 52px;
+  width: max-content;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .log-dot {

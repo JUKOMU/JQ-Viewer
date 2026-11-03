@@ -283,7 +283,12 @@
 
           <div class="row divider">
             <div class="row-left">
-              <span class="row-title">自动播放速度</span>
+              <div class="row-title-line">
+                <span class="row-title">自动播放速度</span>
+                <button type="button" class="setting-help-btn" aria-label="自动播放使用帮助" @click="showAutoPlayHelp">
+                  <IonIcon :icon="helpCircleOutline" />
+                </button>
+              </div>
               <span class="row-subtitle">正数向下滚动，负数向上滚动，范围为 ±0.1 秒至 ±30 秒</span>
             </div>
             <div class="row-right auto-play-speed-control">
@@ -634,7 +639,7 @@ import {
   IonToggle,
   IonToolbar,
 } from '@ionic/vue'
-import { chevronForwardOutline } from 'ionicons/icons'
+import { chevronForwardOutline, helpCircleOutline } from 'ionicons/icons'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
@@ -1342,6 +1347,28 @@ async function onAutoPlayIntervalChange(event: Event) {
   await saveAutoPlayInterval(Number(input.value), input)
 }
 
+async function showAutoPlayHelp() {
+  const alert = await createAppAlert({
+    tone: 'info',
+    header: '自动播放使用帮助',
+    message: [
+      '【开始与暂停】',
+      '在阅读页轻触画面唤出自动播放按钮，点击播放开始；播放时点击暂停停止。',
+      '',
+      '【调整速度】',
+      '自动播放中，按音量减键或方向下/右键会增加向下滚动或向后翻页的速度；按音量加键或方向上/左键会增加向上滚动或向前翻页的速度。按相反按键会减慢当前方向的速度。也可在设置中拖动滑块或输入数值。',
+      '',
+      '【播放方向】',
+      '持续调速到当前方向的速度边界后，会自动切换到相反方向；切换后，按键对应的加速、减速方向也会改变。',
+      '',
+      '【速度环】',
+      '圆环上半部分表示向上滚动或向前翻页，下半部分表示向下滚动或向后翻页。填充从中线向对应方向延伸；填充越多，滚动或翻页越快。',
+    ].join('\n'),
+    buttons: [{ text: '知道了', role: 'cancel' }],
+  })
+  await alert.present()
+}
+
 async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
   const seconds = Math.round(value * 100) / 100
   if (!Number.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
@@ -1461,6 +1488,24 @@ async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
   font-size: 15px;
   color: #4c2a18;
   font-weight: 500;
+}
+
+.row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.setting-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #8c6b5a;
+  background: transparent;
+  font-size: 16px;
 }
 
 .row-subtitle {

@@ -51,7 +51,10 @@ vi.mock('@ionic/vue', () => {
   }
 })
 
-vi.mock('ionicons/icons', () => ({ chevronForwardOutline: 'chevron-forward' }))
+vi.mock('ionicons/icons', () => ({
+  chevronForwardOutline: 'chevron-forward',
+  helpCircleOutline: 'help-circle',
+}))
 
 vi.mock('@/components/common/MenuToggleButton.vue', () => ({
   default: defineComponent({ name: 'MenuToggleButton', render: () => h('button') }),

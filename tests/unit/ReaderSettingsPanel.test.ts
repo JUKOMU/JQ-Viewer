@@ -32,7 +32,7 @@ vi.mock('@ionic/vue', () => ({
   }),
 }))
 
-vi.mock('ionicons/icons', () => ({ closeOutline: 'close' }))
+vi.mock('ionicons/icons', () => ({ closeOutline: 'close', helpCircleOutline: 'help-circle' }))
 
 vi.mock('@/runtime/runtimeContext', () => ({
   getRuntime: () => ({

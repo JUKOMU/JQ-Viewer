@@ -169,7 +169,12 @@
 
         <div class="setting-row divider">
           <div class="setting-left">
-            <span class="setting-label">自动播放速度</span>
+            <div class="setting-title-row">
+              <span class="setting-label">自动播放速度</span>
+              <button type="button" class="setting-help-btn" aria-label="自动播放使用帮助" @click="showAutoPlayHelp">
+                <IonIcon :icon="helpCircleOutline" />
+              </button>
+            </div>
             <span class="setting-sub">正数向下滚动，负数向上滚动，范围为 ±0.1 秒至 ±30 秒</span>
           </div>
           <div class="setting-right auto-play-speed-control">
@@ -303,7 +308,8 @@
 import { nextTick, onMounted, ref } from 'vue'
 import type { RangeCustomEvent } from '@ionic/vue'
 import { IonIcon, IonRange, IonToggle } from '@ionic/vue'
-import { closeOutline } from 'ionicons/icons'
+import { closeOutline, helpCircleOutline } from 'ionicons/icons'
+import { createAppAlert } from '@/services/AppAlertService'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { persistReaderSettingValue } from '@/services/ReaderSettingPersistence'
@@ -506,6 +512,28 @@ function onAutoPlaySliderInput(event: Event) {
     position,
     localAutoPlayInterval.value,
   )
+}
+
+async function showAutoPlayHelp() {
+  const alert = await createAppAlert({
+    tone: 'info',
+    header: '自动播放使用帮助',
+    message: [
+      '【开始与暂停】',
+      '在阅读页轻触画面唤出自动播放按钮，点击播放开始；播放时点击暂停停止。',
+      '',
+      '【调整速度】',
+      '自动播放中，按音量减键或方向下/右键会增加向下滚动或向后翻页的速度；按音量加键或方向上/左键会增加向上滚动或向前翻页的速度。按相反按键会减慢当前方向的速度。也可在设置中拖动滑块或输入数值。',
+      '',
+      '【播放方向】',
+      '持续调速到当前方向的速度边界后，会自动切换到相反方向；切换后，按键对应的加速、减速方向也会改变。',
+      '',
+      '【速度环】',
+      '圆环上半部分表示向上滚动或向前翻页，下半部分表示向下滚动或向后翻页。填充从中线向对应方向延伸；填充越多，滚动或翻页越快。',
+    ].join('\n'),
+    buttons: [{ text: '知道了', role: 'cancel' }],
+  })
+  await alert.present()
 }
 
 async function onAutoPlaySliderChange() {
@@ -714,6 +742,24 @@ function onPreloadConcurrencyChange(e: Event) {
   font-size: 15px;
   color: #4c2a18;
   font-weight: 500;
+}
+
+.setting-title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.setting-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #8c6b5a;
+  background: transparent;
+  font-size: 16px;
 }
 
 .setting-sub {

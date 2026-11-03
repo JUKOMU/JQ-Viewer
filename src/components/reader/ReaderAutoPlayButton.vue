@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
   left: 0;
   height: 1px;
   transform: translateY(-50%);
-  background: rgb(255 255 255 / 72%);
+  background: #8c6b5a;
   pointer-events: none;
 }
 

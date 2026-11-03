@@ -13,6 +13,7 @@ export function useReaderAutoPlay(options: {
 }) {
   const isPlaying = ref(false)
   const intervalSeconds = ref(SettingsStore.getReaderAutoPlayInterval())
+  const speedAdjustmentVersion = ref(0)
   const volumeKeys = getRuntime().services.reader.volumeKeys
   let interactionActive = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -146,6 +147,7 @@ export function useReaderAutoPlay(options: {
     }
     next = Math.round(next * 100) / 100
     updateInterval(next)
+    speedAdjustmentVersion.value++
     void persistReaderAutoPlayInterval(next).catch((error) => {
       updateInterval(SettingsStore.getReaderAutoPlayInterval())
       void showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')
@@ -176,6 +178,7 @@ export function useReaderAutoPlay(options: {
   return {
     isPlaying,
     intervalSeconds,
+    speedAdjustmentVersion,
     toggle,
     stop,
     pauseForInteraction,

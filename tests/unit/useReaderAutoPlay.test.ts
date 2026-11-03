@@ -55,8 +55,10 @@ describe('useReaderAutoPlay', () => {
     autoPlay.toggle()
     expect(autoPlay.handleDirectionKey('ArrowDown')).toBe(true)
     expect(autoPlay.intervalSeconds.value).toBe(1.8)
+    expect(autoPlay.speedAdjustmentVersion.value).toBe(1)
     expect(autoPlay.handleDirectionKey('ArrowUp')).toBe(true)
     expect(autoPlay.intervalSeconds.value).toBe(1.98)
+    expect(autoPlay.speedAdjustmentVersion.value).toBe(2)
     expect(mocks.persistInterval).toHaveBeenNthCalledWith(1, 1.8)
     expect(mocks.persistInterval).toHaveBeenNthCalledWith(2, 1.98)
 

@@ -63,6 +63,8 @@
 
       <ReaderAutoPlayButton
         :is-playing="autoPlay.isPlaying.value"
+        :interval-seconds="autoPlay.intervalSeconds.value"
+        :speed-adjustment-version="autoPlay.speedAdjustmentVersion.value"
         :disabled="totalCount === 0"
         @toggle="autoPlay.toggle"
       />

@@ -17,7 +17,7 @@
       <span class="reader-auto-play-speed-midline" />
     </span>
     <span class="reader-auto-play-face">
-      <IonIcon :icon="isPlaying ? pause : play" aria-hidden="true" />
+      <IonIcon :icon="buttonIcon" aria-hidden="true" />
     </span>
   </button>
 </template>
@@ -25,12 +25,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { pause, play } from 'ionicons/icons'
+import {
+  arrowBackOutline,
+  arrowDownOutline,
+  arrowForwardOutline,
+  arrowUpOutline,
+  pause,
+  play,
+} from 'ionicons/icons'
 import { leftMenuOpen } from '@/composables/useSideMenuState'
 import { useTimedReveal } from '@/composables/useTimedReveal'
 
 const props = defineProps<{
   isPlaying: boolean
+  isVertical: boolean
   intervalSeconds: number
   speedAdjustmentVersion: number
   disabled?: boolean
@@ -38,10 +46,17 @@ const props = defineProps<{
 const emit = defineEmits<{ toggle: [] }>()
 const { visible, reveal, restart, dispose } = useTimedReveal(2000)
 const dimmed = ref(false)
+const showDirectionIcon = ref(false)
 const speedFillPercent = computed(
   () => Math.floor(((30 - Math.abs(props.intervalSeconds)) / 29.9) * 10000) / 100,
 )
+const buttonIcon = computed(() => {
+  if (!showDirectionIcon.value || !props.isPlaying) return props.isPlaying ? pause : play
+  if (props.isVertical) return props.intervalSeconds < 0 ? arrowUpOutline : arrowDownOutline
+  return props.intervalSeconds < 0 ? arrowBackOutline : arrowForwardOutline
+})
 let dimTimer: ReturnType<typeof setTimeout> | null = null
+let directionIconTimer: ReturnType<typeof setTimeout> | null = null
 
 function revealButton(resetTimer = false) {
   if (visible.value && !resetTimer) return
@@ -76,10 +91,31 @@ function handleKeydown(event: KeyboardEvent) {
   revealButton()
 }
 
+function showPlaybackDirection() {
+  showDirectionIcon.value = true
+  if (directionIconTimer) clearTimeout(directionIconTimer)
+  directionIconTimer = setTimeout(() => {
+    showDirectionIcon.value = false
+    directionIconTimer = null
+  }, 1000)
+}
+
 watch(
   () => props.speedAdjustmentVersion,
   () => {
-    if (props.isPlaying) revealButton(true)
+    if (!props.isPlaying) return
+    revealButton(true)
+    showPlaybackDirection()
+  },
+)
+
+watch(
+  () => props.isPlaying,
+  (isPlaying) => {
+    if (isPlaying) return
+    showDirectionIcon.value = false
+    if (directionIconTimer) clearTimeout(directionIconTimer)
+    directionIconTimer = null
   },
 )
 
@@ -94,6 +130,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('touchstart', handleInteraction, true)
   window.removeEventListener('keydown', handleKeydown, true)
   if (dimTimer) clearTimeout(dimTimer)
+  if (directionIconTimer) clearTimeout(directionIconTimer)
   dispose()
 })
 </script>

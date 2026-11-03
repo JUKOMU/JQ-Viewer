@@ -60,6 +60,7 @@
 
       <ReaderAutoPlayButton
         :is-playing="autoPlay.isPlaying.value"
+        :is-vertical="isVertical"
         :interval-seconds="autoPlay.intervalSeconds.value"
         :speed-adjustment-version="autoPlay.speedAdjustmentVersion.value"
         :disabled="totalCount === 0"

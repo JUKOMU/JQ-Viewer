@@ -100,6 +100,8 @@ const emit = defineEmits<{
   'update:currentIndex': [index: number]
   requestRange: [range: { start: number; end: number; center: number }]
   'reached-bottom': []
+  'interaction-start': []
+  'interaction-end': []
   'image-error': [sortOrder: number, failedUrl: string]
   'retry-images': []
 }>()
@@ -615,9 +617,14 @@ function cycleDoubleTapZoom(clientX: number, clientY: number) {
 }
 
 function onTouch(ev: TouchEvent) {
-  if (ev.type === 'touchstart') onTS(ev)
-  else if (ev.type === 'touchmove') onTM(ev)
-  else if (ev.type === 'touchend' || ev.type === 'touchcancel') onTE(ev)
+  if (ev.type === 'touchstart') {
+    emit('interaction-start')
+    onTS(ev)
+  } else if (ev.type === 'touchmove') onTM(ev)
+  else if (ev.type === 'touchend' || ev.type === 'touchcancel') {
+    onTE(ev)
+    if (ev.touches.length === 0) emit('interaction-end')
+  }
 }
 
 function onTS(ev: TouchEvent) {
@@ -732,6 +739,7 @@ function onMousePointerDown(ev: PointerEvent) {
   if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
+  emit('interaction-start')
   const el = containerRef.value
   if (!el) return
   ev.preventDefault()
@@ -774,6 +782,7 @@ function onMousePointerUp(ev: PointerEvent) {
   if (mousePointerId !== ev.pointerId) return
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
+  emit('interaction-end')
 }
 
 function onMouseClick(ev: MouseEvent) {

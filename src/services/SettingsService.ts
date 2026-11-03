@@ -4,6 +4,7 @@
  * 之后所有读写走同步缓存，持久化由 SettingPage handler 调用 JmcomicService 完成。
  */
 import { JmcomicService } from './JmcomicService'
+import { persistReaderSettingValue } from './ReaderSettingPersistence'
 
 let settingsLoaded = false
 
@@ -20,6 +21,7 @@ let cachedReaderBrightness = -1
 let cachedReaderKeepScreenOn = true
 let cachedReaderVolumeNavigation = false
 let cachedReaderAutoShowToolbarAtEnd = true
+let cachedReaderAutoPlayInterval = 10
 let cachedReaderWidthPercent: number | null = null
 let cachedApiRouteMode: 'auto' | 'manual' = 'auto'
 let cachedApiRouteDomain = ''
@@ -51,6 +53,7 @@ export async function initSettings(): Promise<void> {
     cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
     cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
     cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
+    cachedReaderAutoPlayInterval = all.readerAutoPlayInterval ?? 10
     cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
     cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
     cachedApiRouteDomain = all.apiRouteDomain ?? ''
@@ -186,6 +189,31 @@ export const SettingsStore = {
   setReaderAutoShowToolbarAtEnd(enabled: boolean) {
     cachedReaderAutoShowToolbarAtEnd = enabled
   },
+
+  getReaderAutoPlayInterval(): number {
+    return cachedReaderAutoPlayInterval
+  },
+  setReaderAutoPlayInterval(seconds: number) {
+    cachedReaderAutoPlayInterval = seconds
+  },
+}
+
+export async function persistReaderAutoPlayInterval(seconds: number): Promise<void> {
+  const operation = persistReaderSettingValue(
+    'autoPlayInterval',
+    seconds,
+    SettingsStore.getReaderAutoPlayInterval(),
+    () => JmcomicService.setReaderAutoPlayInterval(seconds),
+  )
+  SettingsStore.setReaderAutoPlayInterval(seconds)
+  try {
+    await operation.promise
+  } catch (error) {
+    if (operation.isLatest()) {
+      SettingsStore.setReaderAutoPlayInterval(operation.getConfirmedValue())
+    }
+    throw error
+  }
 }
 
 function normalizeReaderWidthPercent(value: unknown): number | null {

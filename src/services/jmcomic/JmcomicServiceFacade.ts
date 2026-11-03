@@ -740,6 +740,10 @@ export const JmcomicService = {
     return native.setReaderAutoShowToolbarAtEnd({ enabled })
   },
 
+  setReaderAutoPlayInterval(seconds: number) {
+    return native.setReaderAutoPlayInterval({ seconds })
+  },
+
   // ========== 阅读器状态 ==========
 
   setReaderState(isActive: boolean, isVertical: boolean) {

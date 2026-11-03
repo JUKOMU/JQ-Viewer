@@ -648,6 +648,16 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setReaderAutoPlayInterval(PluginCall call) {
+        readerHandler.setReaderAutoPlayInterval(call);
+    }
+
+    @PluginMethod
+    public void setReaderAutoPlayActive(PluginCall call) {
+        readerHandler.setReaderAutoPlayActive(call);
+    }
+
+    @PluginMethod
     public void setReaderFullscreen(PluginCall call) {
         readerHandler.setReaderFullscreen(call);
     }
@@ -663,6 +673,10 @@ public class JqViewerPlugin extends Plugin {
 
     public boolean isVolumeNavigationEnabled() {
         return readerHandler.isVolumeNavigationEnabled();
+    }
+
+    public boolean isReaderAutoPlayActive() {
+        return readerHandler.isReaderAutoPlayActive();
     }
 
     public boolean isReaderVertical() {

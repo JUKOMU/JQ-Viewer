@@ -40,6 +40,7 @@ declare module 'vue' {
     MultiSelectActionBar: typeof import('./src/components/common/MultiSelectActionBar.vue')['default']
     MultiSelectInfoBar: typeof import('./src/components/common/MultiSelectInfoBar.vue')['default']
     QuickActionFab: typeof import('./src/components/common/QuickActionFab.vue')['default']
+    ReaderAutoPlayButton: typeof import('./src/components/reader/ReaderAutoPlayButton.vue')['default']
     ReaderBottomToolbar: typeof import('./src/components/reader/ReaderBottomToolbar.vue')['default']
     ReaderSettingsPanel: typeof import('./src/components/reader/ReaderSettingsPanel.vue')['default']
     ReaderTopToolbar: typeof import('./src/components/reader/ReaderTopToolbar.vue')['default']

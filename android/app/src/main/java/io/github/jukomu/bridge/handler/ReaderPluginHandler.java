@@ -35,6 +35,7 @@ public final class ReaderPluginHandler {
     private final Consumer<JSObject> launchRouteConsumer;
 
     private volatile boolean readerActive;
+    private volatile boolean readerAutoPlayActive;
     private volatile boolean readerVertical = true;
     private View readerInsetsContainer;
     private ViewTreeObserver.OnPreDrawListener readerInsetsPreDrawListener;
@@ -202,8 +203,35 @@ public final class ReaderPluginHandler {
             return;
         }
         readerActive = active;
+        if (!active) readerAutoPlayActive = false;
         readerVertical = vertical;
         applyReaderEdgeToEdge(active);
+        call.resolve(successResult());
+    }
+
+    /** 保存自动播放间隔设置。 */
+    public void setReaderAutoPlayInterval(PluginCall call) {
+        try {
+            Double seconds = call.getDouble("seconds");
+            if (seconds == null) {
+                call.reject("seconds is required");
+                return;
+            }
+            settingsService().setReaderAutoPlayInterval(seconds);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /** 临时接管当前阅读会话的音量键，不修改音量键翻页偏好。 */
+    public void setReaderAutoPlayActive(PluginCall call) {
+        Boolean enabled = call.getBoolean("enabled");
+        if (enabled == null) {
+            call.reject("enabled is required");
+            return;
+        }
+        readerAutoPlayActive = enabled;
         call.resolve(successResult());
     }
 
@@ -228,6 +256,10 @@ public final class ReaderPluginHandler {
 
     public boolean isVolumeNavigationEnabled() {
         return settingsService().getReaderVolumeNavigation();
+    }
+
+    public boolean isReaderAutoPlayActive() {
+        return readerAutoPlayActive;
     }
 
     public boolean isReaderVertical() {
@@ -257,6 +289,7 @@ public final class ReaderPluginHandler {
      */
     public void destroy() {
         readerActive = false;
+        readerAutoPlayActive = false;
         applyReaderEdgeToEdge(false);
     }
 

@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 
 type ReaderDirection = 'up' | 'down'
+type ArrowDirection = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
 
 interface UseDesktopReaderControlsOptions {
   enabled: boolean
@@ -12,6 +13,7 @@ interface UseDesktopReaderControlsOptions {
   onPreviousPage: () => void
   onNextPage: () => void
   onVolumeDirection: (direction: ReaderDirection) => boolean
+  onDirectionKey?: (direction: ArrowDirection) => boolean
   setFullscreen: (enabled: boolean) => Promise<unknown>
   onFullscreenError: (error: unknown) => void
 }
@@ -70,11 +72,17 @@ export function useDesktopReaderControls(options: UseDesktopReaderControlsOption
       event.altKey ||
       event.ctrlKey ||
       event.metaKey ||
-      event.shiftKey ||
-      isReaderControlTarget(event.target)
+      event.shiftKey
     ) {
       return
     }
+
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
+    if (arrowKeys.includes(event.key) && options.onDirectionKey?.(event.key as ArrowDirection)) {
+      event.preventDefault()
+      return
+    }
+    if (isReaderControlTarget(event.target)) return
 
     let handled = false
     if (event.key === 'ArrowLeft' && options.currentIndex.value > 0) {

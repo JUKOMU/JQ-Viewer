@@ -591,6 +591,10 @@ export interface JmcomicClient {
 
   setReaderAutoShowToolbarAtEnd(options: { enabled: boolean }): Promise<{ success: boolean }>
 
+  setReaderAutoPlayInterval(options: { seconds: number }): Promise<{ success: boolean }>
+
+  setReaderAutoPlayActive(options: { enabled: boolean }): Promise<{ success: boolean }>
+
   setReaderState(options: { isActive: boolean; isVertical: boolean }): Promise<{ success: boolean }>
 
   addListener(

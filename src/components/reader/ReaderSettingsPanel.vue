@@ -169,6 +169,41 @@
 
         <div class="setting-row divider">
           <div class="setting-left">
+            <span class="setting-label">自动播放速度</span>
+            <span class="setting-sub">正数向下滚动，负数向上滚动，范围为 ±0.1 秒至 ±30 秒</span>
+          </div>
+          <div class="setting-right auto-play-speed-control">
+            <div class="auto-play-slider-wrap">
+              <input
+                class="auto-play-slider"
+                type="range"
+                min="-300"
+                max="300"
+                step="1"
+                :value="readerAutoPlaySliderPosition(localAutoPlayInterval)"
+                :style="readerAutoPlaySliderFill(localAutoPlayInterval)"
+                :aria-valuetext="`${localAutoPlayInterval} 秒`"
+                aria-label="自动播放速度"
+                @input="onAutoPlaySliderInput"
+                @change="onAutoPlaySliderChange"
+              />
+            </div>
+            <input
+              class="num-input"
+              type="number"
+              :value="localAutoPlayInterval"
+              min="-30"
+              max="30"
+              step="0.01"
+              aria-label="自动播放速度（秒）"
+              @change="onAutoPlayIntervalChange"
+            />
+            <span class="unit">秒</span>
+          </div>
+        </div>
+
+        <div class="setting-row divider">
+          <div class="setting-left">
             <span class="setting-label">页面全屏</span>
             <span class="setting-sub">
               {{
@@ -272,7 +307,16 @@ import { closeOutline } from 'ionicons/icons'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { persistReaderSettingValue } from '@/services/ReaderSettingPersistence'
-import { persistPreloadConcurrency, SettingsStore } from '@/services/SettingsService'
+import {
+  persistPreloadConcurrency,
+  persistReaderAutoPlayInterval,
+  SettingsStore,
+} from '@/services/SettingsService'
+import {
+  readerAutoPlayIntervalAtSliderPosition,
+  readerAutoPlaySliderFill,
+  readerAutoPlaySliderPosition,
+} from '@/utils/readerAutoPlaySlider'
 
 defineOptions({ name: 'ReaderSettingsPanel' })
 
@@ -289,6 +333,7 @@ const emit = defineEmits<{
   close: []
   'update:display-mode': [vertical: boolean]
   'update:width-percent': [value: number | null]
+  'update:auto-play-interval': [seconds: number]
 }>()
 
 const visible = ref(false)
@@ -300,6 +345,7 @@ const localBrightness = ref(SettingsStore.getReaderBrightness())
 const localKeepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const localVolumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const localAutoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
+const localAutoPlayInterval = ref(SettingsStore.getReaderAutoPlayInterval())
 const localPreloadPages = ref(SettingsStore.getReaderPreloadPages())
 const localPreloadConcurrency = ref(SettingsStore.getPreloadConcurrency())
 
@@ -452,6 +498,40 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   localAutoShowToolbarAtEnd.value = enabled
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
   JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
+}
+
+function onAutoPlaySliderInput(event: Event) {
+  const position = Number((event.target as HTMLInputElement).value)
+  localAutoPlayInterval.value = readerAutoPlayIntervalAtSliderPosition(
+    position,
+    localAutoPlayInterval.value,
+  )
+}
+
+async function onAutoPlaySliderChange() {
+  await saveAutoPlayInterval(localAutoPlayInterval.value)
+}
+
+async function onAutoPlayIntervalChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  await saveAutoPlayInterval(Number(input.value), input)
+}
+
+async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
+  const seconds = Math.round(value * 100) / 100
+  if (!Number.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
+    if (input) input.value = String(localAutoPlayInterval.value)
+    return
+  }
+  try {
+    await persistReaderAutoPlayInterval(seconds)
+    localAutoPlayInterval.value = seconds
+    emit('update:auto-play-interval', seconds)
+  } catch (error) {
+    localAutoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    if (input) input.value = String(localAutoPlayInterval.value)
+    await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')
+  }
 }
 
 // ---- 预加载页数 ----
@@ -646,6 +726,95 @@ function onPreloadConcurrencyChange(e: Event) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.auto-play-speed-control {
+  max-width: 62%;
+}
+
+.auto-play-slider-wrap {
+  position: relative;
+  width: 150px;
+  height: 32px;
+  max-width: 30vw;
+  flex: 0 1 150px;
+}
+
+.auto-play-slider-wrap::after {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: #b89a84;
+  content: '';
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.auto-play-slider {
+  width: 100%;
+  height: 32px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  accent-color: #f0a060;
+}
+
+.auto-play-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #f0e4db 0%,
+    #f0e4db var(--slider-fill-start),
+    #f0a060 var(--slider-fill-start),
+    #f0a060 var(--slider-fill-end),
+    #f0e4db var(--slider-fill-end),
+    #f0e4db 100%
+  );
+}
+
+.auto-play-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
+  background: #f0e4db;
+}
+
+.auto-play-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.auto-play-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider:focus-visible {
+  outline: 2px solid #f0a060;
+  outline-offset: 2px;
 }
 
 .capability-unavailable {

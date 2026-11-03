@@ -39,6 +39,8 @@
         @reached-bottom="scheduleToolbarAtReaderEnd"
         @image-error="onImageError"
         @retry-images="retryFailedImages"
+        @interaction-start="autoPlay.pauseForInteraction"
+        @interaction-end="autoPlay.resumeAfterInteraction"
       />
       <HorizontalPageView
         v-else
@@ -55,6 +57,14 @@
         @toggle-toolbar="onHorizontalToggleToolbar"
         @image-error="onImageError"
         @retry-images="retryFailedImages"
+        @interaction-start="autoPlay.pauseForInteraction"
+        @interaction-end="autoPlay.resumeAfterInteraction"
+      />
+
+      <ReaderAutoPlayButton
+        :is-playing="autoPlay.isPlaying.value"
+        :disabled="totalCount === 0"
+        @toggle="autoPlay.toggle"
       />
 
       <!-- 底部工具栏 -->
@@ -86,6 +96,7 @@
         :show-width-control="isDesktopRuntime"
         :width-percent="readerWidthPercent"
         @update:width-percent="readerWidthPercent = $event"
+        @update:auto-play-interval="autoPlay.updateInterval"
         @close="settingsPanelVisible = false"
         @update:display-mode="onDisplayModeChange"
       />
@@ -120,7 +131,9 @@ import ReaderBottomToolbar from '@/components/reader/ReaderBottomToolbar.vue'
 import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
 import HorizontalPageView from '@/components/reader/HorizontalPageView.vue'
 import ReaderSettingsPanel from '@/components/reader/ReaderSettingsPanel.vue'
+import ReaderAutoPlayButton from '@/components/reader/ReaderAutoPlayButton.vue'
 import { useDesktopReaderControls } from '@/composables/useDesktopReaderControls'
+import { useReaderAutoPlay } from '@/composables/useReaderAutoPlay'
 
 defineOptions({ name: 'ReaderPage' })
 
@@ -430,6 +443,7 @@ const restoreSystemState = () => {
 
 // ---- 音量键与桌面方向键共用动作 ----
 const handleVolumeDirection = (direction: 'up' | 'down') => {
+  if (autoPlay.handleVolumeDirection(direction)) return true
   if (isVertical.value) {
     const scrollAmount = window.innerHeight / 3
     const el = verticalViewRef.value
@@ -977,6 +991,17 @@ const goToIndex = (index: number, source: PageChangeSource) => {
   moveReaderViewToIndex(next)
 }
 
+const autoPlay = useReaderAutoPlay({
+  isVertical,
+  currentIndex,
+  totalCount,
+  getScrollContainer: () => {
+    const view = verticalViewRef.value as { containerRef?: HTMLElement | null } | null
+    return view?.containerRef ?? null
+  },
+  goToIndex: (index) => goToIndex(index, 'volume'),
+})
+
 const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
   enabled: isDesktopRuntime,
   isActive: () => readerRuntimeActive,
@@ -987,6 +1012,7 @@ const { isFullscreen, toggleFullscreen } = useDesktopReaderControls({
   onPreviousPage: () => goToIndex(currentIndex.value - 1, 'volume'),
   onNextPage: () => goToIndex(currentIndex.value + 1, 'volume'),
   onVolumeDirection: handleVolumeDirection,
+  onDirectionKey: autoPlay.handleDirectionKey,
   setFullscreen: (enabled) => JmcomicService.setReaderFullscreen(enabled),
   onFullscreenError: (error) => {
     void showToast(sanitizeError(error, '切换全屏失败'), 'danger')
@@ -1009,7 +1035,9 @@ const resetZoom = () => {
 }
 
 const onPageChange = (index: number) => {
+  const changed = index !== currentIndex.value
   goToIndex(index, 'scroll')
+  if (changed && !isVertical.value) autoPlay.resetAfterHorizontalPageChange()
 }
 
 const onProgressDrag = (page1Based: number) => {

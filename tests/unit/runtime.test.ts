@@ -90,6 +90,7 @@ describe('runtime', () => {
       'setReaderDisplayMode',
       'setReaderWidthPercent',
       'setReaderAutoShowToolbarAtEnd',
+      'setReaderAutoPlayInterval',
       'downloadChapter',
       'getDownloadTasksPage',
       'getCompletedDownloadAlbumIds',

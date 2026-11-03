@@ -55,6 +55,8 @@ public class ReaderPluginContractInstrumentedTest {
         RecordingPluginCall keepScreenOn = call("setReaderKeepScreenOn");
         RecordingPluginCall volume = call("setReaderVolumeNavigation");
         RecordingPluginCall toolbar = call("setReaderAutoShowToolbarAtEnd");
+        RecordingPluginCall autoPlayInterval = call("setReaderAutoPlayInterval");
+        RecordingPluginCall autoPlayActive = call("setReaderAutoPlayActive");
         RecordingPluginCall fullscreen = call("setReaderFullscreen");
         RecordingPluginCall state = call("setReaderState", "isActive", true);
 
@@ -64,6 +66,8 @@ public class ReaderPluginContractInstrumentedTest {
         plugin.setReaderKeepScreenOn(keepScreenOn);
         plugin.setReaderVolumeNavigation(volume);
         plugin.setReaderAutoShowToolbarAtEnd(toolbar);
+        plugin.setReaderAutoPlayInterval(autoPlayInterval);
+        plugin.setReaderAutoPlayActive(autoPlayActive);
         plugin.setReaderFullscreen(fullscreen);
         plugin.setReaderState(state);
 
@@ -73,6 +77,8 @@ public class ReaderPluginContractInstrumentedTest {
         assertRejected(keepScreenOn, "enabled is required");
         assertRejected(volume, "enabled is required");
         assertRejected(toolbar, "enabled is required");
+        assertRejected(autoPlayInterval, "seconds is required");
+        assertRejected(autoPlayActive, "enabled is required");
         assertRejected(fullscreen, "enabled is required");
         assertRejected(state, "isActive and isVertical are required");
     }
@@ -87,6 +93,7 @@ public class ReaderPluginContractInstrumentedTest {
         RecordingPluginCall volume = call("setReaderVolumeNavigation", "enabled", true);
         RecordingPluginCall toolbar = call(
             "setReaderAutoShowToolbarAtEnd", "enabled", false);
+        RecordingPluginCall autoPlayInterval = call("setReaderAutoPlayInterval", "seconds", 1.8);
 
         plugin.setReaderDisplayMode(display);
         plugin.setReaderScreenOrientation(orientation);
@@ -94,6 +101,7 @@ public class ReaderPluginContractInstrumentedTest {
         plugin.setReaderKeepScreenOn(keepScreenOn);
         plugin.setReaderVolumeNavigation(volume);
         plugin.setReaderAutoShowToolbarAtEnd(toolbar);
+        plugin.setReaderAutoPlayInterval(autoPlayInterval);
 
         assertEquals("horizontal", settingsService.displayMode);
         assertEquals("landscape", settingsService.orientation);
@@ -101,7 +109,8 @@ public class ReaderPluginContractInstrumentedTest {
         assertFalse(settingsService.keepScreenOn);
         assertTrue(settingsService.volumeNavigation);
         assertFalse(settingsService.autoShowToolbarAtEnd);
-        assertSuccess(display, orientation, brightness, keepScreenOn, volume, toolbar);
+        assertEquals(1.8, settingsService.autoPlayInterval, 0.0001);
+        assertSuccess(display, orientation, brightness, keepScreenOn, volume, toolbar, autoPlayInterval);
     }
 
     @Test
@@ -131,6 +140,16 @@ public class ReaderPluginContractInstrumentedTest {
         assertTrue(state.resolvedData.getBool("success"));
         assertNotNull(volumeEvent);
         assertEquals("down", volumeEvent.getString("direction"));
+
+        RecordingPluginCall autoPlay = call("setReaderAutoPlayActive", "enabled", true);
+        plugin.setReaderAutoPlayActive(autoPlay);
+        assertTrue(plugin.isReaderAutoPlayActive());
+        assertSuccess(autoPlay);
+
+        RecordingPluginCall inactive = call(
+            "setReaderState", "isActive", false, "isVertical", false);
+        plugin.setReaderState(inactive);
+        assertFalse(plugin.isReaderAutoPlayActive());
     }
 
     @Test
@@ -293,6 +312,7 @@ public class ReaderPluginContractInstrumentedTest {
         private boolean keepScreenOn;
         private boolean volumeNavigation;
         private boolean autoShowToolbarAtEnd;
+        private double autoPlayInterval;
         private RuntimeException failure;
 
         private FakeSettingsService() {
@@ -338,6 +358,12 @@ public class ReaderPluginContractInstrumentedTest {
         public void setReaderAutoShowToolbarAtEnd(boolean enabled) {
             failIfNeeded();
             autoShowToolbarAtEnd = enabled;
+        }
+
+        @Override
+        public void setReaderAutoPlayInterval(double seconds) {
+            failIfNeeded();
+            autoPlayInterval = seconds;
         }
 
         private void failIfNeeded() {

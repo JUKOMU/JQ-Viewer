@@ -3,6 +3,7 @@ export type ReaderSettingPersistenceKey =
   | 'brightness'
   | 'keepAwake'
   | 'volumeNavigation'
+  | 'autoPlayInterval'
 
 interface ReaderSettingPersistenceState {
   version: number

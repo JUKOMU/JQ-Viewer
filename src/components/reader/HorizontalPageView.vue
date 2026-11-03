@@ -84,6 +84,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:currentIndex': [index: number]
   'toggle-toolbar': [protectedAtTap: boolean]
+  'interaction-start': []
+  'interaction-end': []
   'image-error': [sortOrder: number, failedUrl: string]
   'retry-images': []
 }>()
@@ -309,8 +311,8 @@ onMounted(() => {
   refreshAfterResize()
   el.addEventListener('touchstart', onTouchStart, { passive: false })
   el.addEventListener('touchmove', onTouchMove, { passive: false })
-  el.addEventListener('touchend', onTouchEnd)
-  el.addEventListener('touchcancel', onTouchEnd)
+  el.addEventListener('touchend', onTouchEndEvent)
+  el.addEventListener('touchcancel', onTouchEndEvent)
   if (props.enableMouseControls) {
     el.addEventListener('pointerdown', onMousePointerDown)
     el.addEventListener('pointermove', onMousePointerMove)
@@ -336,8 +338,8 @@ onUnmounted(() => {
   if (!el) return
   el.removeEventListener('touchstart', onTouchStart)
   el.removeEventListener('touchmove', onTouchMove)
-  el.removeEventListener('touchend', onTouchEnd)
-  el.removeEventListener('touchcancel', onTouchEnd)
+  el.removeEventListener('touchend', onTouchEndEvent)
+  el.removeEventListener('touchcancel', onTouchEndEvent)
   el.removeEventListener('pointerdown', onMousePointerDown)
   el.removeEventListener('pointermove', onMousePointerMove)
   el.removeEventListener('pointerup', onMousePointerUp)
@@ -394,6 +396,7 @@ function mid(t: TouchList) {
 // ==================== 手势 ====================
 
 function onTouchStart(ev: TouchEvent) {
+  emit('interaction-start')
   refreshAfterResize()
   isAnimating.value = false
   fingers = ev.touches.length
@@ -475,7 +478,6 @@ function onTouchEnd(ev: TouchEvent) {
     }
     return
   }
-
   if (fingers >= 2) {
     if (zoomScale.value < 1.05) resetZoom()
     return
@@ -594,11 +596,17 @@ function onTouchEnd(ev: TouchEvent) {
   }
 }
 
+function onTouchEndEvent(ev: TouchEvent) {
+  onTouchEnd(ev)
+  if (ev.touches.length === 0 && !isAnimating.value) emit('interaction-end')
+}
+
 function onMousePointerDown(ev: PointerEvent) {
   lastPointerType = ev.pointerType
   if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
+  emit('interaction-start')
   ev.preventDefault()
   mousePointerId = ev.pointerId
   mouseStartX = ev.clientX
@@ -645,6 +653,7 @@ function onMousePointerUp(ev: PointerEvent) {
   }
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
+  if (!isAnimating.value) emit('interaction-end')
 }
 
 function onMouseClick(ev: MouseEvent) {
@@ -690,6 +699,7 @@ function snapTo(target: number) {
     displayIndex.value = target
     offsetX.value = 0
     emit('update:currentIndex', target)
+    emit('interaction-end')
   }, 320)
 }
 
@@ -700,6 +710,7 @@ function snapBack() {
   animationTimer = setTimeout(() => {
     animationTimer = null
     isAnimating.value = false
+    emit('interaction-end')
   }, 320)
 }
 

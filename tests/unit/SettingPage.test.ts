@@ -92,6 +92,7 @@ vi.mock('@/services/SettingsService', () => ({
     getDownloadPublic: vi.fn(() => false),
     getOcrEnabled: vi.fn(() => false),
     getPreloadConcurrency: vi.fn(() => 4),
+    getReaderAutoPlayInterval: vi.fn(() => 10),
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
     getReaderBrightness: vi.fn(() => -1),
     getReaderDisplayMode: vi.fn(() => 'vertical'),

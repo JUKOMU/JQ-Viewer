@@ -202,11 +202,16 @@ class BackendHttpContractTest {
                     "{\"value\":75}"));
             assertOk(post(http, base, requestedMethods, "setReaderAutoShowToolbarAtEnd",
                     "{\"enabled\":false}"));
+            assertEquals(400, post(http, base, requestedMethods, "setReaderAutoPlayInterval",
+                    "{\"seconds\":0}").statusCode());
+            assertOk(post(http, base, requestedMethods, "setReaderAutoPlayInterval",
+                    "{\"seconds\":1.8}"));
             assertOk(post(http, base, requestedMethods, "setOcrEnabled",
                     "{\"enabled\":true}"));
             ObjectNode settings = body(post(http, base, requestedMethods, "getAllSettings", "{}"));
             assertTrue(settings.path("ocrEnabled").asBoolean());
             assertEquals(75, settings.path("readerWidthPercent").asInt());
+            assertEquals(1.8, settings.path("readerAutoPlayInterval").asDouble(), 0.0001);
             assertEquals("auto", settings.path("apiRouteMode").asText());
             assertOk(post(http, base, requestedMethods, "setApiRoutePreference",
                     "{\"mode\":\"manual\",\"domain\":\"api.example\"}"));

@@ -237,6 +237,7 @@ export interface ReaderPlatformServices {
   fullscreen: Capability<{ set(enabled: boolean): Promise<{ success: boolean }> }>
   volumeKeys: Capability<{
     setEnabled(enabled: boolean): Promise<{ success: boolean }>
+    setAutoPlayActive(enabled: boolean): Promise<{ success: boolean }>
     onKey(handler: (direction: 'up' | 'down') => void): Promise<ListenerHandle>
   }>
   hostState: Capability<{

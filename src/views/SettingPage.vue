@@ -283,6 +283,41 @@
 
           <div class="row divider">
             <div class="row-left">
+              <span class="row-title">自动播放速度</span>
+              <span class="row-subtitle">正数向下滚动，负数向上滚动，范围为 ±0.1 秒至 ±30 秒</span>
+            </div>
+            <div class="row-right auto-play-speed-control">
+              <div class="auto-play-slider-wrap">
+                <input
+                  class="auto-play-slider"
+                  type="range"
+                  min="-300"
+                  max="300"
+                  step="1"
+                  :value="readerAutoPlaySliderPosition(autoPlayInterval)"
+                  :style="readerAutoPlaySliderFill(autoPlayInterval)"
+                  :aria-valuetext="`${autoPlayInterval} 秒`"
+                  aria-label="自动播放速度"
+                  @input="onAutoPlaySliderInput"
+                  @change="onAutoPlaySliderChange"
+                />
+              </div>
+              <input
+                class="num-input"
+                type="number"
+                :value="autoPlayInterval"
+                min="-30"
+                max="30"
+                step="0.01"
+                aria-label="自动播放速度（秒）"
+                @change="onAutoPlayIntervalChange"
+              />
+              <span class="unit">秒</span>
+            </div>
+          </div>
+
+          <div class="row divider">
+            <div class="row-left">
               <span class="row-title">页面全屏</span>
               <span class="row-subtitle">
                 {{
@@ -611,8 +646,14 @@ import {
   initSettings,
   persistDownloadConcurrency,
   persistPreloadConcurrency,
+  persistReaderAutoPlayInterval,
   SettingsStore,
 } from '@/services/SettingsService'
+import {
+  readerAutoPlayIntervalAtSliderPosition,
+  readerAutoPlaySliderFill,
+  readerAutoPlaySliderPosition,
+} from '@/utils/readerAutoPlaySlider'
 import { ExportFormatService } from '@/services/ExportFormatService'
 import { EXPORT_SAMPLE_DATA, ExportService } from '@/services/ExportService'
 import { useAuth } from '@/composables/useAuth'
@@ -704,6 +745,11 @@ const brightnessValue = ref(
 const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
+const autoPlayInterval = ref(SettingsStore.getReaderAutoPlayInterval())
+
+onActivated(() => {
+  autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+})
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 const downloadLocationTitle = computed(() => (isAndroidRuntime ? '公开下载内容' : '自定义下载位置'))
@@ -827,6 +873,7 @@ onMounted(async () => {
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
+  autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
 
   if (!isAndroidRuntime && runtime.services.storage.available) {
     try {
@@ -1280,6 +1327,36 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
   JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
+
+function onAutoPlaySliderInput(event: Event) {
+  const position = Number((event.target as HTMLInputElement).value)
+  autoPlayInterval.value = readerAutoPlayIntervalAtSliderPosition(position, autoPlayInterval.value)
+}
+
+async function onAutoPlaySliderChange() {
+  await saveAutoPlayInterval(autoPlayInterval.value)
+}
+
+async function onAutoPlayIntervalChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  await saveAutoPlayInterval(Number(input.value), input)
+}
+
+async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
+  const seconds = Math.round(value * 100) / 100
+  if (!Number.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
+    if (input) input.value = String(autoPlayInterval.value)
+    return
+  }
+  try {
+    await persistReaderAutoPlayInterval(seconds)
+    autoPlayInterval.value = seconds
+  } catch (error) {
+    autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    if (input) input.value = String(autoPlayInterval.value)
+    await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')
+  }
+}
 </script>
 
 <style scoped>
@@ -1411,6 +1488,96 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.auto-play-speed-control {
+  max-width: 68%;
+}
+
+.auto-play-slider-wrap {
+  position: relative;
+  width: 150px;
+  height: 32px;
+  max-width: 30vw;
+  min-width: 75px;
+  flex: 0 1 150px;
+}
+
+.auto-play-slider-wrap::after {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: #b89a84;
+  content: '';
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.auto-play-slider {
+  width: 100%;
+  height: 32px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  accent-color: #f0a060;
+}
+
+.auto-play-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #f0e4db 0%,
+    #f0e4db var(--slider-fill-start),
+    #f0a060 var(--slider-fill-start),
+    #f0a060 var(--slider-fill-end),
+    #f0e4db var(--slider-fill-end),
+    #f0e4db 100%
+  );
+}
+
+.auto-play-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
+  background: #f0e4db;
+}
+
+.auto-play-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.auto-play-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider:focus-visible {
+  outline: 2px solid #f0a060;
+  outline-offset: 2px;
 }
 
 .entry-arrow {

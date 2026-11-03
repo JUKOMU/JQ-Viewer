@@ -11,6 +11,7 @@ type ReaderFixture = {
   previous: ReturnType<typeof vi.fn>
   next: ReturnType<typeof vi.fn>
   volume: ReturnType<typeof vi.fn>
+  direction: ReturnType<typeof vi.fn>
   setFullscreen: ReturnType<typeof vi.fn>
 }
 
@@ -23,6 +24,7 @@ function mountControls(enabled = true) {
     previous: vi.fn(),
     next: vi.fn(),
     volume: vi.fn(() => true),
+    direction: vi.fn(() => false),
     setFullscreen: vi.fn(() => Promise.resolve({ success: true })),
   }
 
@@ -38,6 +40,7 @@ function mountControls(enabled = true) {
         onPreviousPage: fixture.previous,
         onNextPage: fixture.next,
         onVolumeDirection: fixture.volume,
+        onDirectionKey: fixture.direction,
         setFullscreen: fixture.setFullscreen,
         onFullscreenError: vi.fn(),
       })
@@ -70,6 +73,27 @@ describe('useDesktopReaderControls', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true }))
     expect(fixture.volume).toHaveBeenCalledWith('down')
 
+    wrapper.unmount()
+  })
+
+  test('自动播放时四个方向键交给速度调整并阻止默认行为', () => {
+    const { fixture, wrapper } = mountControls()
+    fixture.direction.mockReturnValue(true)
+
+    for (const key of ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']) {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+
+    expect(fixture.direction.mock.calls.map(([key]) => key)).toEqual([
+      'ArrowUp',
+      'ArrowLeft',
+      'ArrowDown',
+      'ArrowRight',
+    ])
+    expect(fixture.previous).not.toHaveBeenCalled()
+    expect(fixture.next).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

@@ -99,6 +99,7 @@ describe('useDesktopReaderControls', () => {
 
   test('输入控件获得焦点时不劫持方向键', () => {
     const { fixture, wrapper } = mountControls()
+    fixture.direction.mockReturnValue(true)
     const input = wrapper.get('input').element
     input.focus()
     const event = new KeyboardEvent('keydown', {
@@ -109,6 +110,7 @@ describe('useDesktopReaderControls', () => {
     input.dispatchEvent(event)
 
     expect(fixture.next).not.toHaveBeenCalled()
+    expect(fixture.direction).not.toHaveBeenCalled()
     expect(event.defaultPrevented).toBe(false)
     wrapper.unmount()
   })

@@ -61,6 +61,7 @@ describe('runtime', () => {
     await backend.search({
       query: { keyword: 'keyword', orderBy: 'mr', time: 'a', searchMainTag: 0, page: 2 },
     })
+    await backend.setReaderAutoPlayInterval(1.8)
     expect(Object.keys(backend)).toEqual([
       'search',
       'categories',
@@ -156,7 +157,7 @@ describe('runtime', () => {
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     })
-    expect(fetcher).toHaveBeenLastCalledWith('/api/search', {
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -166,6 +167,11 @@ describe('runtime', () => {
         searchMainTag: 0,
         page: 2,
       }),
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(4, '/api/setReaderAutoPlayInterval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(1.8),
     })
   })
 

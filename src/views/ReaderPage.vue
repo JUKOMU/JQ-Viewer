@@ -1044,7 +1044,10 @@ const onPageChange = (index: number) => {
 }
 
 const onProgressDrag = (page1Based: number) => {
-  goToIndex(page1Based - 1, 'slider')
+  const index = page1Based - 1
+  const changed = index !== currentIndex.value
+  goToIndex(index, 'slider')
+  if (changed && !isVertical.value) autoPlay.resetAfterHorizontalPageChange()
 }
 
 const onProgressInput = (page1Based: number) => {
@@ -1302,6 +1305,7 @@ const loadChapter = async () => {
 }
 
 const resetChapterState = () => {
+  autoPlay.stop()
   chapterLoadVersion++
   cancelPreloadSessions(new Set(activePreloadSessionIds))
   activePreloadSessionIds = new Set()

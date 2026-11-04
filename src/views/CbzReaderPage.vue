@@ -210,7 +210,12 @@ const onPageChange = (index: number) => {
   moveToIndex(index, false)
   if (changed && !isVertical.value) autoPlay.resetAfterHorizontalPageChange()
 }
-const onProgressChange = (page: number) => moveToIndex(page - 1)
+const onProgressChange = (page: number) => {
+  const index = page - 1
+  const changed = index !== currentIndex.value
+  moveToIndex(index)
+  if (changed && !isVertical.value) autoPlay.resetAfterHorizontalPageChange()
+}
 
 const onImageError = (page: number) => {
   const failed = new Set(failedSortOrders.value)

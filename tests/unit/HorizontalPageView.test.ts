@@ -78,6 +78,30 @@ function mountMouseView(currentIndex = 1, left = 0) {
 }
 
 describe('HorizontalPageView', () => {
+  test('新触摸期间旧翻页动画不会恢复自动播放', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container } = mountView()
+
+    await container.trigger('touchstart', { touches: [{ clientX: 200, clientY: 200 }] })
+    await container.trigger('touchmove', { touches: [{ clientX: 80, clientY: 200 }] })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 80, clientY: 200 }],
+    })
+    await vi.advanceTimersByTimeAsync(300)
+    await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+    await vi.advanceTimersByTimeAsync(320)
+
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[2]])
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 150, clientY: 200 }],
+    })
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   test('页面槽位统一使用容器实际宽度', async () => {
     const { wrapper } = mountView(1, 1280)
     resizeObserverTrigger?.()

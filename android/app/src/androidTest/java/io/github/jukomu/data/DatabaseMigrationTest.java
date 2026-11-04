@@ -42,7 +42,7 @@ public class DatabaseMigrationTest {
                 db,
                 "SELECT value FROM settings WHERE key = ?",
                 new String[]{"reader_auto_show_toolbar_at_end"}));
-            assertEquals(11, queryInt(db, "SELECT COUNT(*) FROM settings", null));
+            assertEquals(12, queryInt(db, "SELECT COUNT(*) FROM settings", null));
 
             db.execSQL(
                 "UPDATE settings SET value = ? WHERE key = ?",
@@ -53,7 +53,7 @@ public class DatabaseMigrationTest {
                 db,
                 "SELECT value FROM settings WHERE key = ?",
                 new String[]{"reader_auto_show_toolbar_at_end"}));
-            assertEquals(11, queryInt(db, "SELECT COUNT(*) FROM settings", null));
+            assertEquals(12, queryInt(db, "SELECT COUNT(*) FROM settings", null));
         } finally {
             db.close();
         }

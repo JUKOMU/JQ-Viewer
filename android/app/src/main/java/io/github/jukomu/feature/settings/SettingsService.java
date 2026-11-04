@@ -253,7 +253,9 @@ public class SettingsService {
         if (!Double.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
             throw new IllegalArgumentException("seconds must be between 0.1 and 30, excluding zero");
         }
-        settingsDb.putString("reader_auto_play_interval", String.valueOf(seconds));
+        if (!settingsDb.putString("reader_auto_play_interval", String.valueOf(seconds))) {
+            throw new IllegalStateException("保存自动播放间隔设置失败");
+        }
     }
 
     // ---- 下载公开/私有切换 ----

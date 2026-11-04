@@ -148,6 +148,12 @@ function hasVerticalOverflow() {
 function onWheel(event: WheelEvent) {
   if (!props.enableMouseControls || !hasVerticalOverflow() || event.ctrlKey) return
   event.preventDefault()
+  emit('interaction-start')
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  wheelInteractionTimer = setTimeout(() => {
+    wheelInteractionTimer = null
+    emit('interaction-end')
+  }, 150)
   const delta =
     event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? slotHeight.value : 1)
   clampPan(zoomTx.value, zoomTy.value - delta)
@@ -257,6 +263,7 @@ let lastTapT = 0,
 let tapTimer: ReturnType<typeof setTimeout> | null = null
 let animationTimer: ReturnType<typeof setTimeout> | null = null
 let resizeObserver: ResizeObserver | null = null
+let wheelInteractionTimer: ReturnType<typeof setTimeout> | null = null
 let mousePointerId: number | null = null
 let lastPointerType = ''
 let mouseStartX = 0
@@ -332,6 +339,8 @@ onUnmounted(() => {
     tapTimer = null
   }
   clearAnimationTimer()
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  wheelInteractionTimer = null
   resizeObserver?.disconnect()
   resizeObserver = null
   const el = containerRef.value
@@ -398,6 +407,17 @@ function mid(t: TouchList) {
 function onTouchStart(ev: TouchEvent) {
   emit('interaction-start')
   refreshAfterResize()
+  if (animationTimer) {
+    const target = Math.max(
+      0,
+      Math.min(props.totalCount - 1, displayIndex.value - Math.round(offsetX.value / slotWidth.value)),
+    )
+    clearAnimationTimer()
+    isAnimating.value = false
+    displayIndex.value = target
+    offsetX.value = 0
+    if (target !== props.currentIndex) emit('update:currentIndex', target)
+  }
   isAnimating.value = false
   fingers = ev.touches.length
   toolbarToggleProtectedAtTouchStart = props.toolbarToggleProtected
@@ -598,6 +618,7 @@ function onTouchEnd(ev: TouchEvent) {
 
 function onTouchEndEvent(ev: TouchEvent) {
   onTouchEnd(ev)
+  fingers = ev.touches.length
   if (ev.touches.length === 0 && !isAnimating.value) emit('interaction-end')
 }
 

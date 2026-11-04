@@ -93,7 +93,7 @@ public class ReaderPluginContractInstrumentedTest {
         RecordingPluginCall volume = call("setReaderVolumeNavigation", "enabled", true);
         RecordingPluginCall toolbar = call(
             "setReaderAutoShowToolbarAtEnd", "enabled", false);
-        RecordingPluginCall autoPlayInterval = call("setReaderAutoPlayInterval", "seconds", 1.8);
+        RecordingPluginCall autoPlayInterval = call("setReaderAutoPlayInterval", "seconds", -1.8);
 
         plugin.setReaderDisplayMode(display);
         plugin.setReaderScreenOrientation(orientation);
@@ -109,7 +109,7 @@ public class ReaderPluginContractInstrumentedTest {
         assertFalse(settingsService.keepScreenOn);
         assertTrue(settingsService.volumeNavigation);
         assertFalse(settingsService.autoShowToolbarAtEnd);
-        assertEquals(1.8, settingsService.autoPlayInterval, 0.0001);
+        assertEquals(-1.8, settingsService.autoPlayInterval, 0.0001);
         assertSuccess(display, orientation, brightness, keepScreenOn, volume, toolbar, autoPlayInterval);
     }
 
@@ -219,6 +219,19 @@ public class ReaderPluginContractInstrumentedTest {
                         & WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0);
                     assertTrue(activity.dispatchKeyEvent(
                         new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_UP)));
+
+                    RecordingPluginCall volumeNavigationOff = call(
+                        "setReaderVolumeNavigation", "enabled", false);
+                    RecordingPluginCall autoPlay = call("setReaderAutoPlayActive", "enabled", true);
+                    activePlugin.setReaderVolumeNavigation(volumeNavigationOff);
+                    activePlugin.setReaderAutoPlayActive(autoPlay);
+                    assertSuccess(volumeNavigationOff, autoPlay);
+                    assertTrue(activity.dispatchKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_VOLUME_DOWN)));
+                    RecordingPluginCall stopAutoPlay = call(
+                        "setReaderAutoPlayActive", "enabled", false);
+                    activePlugin.setReaderAutoPlayActive(stopAutoPlay);
+                    assertSuccess(stopAutoPlay);
 
                     ReaderPluginHandler activeHandler = readerHandler(activePlugin);
                     assertNotNull(field(activeHandler, "readerInsetsContainer"));

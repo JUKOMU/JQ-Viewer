@@ -58,6 +58,19 @@ describe('SettingsService', () => {
     expect(SettingsStore.getReaderAutoShowToolbarAtEnd()).toBe(false)
   })
 
+  test('设置加载期间写入的自动播放间隔不会被旧值覆盖', async () => {
+    const settingsLoad = deferred<AllSettings>()
+    getAllSettings.mockReturnValue(settingsLoad.promise)
+
+    const { initSettings, SettingsStore } = await import('@/services/SettingsService')
+    const initialization = initSettings()
+    SettingsStore.setReaderAutoPlayInterval(3.5)
+    settingsLoad.resolve({ ...legacySettings, readerAutoPlayInterval: 9 })
+    await initialization
+
+    expect(SettingsStore.getReaderAutoPlayInterval()).toBe(3.5)
+  })
+
   test('新原生返回 requested 和 effective 时缓存用户设置值', async () => {
     getAllSettings.mockResolvedValue({
       ...legacySettings,

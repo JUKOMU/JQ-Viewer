@@ -8,6 +8,7 @@
       'images-hidden': widthPercent === 0,
     }"
     @scroll="onScroll"
+    @wheel="onWheel"
     @click="onMouseClick"
   >
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
@@ -142,6 +143,25 @@ const prefixSums = ref<number[]>([0])
 const visibleStart = ref(0)
 const visibleEnd = ref(0)
 const lastEmitIndex = ref(-1)
+let wheelInteractionTimer: ReturnType<typeof setTimeout> | null = null
+let touchSettleTimer: ReturnType<typeof setTimeout> | null = null
+
+function onWheel() {
+  emit('interaction-start')
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  wheelInteractionTimer = setTimeout(() => {
+    wheelInteractionTimer = null
+    emit('interaction-end')
+  }, 150)
+}
+
+function finishTouchInteraction() {
+  if (touchSettleTimer) clearTimeout(touchSettleTimer)
+  touchSettleTimer = setTimeout(() => {
+    touchSettleTimer = null
+    emit('interaction-end')
+  }, 180)
+}
 
 // ---- 缩放 ----
 const zoomScale = ref(1)
@@ -388,6 +408,7 @@ function onImageLoad(index: number, ev: Event) {
   const width = contentWidth.value || img.clientWidth
   if (width <= 0) return
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
+  emit('interaction-end')
 }
 
 let scrollRafId: number | null = null
@@ -411,6 +432,7 @@ function updateBottomState() {
 }
 
 function onScroll() {
+  if (touchSettleTimer) finishTouchInteraction()
   if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
@@ -618,12 +640,14 @@ function cycleDoubleTapZoom(clientX: number, clientY: number) {
 
 function onTouch(ev: TouchEvent) {
   if (ev.type === 'touchstart') {
+    if (touchSettleTimer) clearTimeout(touchSettleTimer)
+    touchSettleTimer = null
     emit('interaction-start')
     onTS(ev)
   } else if (ev.type === 'touchmove') onTM(ev)
   else if (ev.type === 'touchend' || ev.type === 'touchcancel') {
     onTE(ev)
-    if (ev.touches.length === 0) emit('interaction-end')
+    if (ev.touches.length === 0) finishTouchInteraction()
   }
 }
 
@@ -838,6 +862,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  if (touchSettleTimer) clearTimeout(touchSettleTimer)
+  wheelInteractionTimer = null
+  touchSettleTimer = null
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
   if (scrollSyncRafId !== null) cancelAnimationFrame(scrollSyncRafId)
   resizeObserver?.disconnect()

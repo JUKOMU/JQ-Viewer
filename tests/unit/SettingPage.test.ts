@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   setDownloadPublic: vi.fn(),
   requestManageStorage: vi.fn(),
   setReaderWidthPercent: vi.fn(),
+  persistReaderAutoPlayInterval: vi.fn(),
   readerCapabilities: {
     orientation: { available: true, api: {} },
     brightness: { available: true, api: {} },
@@ -89,6 +90,7 @@ vi.mock('@/services/SettingsService', () => ({
   initSettings: vi.fn().mockResolvedValue(undefined),
   persistDownloadConcurrency: vi.fn().mockResolvedValue(undefined),
   persistPreloadConcurrency: vi.fn().mockResolvedValue(undefined),
+  persistReaderAutoPlayInterval: mocks.persistReaderAutoPlayInterval,
   SettingsStore: {
     getCacheCapacityMb: vi.fn(() => 512),
     getDownloadConcurrency: vi.fn(() => 4),
@@ -163,6 +165,7 @@ beforeEach(() => {
     moved: 0,
   })
   mocks.setReaderWidthPercent.mockResolvedValue({ success: true })
+  mocks.persistReaderAutoPlayInterval.mockReset()
   mocks.requestManageStorage.mockResolvedValue({
     granted: true,
     permissionType: 'MANAGE_EXTERNAL_STORAGE',
@@ -300,6 +303,34 @@ describe('SettingPage 导出格式重置', () => {
     await flushPromises()
     expect(mocks.setReaderWidthPercent).toHaveBeenLastCalledWith(null)
     expect(row?.text()).toContain('自动适配')
+    wrapper.unmount()
+  })
+})
+
+describe('SettingPage 自动播放速度保存', () => {
+  test('过期保存失败不回滚最新值或显示失败提示', async () => {
+    let rejectFirst!: (error: Error) => void
+    let resolveSecond!: () => void
+    mocks.persistReaderAutoPlayInterval
+      .mockReturnValueOnce(new Promise<void>((_, reject) => { rejectFirst = reject }))
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveSecond = resolve }))
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    expect(intervalInput).toBeDefined()
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    await intervalInput!.setValue('8')
+    void intervalInput!.trigger('change')
+    rejectFirst(new Error('stale save failed'))
+    resolveSecond()
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe('8')
+    expect(mocks.showToast).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

@@ -77,13 +77,12 @@ export function useDesktopReaderControls(options: UseDesktopReaderControlsOption
       return
     }
 
+    if (isReaderControlTarget(event.target)) return
     const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
     if (arrowKeys.includes(event.key) && options.onDirectionKey?.(event.key as ArrowDirection)) {
       event.preventDefault()
       return
     }
-    if (isReaderControlTarget(event.target)) return
-
     let handled = false
     if (event.key === 'ArrowLeft' && options.currentIndex.value > 0) {
       options.onPreviousPage()

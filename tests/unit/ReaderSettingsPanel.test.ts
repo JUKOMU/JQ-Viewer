@@ -147,3 +147,15 @@ test('非桌面阅读设置隐藏宽度控件', () => {
   expect(wrapper.find('input[aria-label="自动播放速度"]').exists()).toBe(true)
   wrapper.unmount()
 })
+
+test('自动播放速度滑块保存并通知阅读器', async () => {
+  const { persistReaderAutoPlayInterval } = await import('@/services/SettingsService')
+  const wrapper = mount(ReaderSettingsPanel, { props: { isVertical: true } })
+  const slider = wrapper.get('input[aria-label="自动播放速度"]')
+  await slider.setValue('150')
+  await slider.trigger('change')
+
+  expect(persistReaderAutoPlayInterval).toHaveBeenCalledWith(15.05)
+  expect(wrapper.emitted('update:auto-play-interval')?.at(-1)).toEqual([15.05])
+  wrapper.unmount()
+})

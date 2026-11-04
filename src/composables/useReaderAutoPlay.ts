@@ -54,12 +54,19 @@ export function useReaderAutoPlay(options: {
     const elapsed = lastFrameAt === 0 ? 0 : now - lastFrameAt
     lastFrameAt = now
     const distance = (container.clientHeight * elapsed) / (Math.abs(intervalSeconds.value) * 1000)
+    const currentScrollTop = container.scrollTop
     const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
     const nextScrollTop = Math.max(
       0,
-      Math.min(maxScrollTop, container.scrollTop + distance * direction),
+      Math.min(maxScrollTop, currentScrollTop + distance * direction),
     )
     container.scrollTop = nextScrollTop
+    if (
+      nextScrollTop === currentScrollTop &&
+      ((direction > 0 && nextScrollTop === maxScrollTop) || (direction < 0 && nextScrollTop === 0))
+    ) {
+      return
+    }
     animationFrame = requestAnimationFrame(scrollFrame)
   }
 
@@ -75,7 +82,11 @@ export function useReaderAutoPlay(options: {
     timer = setTimeout(() => {
       timer = null
       const nextIndex = options.currentIndex.value + Math.sign(intervalSeconds.value)
-      if (nextIndex >= 0 && nextIndex < options.totalCount.value) options.goToIndex(nextIndex)
+      if (nextIndex < 0 || nextIndex >= options.totalCount.value) {
+        stop()
+        return
+      }
+      options.goToIndex(nextIndex)
       remainingMs = Math.abs(intervalSeconds.value) * 1000
       schedule()
     }, remainingMs)
@@ -108,9 +119,8 @@ export function useReaderAutoPlay(options: {
   }
 
   function resumeAfterInteraction() {
-    if (!interactionActive) return
-    interactionActive = false
-    schedule()
+    if (interactionActive) interactionActive = false
+    if (isPlaying.value && options.isVertical.value && animationFrame === null) schedule()
   }
 
   function resetAfterHorizontalPageChange() {
@@ -169,6 +179,15 @@ export function useReaderAutoPlay(options: {
       clearScheduledWork()
       remainingMs = Math.abs(intervalSeconds.value) * 1000
       schedule()
+    },
+  )
+
+  watch(
+    () => options.totalCount.value,
+    () => {
+      if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+        schedule()
+      }
     },
   )
 

@@ -1369,16 +1369,21 @@ async function showAutoPlayHelp() {
   await alert.present()
 }
 
+let autoPlayIntervalSaveVersion = 0
+
 async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
   const seconds = Math.round(value * 100) / 100
   if (!Number.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
     if (input) input.value = String(autoPlayInterval.value)
     return
   }
+  const saveVersion = ++autoPlayIntervalSaveVersion
   try {
     await persistReaderAutoPlayInterval(seconds)
+    if (saveVersion !== autoPlayIntervalSaveVersion) return
     autoPlayInterval.value = seconds
   } catch (error) {
+    if (saveVersion !== autoPlayIntervalSaveVersion) return
     autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
     if (input) input.value = String(autoPlayInterval.value)
     await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')

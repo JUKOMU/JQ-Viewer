@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file -- 多个小型宿主分别覆盖自动播放状态 */
 import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, test, vi } from 'vitest'
@@ -32,6 +33,115 @@ afterEach(() => {
 })
 
 describe('useReaderAutoPlay', () => {
+  test('横向自动播放按方向推进页面', () => {
+    vi.useFakeTimers()
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const currentIndex = ref(1)
+    const goToIndex = vi.fn((index: number) => currentIndex.value = index)
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          autoPlay = useReaderAutoPlay({
+            isVertical: ref(false),
+            currentIndex,
+            totalCount: ref(4),
+            getScrollContainer: () => null,
+            goToIndex,
+          })
+          return () => h('div')
+        },
+      }),
+    )
+
+    autoPlay.toggle()
+    vi.advanceTimersByTime(2000)
+
+    expect(goToIndex).toHaveBeenCalledWith(2)
+    expect(currentIndex.value).toBe(2)
+    wrapper.unmount()
+  })
+
+  test('纵向自动播放推进滚动位置并在边界暂停', async () => {
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const container = { clientHeight: 100, scrollHeight: 300, scrollTop: 0 } as HTMLElement
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback)
+      return frameId
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          autoPlay = useReaderAutoPlay({
+            isVertical: ref(true),
+            currentIndex: ref(0),
+            totalCount: ref(3),
+            getScrollContainer: () => container,
+            goToIndex: () => {},
+          })
+          return () => h('div')
+        },
+      }),
+    )
+
+    autoPlay.toggle()
+    const first = frames.entries().next().value!
+    frames.delete(first[0])
+    first[1](1000)
+    const second = frames.entries().next().value!
+    frames.delete(second[0])
+    second[1](2000)
+    const third = frames.entries().next().value!
+    frames.delete(third[0])
+    third[1](3000)
+    const fourth = frames.entries().next().value!
+    frames.delete(fourth[0])
+    fourth[1](4000)
+    const fifth = frames.entries().next().value!
+    frames.delete(fifth[0])
+    fifth[1](5000)
+    const sixth = frames.entries().next().value!
+    frames.delete(sixth[0])
+    sixth[1](6000)
+    expect(container.scrollTop).toBe(200)
+    expect(frames.size).toBe(0)
+
+    container.scrollHeight = 400
+    autoPlay.resumeAfterInteraction()
+    expect(frames.size).toBe(1)
+    autoPlay.stop()
+    wrapper.unmount()
+  })
+
+  test('到达横向阅读末页后停止自动播放', () => {
+    vi.useFakeTimers()
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const goToIndex = vi.fn()
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          autoPlay = useReaderAutoPlay({
+            isVertical: ref(false),
+            currentIndex: ref(1),
+            totalCount: ref(2),
+            getScrollContainer: () => null,
+            goToIndex,
+          })
+          return () => h('div')
+        },
+      }),
+    )
+
+    autoPlay.toggle()
+    vi.advanceTimersByTime(2000)
+
+    expect(autoPlay.isPlaying.value).toBe(false)
+    expect(goToIndex).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('方向键按音量键方向调速并保留两位小数', () => {
     let autoPlay!: ReturnType<typeof useReaderAutoPlay>
     const wrapper = mount(

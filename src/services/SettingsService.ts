@@ -31,6 +31,7 @@ let confirmedPreloadConcurrency = 6
 let confirmedDownloadConcurrency = 6
 let preloadConcurrencySaveVersion = 0
 let downloadConcurrencySaveVersion = 0
+let autoPlayIntervalWriteVersion = 0
 let preloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 let downloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 
@@ -38,6 +39,7 @@ let downloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 export async function initSettings(): Promise<void> {
   if (settingsLoaded) return
   try {
+    const startAutoPlayIntervalWriteVersion = autoPlayIntervalWriteVersion
     const all = await JmcomicService.getAllSettings()
     cachedReaderPreloadPages = all.readerPreloadPages
     cachedPreloadConcurrency = all.preloadConcurrency
@@ -53,7 +55,9 @@ export async function initSettings(): Promise<void> {
     cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
     cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
     cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
-    cachedReaderAutoPlayInterval = all.readerAutoPlayInterval ?? 10
+    if (autoPlayIntervalWriteVersion === startAutoPlayIntervalWriteVersion) {
+      cachedReaderAutoPlayInterval = all.readerAutoPlayInterval ?? 10
+    }
     cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
     cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
     cachedApiRouteDomain = all.apiRouteDomain ?? ''
@@ -194,6 +198,7 @@ export const SettingsStore = {
     return cachedReaderAutoPlayInterval
   },
   setReaderAutoPlayInterval(seconds: number) {
+    autoPlayIntervalWriteVersion++
     cachedReaderAutoPlayInterval = seconds
   },
 }

@@ -11,6 +11,10 @@ JMComic 第三方漫画阅读器，支持 Android 移动端和 Windows、Linux �
 
 > JQ Viewer 是个人项目，与 JMComic 官方无关。项目本身不包含漫画资源，请遵守所在地法律法规和目标站点规则。
 
+## 使用文档
+
+项目介绍、安装与更新、应用首页与侧边栏说明见 [用户文档](docs/sources/index.md)。
+
 ## 项目状态
 
 项目目前同时维护 Android 移动端和 Desktop 桌面端，功能和发行版本以 [Releases](https://github.com/JUKOMU/JQ-Viewer/releases) 页面为准。欢迎提交 Issue 和 Pull Request。

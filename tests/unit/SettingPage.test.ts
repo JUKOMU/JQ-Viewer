@@ -337,6 +337,29 @@ describe('SettingPage 自动播放速度保存', () => {
     wrapper.unmount()
   })
 
+  test('保存失败时保留用户正在拖动的速度草稿', async () => {
+    let rejectSave!: (error: Error) => void
+    mocks.persistReaderAutoPlayInterval.mockReturnValueOnce(
+      new Promise<void>((_, reject) => { rejectSave = reject }),
+    )
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    const slider = wrapper.get('input[aria-label="自动播放速度"]')
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    await slider.setValue('200')
+    const draft = intervalInput!.element.value
+    rejectSave(new Error('save failed'))
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe(draft)
+    wrapper.unmount()
+  })
+
   test('重新激活后旧保存成功不会覆盖重新读取的间隔', async () => {
     let resolveSave!: () => void
     mocks.persistReaderAutoPlayInterval.mockReturnValueOnce(

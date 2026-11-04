@@ -149,7 +149,9 @@ let touchSettleTimer: ReturnType<typeof setTimeout> | null = null
 let touchActive = false
 
 function endInteractionIfIdle() {
-  if (!wheelInteractionTimer && !touchActive && !touchSettleTimer) emit('interaction-end')
+  if (!wheelInteractionTimer && !touchActive && !touchSettleTimer && mousePointerId === null) {
+    emit('interaction-end')
+  }
 }
 
 function onWheel() {
@@ -817,7 +819,7 @@ function onMousePointerUp(ev: PointerEvent) {
   if (mousePointerId !== ev.pointerId) return
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
-  emit('interaction-end')
+  endInteractionIfIdle()
 }
 
 function onMouseClick(ev: MouseEvent) {

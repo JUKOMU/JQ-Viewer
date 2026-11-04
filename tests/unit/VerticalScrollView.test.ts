@@ -80,6 +80,43 @@ describe('VerticalScrollView', () => {
     wrapper.unmount()
   })
 
+  test('鼠标按住期间滚轮结束不会恢复自动播放', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map<number, string>(),
+        totalCount: 1,
+        currentIndex: 0,
+        enableMouseControls: true,
+      },
+    })
+    await flushAnimationFrames()
+    vi.useFakeTimers()
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    })
+    const pointer = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'mouse' },
+        button: { value: 0 },
+        clientX: { value: 100 },
+        clientY: { value: 100 },
+      })
+      container.element.dispatchEvent(event)
+    }
+
+    pointer('pointerdown')
+    await container.trigger('wheel')
+    vi.advanceTimersByTime(150)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    pointer('pointerup')
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   test('图片加载报告布局变化但不结束用户交互', async () => {
     const wrapper = mount(VerticalScrollView, {
       props: {

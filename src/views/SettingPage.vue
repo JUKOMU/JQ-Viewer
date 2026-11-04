@@ -1335,6 +1335,7 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
 }
 
 function onAutoPlaySliderInput(event: Event) {
+  autoPlayDraftEditVersion++
   const position = Number((event.target as HTMLInputElement).value)
   autoPlayInterval.value = readerAutoPlayIntervalAtSliderPosition(position, autoPlayInterval.value)
 }
@@ -1371,6 +1372,7 @@ async function showAutoPlayHelp() {
 }
 
 let autoPlayIntervalSaveVersion = 0
+let autoPlayDraftEditVersion = 0
 
 async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
   const seconds = Math.round(value * 100) / 100
@@ -1379,12 +1381,15 @@ async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
     return
   }
   const saveVersion = ++autoPlayIntervalSaveVersion
+  const draftEditVersion = autoPlayDraftEditVersion
   try {
     await persistReaderAutoPlayInterval(seconds)
     if (saveVersion !== autoPlayIntervalSaveVersion) return
     autoPlayInterval.value = seconds
   } catch (error) {
-    autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    if (draftEditVersion === autoPlayDraftEditVersion) {
+      autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    }
     if (saveVersion !== autoPlayIntervalSaveVersion) return
     if (input) input.value = String(autoPlayInterval.value)
     await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')

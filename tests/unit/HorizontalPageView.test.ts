@@ -102,6 +102,27 @@ describe('HorizontalPageView', () => {
     wrapper.unmount()
   })
 
+  test('鼠标按住期间滚轮结束不会恢复自动播放', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container, pointer } = mountMouseView(0)
+    await wrapper.setProps({ widthPercent: 100 })
+    const image = wrapper.get('.page-image')
+    Object.defineProperties(image.element, {
+      naturalWidth: { configurable: true, value: 500 },
+      naturalHeight: { configurable: true, value: 1000 },
+    })
+    await image.trigger('load')
+
+    await pointer('pointerdown', 150)
+    await container.trigger('wheel', { deltaY: 100 })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+
+    await pointer('pointerup', 150)
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   test('页面槽位统一使用容器实际宽度', async () => {
     const { wrapper } = mountView(1, 1280)
     resizeObserverTrigger?.()

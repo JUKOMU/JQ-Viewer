@@ -152,7 +152,7 @@ function onWheel(event: WheelEvent) {
   if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
   wheelInteractionTimer = setTimeout(() => {
     wheelInteractionTimer = null
-    emit('interaction-end')
+    endInteractionIfIdle()
   }, 150)
   const delta =
     event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? slotHeight.value : 1)
@@ -271,6 +271,12 @@ let mouseStartY = 0
 let mouseStartTx = 0
 let mouseStartTy = 0
 let mouseDragged = false
+
+function endInteractionIfIdle() {
+  if (!wheelInteractionTimer && mousePointerId === null && fingers === 0 && !isAnimating.value) {
+    emit('interaction-end')
+  }
+}
 
 watch(
   () => props.toolbarToggleProtected,
@@ -619,7 +625,7 @@ function onTouchEnd(ev: TouchEvent) {
 function onTouchEndEvent(ev: TouchEvent) {
   onTouchEnd(ev)
   fingers = ev.touches.length
-  if (ev.touches.length === 0 && !isAnimating.value) emit('interaction-end')
+  if (ev.touches.length === 0) endInteractionIfIdle()
 }
 
 function onMousePointerDown(ev: PointerEvent) {
@@ -674,7 +680,7 @@ function onMousePointerUp(ev: PointerEvent) {
   }
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
-  if (!isAnimating.value) emit('interaction-end')
+  endInteractionIfIdle()
 }
 
 function onMouseClick(ev: MouseEvent) {
@@ -720,7 +726,7 @@ function snapTo(target: number) {
     displayIndex.value = target
     offsetX.value = 0
     emit('update:currentIndex', target)
-    emit('interaction-end')
+    endInteractionIfIdle()
   }, 320)
 }
 
@@ -731,7 +737,7 @@ function snapBack() {
   animationTimer = setTimeout(() => {
     animationTimer = null
     isAnimating.value = false
-    emit('interaction-end')
+    endInteractionIfIdle()
   }, 320)
 }
 

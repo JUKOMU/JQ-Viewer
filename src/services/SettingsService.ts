@@ -7,6 +7,7 @@ import { JmcomicService } from './JmcomicService'
 import { persistReaderSettingValue } from './ReaderSettingPersistence'
 
 let settingsLoaded = false
+let settingsLoading: Promise<void> | null = null
 
 // ---- 同步缓存（App.vue 启动时由 initSettings 填充） ----
 let cachedReaderPreloadPages = 15
@@ -36,38 +37,45 @@ let preloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 let downloadConcurrencySaveQueue: Promise<void> = Promise.resolve()
 
 /** App.vue onMounted 调用，从 DB 加载到缓存（幂等）。 */
-export async function initSettings(): Promise<void> {
-  if (settingsLoaded) return
-  try {
-    const startAutoPlayIntervalWriteVersion = autoPlayIntervalWriteVersion
-    const all = await JmcomicService.getAllSettings()
-    cachedReaderPreloadPages = all.readerPreloadPages
-    cachedPreloadConcurrency = all.preloadConcurrency
-    cachedDownloadConcurrency = all.downloadConcurrency
-    confirmedPreloadConcurrency = all.preloadConcurrency
-    confirmedDownloadConcurrency = all.downloadConcurrency
-    cachedDownloadPublic = all.downloadPublic
-    cachedCacheCapacityMb = all.cacheRequestedMb ?? all.cacheCapacityMb
-    cachedOcrEnabled = all.ocrEnabled
-    cachedReaderDisplayMode = all.readerDisplayMode || 'vertical'
-    cachedReaderScreenOrientation = all.readerScreenOrientation || 'auto'
-    cachedReaderBrightness = all.readerBrightness ?? -1
-    cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
-    cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
-    cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
-    if (autoPlayIntervalWriteVersion === startAutoPlayIntervalWriteVersion) {
-      cachedReaderAutoPlayInterval = all.readerAutoPlayInterval ?? 10
+export function initSettings(): Promise<void> {
+  if (settingsLoaded) return Promise.resolve()
+  if (settingsLoading) return settingsLoading
+  const loading = (async () => {
+    try {
+      const startAutoPlayIntervalWriteVersion = autoPlayIntervalWriteVersion
+      const all = await JmcomicService.getAllSettings()
+      cachedReaderPreloadPages = all.readerPreloadPages
+      cachedPreloadConcurrency = all.preloadConcurrency
+      cachedDownloadConcurrency = all.downloadConcurrency
+      confirmedPreloadConcurrency = all.preloadConcurrency
+      confirmedDownloadConcurrency = all.downloadConcurrency
+      cachedDownloadPublic = all.downloadPublic
+      cachedCacheCapacityMb = all.cacheRequestedMb ?? all.cacheCapacityMb
+      cachedOcrEnabled = all.ocrEnabled
+      cachedReaderDisplayMode = all.readerDisplayMode || 'vertical'
+      cachedReaderScreenOrientation = all.readerScreenOrientation || 'auto'
+      cachedReaderBrightness = all.readerBrightness ?? -1
+      cachedReaderKeepScreenOn = all.readerKeepScreenOn ?? true
+      cachedReaderVolumeNavigation = all.readerVolumeNavigation ?? false
+      cachedReaderAutoShowToolbarAtEnd = all.readerAutoShowToolbarAtEnd ?? true
+      if (autoPlayIntervalWriteVersion === startAutoPlayIntervalWriteVersion) {
+        cachedReaderAutoPlayInterval = all.readerAutoPlayInterval ?? 10
+      }
+      cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
+      cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
+      cachedApiRouteDomain = all.apiRouteDomain ?? ''
+      cachedImageRouteMode = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
+      cachedImageRouteHost = all.imageRouteHost ?? ''
+      settingsLoaded = true
+    } catch (e) {
+      // 使用默认值（已在缓存变量中预设）
+      console.warn('[SettingsService] initSettings failed, using defaults:', e)
+    } finally {
+      settingsLoading = null
     }
-    cachedReaderWidthPercent = normalizeReaderWidthPercent(all.readerWidthPercent)
-    cachedApiRouteMode = all.apiRouteMode === 'manual' ? 'manual' : 'auto'
-    cachedApiRouteDomain = all.apiRouteDomain ?? ''
-    cachedImageRouteMode = all.imageRouteMode === 'manual' ? 'manual' : 'auto'
-    cachedImageRouteHost = all.imageRouteHost ?? ''
-    settingsLoaded = true
-  } catch (e) {
-    // 使用默认值（已在缓存变量中预设）
-    console.warn('[SettingsService] initSettings failed, using defaults:', e)
-  }
+  })()
+  settingsLoading = loading
+  return loading
 }
 
 export const SettingsStore = {
@@ -204,6 +212,7 @@ export const SettingsStore = {
 }
 
 export async function persistReaderAutoPlayInterval(seconds: number): Promise<void> {
+  await initSettings()
   const operation = persistReaderSettingValue(
     'autoPlayInterval',
     seconds,

@@ -61,7 +61,67 @@ describe('useReaderAutoPlay', () => {
     wrapper.unmount()
   })
 
-  test('纵向自动播放推进滚动位置并在边界暂停', async () => {
+  test('横向交互结束后恢复自动翻页计时', () => {
+    vi.useFakeTimers()
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const currentIndex = ref(0)
+    const goToIndex = vi.fn((index: number) => currentIndex.value = index)
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          autoPlay = useReaderAutoPlay({
+            isVertical: ref(false),
+            currentIndex,
+            totalCount: ref(3),
+            getScrollContainer: () => null,
+            goToIndex,
+          })
+          return () => h('div')
+        },
+      }),
+    )
+
+    autoPlay.toggle()
+    vi.advanceTimersByTime(1000)
+    autoPlay.pauseForInteraction()
+    vi.advanceTimersByTime(5000)
+    autoPlay.resumeAfterInteraction()
+    vi.advanceTimersByTime(2000)
+
+    expect(goToIndex).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
+  test('停止后清除交互状态', () => {
+    vi.useFakeTimers()
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const goToIndex = vi.fn()
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          autoPlay = useReaderAutoPlay({
+            isVertical: ref(false),
+            currentIndex: ref(0),
+            totalCount: ref(3),
+            getScrollContainer: () => null,
+            goToIndex,
+          })
+          return () => h('div')
+        },
+      }),
+    )
+
+    autoPlay.pauseForInteraction()
+    autoPlay.stop()
+    autoPlay.toggle()
+    vi.advanceTimersByTime(2000)
+
+    expect(autoPlay.isPlaying.value).toBe(true)
+    expect(goToIndex).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
+  test('纵向播放到边界后在布局增长时恢复滚动', async () => {
     let autoPlay!: ReturnType<typeof useReaderAutoPlay>
     const container = { clientHeight: 100, scrollHeight: 300, scrollTop: 0 } as HTMLElement
     const frames = new Map<number, FrameRequestCallback>()
@@ -109,6 +169,9 @@ describe('useReaderAutoPlay', () => {
     expect(frames.size).toBe(0)
 
     container.scrollHeight = 400
+    autoPlay.pauseForInteraction()
+    autoPlay.resumeAfterGeometryChange()
+    expect(frames.size).toBe(0)
     autoPlay.resumeAfterInteraction()
     expect(frames.size).toBe(1)
     autoPlay.stop()

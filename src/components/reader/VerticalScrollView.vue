@@ -103,6 +103,7 @@ const emit = defineEmits<{
   'reached-bottom': []
   'interaction-start': []
   'interaction-end': []
+  'geometry-change': []
   'image-error': [sortOrder: number, failedUrl: string]
   'retry-images': []
 }>()
@@ -145,13 +146,18 @@ const visibleEnd = ref(0)
 const lastEmitIndex = ref(-1)
 let wheelInteractionTimer: ReturnType<typeof setTimeout> | null = null
 let touchSettleTimer: ReturnType<typeof setTimeout> | null = null
+let touchActive = false
+
+function endInteractionIfIdle() {
+  if (!wheelInteractionTimer && !touchActive && !touchSettleTimer) emit('interaction-end')
+}
 
 function onWheel() {
   emit('interaction-start')
   if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
   wheelInteractionTimer = setTimeout(() => {
     wheelInteractionTimer = null
-    emit('interaction-end')
+    endInteractionIfIdle()
   }, 150)
 }
 
@@ -159,7 +165,7 @@ function finishTouchInteraction() {
   if (touchSettleTimer) clearTimeout(touchSettleTimer)
   touchSettleTimer = setTimeout(() => {
     touchSettleTimer = null
-    emit('interaction-end')
+    endInteractionIfIdle()
   }, 180)
 }
 
@@ -408,7 +414,7 @@ function onImageLoad(index: number, ev: Event) {
   const width = contentWidth.value || img.clientWidth
   if (width <= 0) return
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
-  emit('interaction-end')
+  emit('geometry-change')
 }
 
 let scrollRafId: number | null = null
@@ -485,6 +491,7 @@ function scrollToIndex(index: number) {
 function refreshAfterResize() {
   const oldWidth = containerWidth.value
   if (!updateContainerSize()) return
+  emit('geometry-change')
   if (oldWidth <= 0) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     scheduleScrollToIndex(props.currentIndex)
@@ -642,12 +649,16 @@ function onTouch(ev: TouchEvent) {
   if (ev.type === 'touchstart') {
     if (touchSettleTimer) clearTimeout(touchSettleTimer)
     touchSettleTimer = null
+    touchActive = true
     emit('interaction-start')
     onTS(ev)
   } else if (ev.type === 'touchmove') onTM(ev)
   else if (ev.type === 'touchend' || ev.type === 'touchcancel') {
     onTE(ev)
-    if (ev.touches.length === 0) finishTouchInteraction()
+    if (ev.touches.length === 0) {
+      touchActive = false
+      finishTouchInteraction()
+    }
   }
 }
 

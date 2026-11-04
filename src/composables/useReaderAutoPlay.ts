@@ -37,9 +37,9 @@ export function useReaderAutoPlay(options: {
   }
 
   function stop() {
+    interactionActive = false
     if (!isPlaying.value) return
     isPlaying.value = false
-    interactionActive = false
     remainingMs = 0
     clearScheduledWork()
     syncNativeVolumeInterception(false)
@@ -120,7 +120,13 @@ export function useReaderAutoPlay(options: {
 
   function resumeAfterInteraction() {
     if (interactionActive) interactionActive = false
-    if (isPlaying.value && options.isVertical.value && animationFrame === null) schedule()
+    if (isPlaying.value && animationFrame === null && timer === null) schedule()
+  }
+
+  function resumeAfterGeometryChange() {
+    if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+      schedule()
+    }
   }
 
   function resetAfterHorizontalPageChange() {
@@ -202,6 +208,7 @@ export function useReaderAutoPlay(options: {
     stop,
     pauseForInteraction,
     resumeAfterInteraction,
+    resumeAfterGeometryChange,
     resetAfterHorizontalPageChange,
     updateInterval,
     handleVolumeDirection,

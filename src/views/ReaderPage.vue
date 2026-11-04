@@ -41,6 +41,7 @@
         @retry-images="retryFailedImages"
         @interaction-start="autoPlay.pauseForInteraction"
         @interaction-end="autoPlay.resumeAfterInteraction"
+        @geometry-change="autoPlay.resumeAfterGeometryChange"
       />
       <HorizontalPageView
         v-else

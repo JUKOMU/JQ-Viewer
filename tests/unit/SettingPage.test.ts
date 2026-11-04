@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- test-only component stubs */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, KeepAlive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   requestManageStorage: vi.fn(),
   setReaderWidthPercent: vi.fn(),
   persistReaderAutoPlayInterval: vi.fn(),
+  readerAutoPlayInterval: 10,
   readerCapabilities: {
     orientation: { available: true, api: {} },
     brightness: { available: true, api: {} },
@@ -97,7 +98,7 @@ vi.mock('@/services/SettingsService', () => ({
     getDownloadPublic: vi.fn(() => false),
     getOcrEnabled: vi.fn(() => false),
     getPreloadConcurrency: vi.fn(() => 4),
-    getReaderAutoPlayInterval: vi.fn(() => 10),
+    getReaderAutoPlayInterval: vi.fn(() => mocks.readerAutoPlayInterval),
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
     getReaderBrightness: vi.fn(() => -1),
     getReaderDisplayMode: vi.fn(() => 'vertical'),
@@ -166,6 +167,7 @@ beforeEach(() => {
   })
   mocks.setReaderWidthPercent.mockResolvedValue({ success: true })
   mocks.persistReaderAutoPlayInterval.mockReset()
+  mocks.readerAutoPlayInterval = 10
   mocks.requestManageStorage.mockResolvedValue({
     granted: true,
     permissionType: 'MANAGE_EXTERNAL_STORAGE',
@@ -325,12 +327,46 @@ describe('SettingPage 自动播放速度保存', () => {
     void intervalInput!.trigger('change')
     await intervalInput!.setValue('8')
     void intervalInput!.trigger('change')
+    mocks.readerAutoPlayInterval = 8
     rejectFirst(new Error('stale save failed'))
     resolveSecond()
     await flushPromises()
 
     expect(intervalInput!.element.value).toBe('8')
     expect(mocks.showToast).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('重新激活后旧保存成功不会覆盖重新读取的间隔', async () => {
+    let resolveSave!: () => void
+    mocks.persistReaderAutoPlayInterval.mockReturnValueOnce(
+      new Promise<void>((resolve) => { resolveSave = resolve }),
+    )
+    let pageVisible!: ReturnType<typeof ref<boolean>>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          pageVisible = ref(true)
+          return () => h(KeepAlive, null, () => pageVisible.value ? h(SettingPage) : null)
+        },
+      }),
+    )
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    expect(intervalInput).toBeDefined()
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    pageVisible.value = false
+    await flushPromises()
+    pageVisible.value = true
+    await flushPromises()
+    resolveSave()
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe('10')
     wrapper.unmount()
   })
 })

@@ -753,6 +753,7 @@ const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
 const autoPlayInterval = ref(SettingsStore.getReaderAutoPlayInterval())
 
 onActivated(() => {
+  autoPlayIntervalSaveVersion++
   autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
 })
 
@@ -1383,8 +1384,8 @@ async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
     if (saveVersion !== autoPlayIntervalSaveVersion) return
     autoPlayInterval.value = seconds
   } catch (error) {
-    if (saveVersion !== autoPlayIntervalSaveVersion) return
     autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    if (saveVersion !== autoPlayIntervalSaveVersion) return
     if (input) input.value = String(autoPlayInterval.value)
     await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')
   }

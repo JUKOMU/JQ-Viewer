@@ -4,6 +4,7 @@ import type { AllSettings } from '@/services/JmcomicTypes'
 const getAllSettings = vi.hoisted(() => vi.fn())
 const setPreloadConcurrency = vi.hoisted(() => vi.fn())
 const setDownloadConcurrency = vi.hoisted(() => vi.fn())
+const setReaderAutoPlayInterval = vi.hoisted(() => vi.fn())
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -20,6 +21,7 @@ vi.mock('@/services/JmcomicService', () => ({
     getAllSettings,
     setPreloadConcurrency,
     setDownloadConcurrency,
+    setReaderAutoPlayInterval,
   },
 }))
 
@@ -44,6 +46,7 @@ describe('SettingsService', () => {
     getAllSettings.mockReset()
     setPreloadConcurrency.mockReset()
     setDownloadConcurrency.mockReset()
+    setReaderAutoPlayInterval.mockReset()
   })
 
   test('旧版设置缺少阅读结束工具栏字段时默认开启', async () => {
@@ -69,6 +72,28 @@ describe('SettingsService', () => {
     await initialization
 
     expect(SettingsStore.getReaderAutoPlayInterval()).toBe(3.5)
+  })
+
+  test('并发初始化共享加载任务，自动播放保存等待加载后的回滚基线', async () => {
+    const settingsLoad = deferred<AllSettings>()
+    getAllSettings.mockReturnValue(settingsLoad.promise)
+    setReaderAutoPlayInterval.mockRejectedValue(new Error('save failed'))
+
+    const { initSettings, persistReaderAutoPlayInterval, SettingsStore } =
+      await import('@/services/SettingsService')
+    const firstInitialization = initSettings()
+    const secondInitialization = initSettings()
+    const saving = persistReaderAutoPlayInterval(3.5)
+    const saveFailure = expect(saving).rejects.toThrow('save failed')
+    expect(getAllSettings).toHaveBeenCalledTimes(1)
+    expect(setReaderAutoPlayInterval).not.toHaveBeenCalled()
+
+    settingsLoad.resolve({ ...legacySettings, readerAutoPlayInterval: 9 })
+    await Promise.all([firstInitialization, secondInitialization])
+    await saveFailure
+
+    expect(setReaderAutoPlayInterval).toHaveBeenCalledWith(3.5)
+    expect(SettingsStore.getReaderAutoPlayInterval()).toBe(9)
   })
 
   test('新原生返回 requested 和 effective 时缓存用户设置值', async () => {

@@ -8,6 +8,7 @@
       'images-hidden': widthPercent === 0,
     }"
     @scroll="onScroll"
+    @wheel="onWheel"
     @click="onMouseClick"
   >
     <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
@@ -100,6 +101,9 @@ const emit = defineEmits<{
   'update:currentIndex': [index: number]
   requestRange: [range: { start: number; end: number; center: number }]
   'reached-bottom': []
+  'interaction-start': []
+  'interaction-end': []
+  'geometry-change': []
   'image-error': [sortOrder: number, failedUrl: string]
   'retry-images': []
 }>()
@@ -140,6 +144,32 @@ const prefixSums = ref<number[]>([0])
 const visibleStart = ref(0)
 const visibleEnd = ref(0)
 const lastEmitIndex = ref(-1)
+let wheelInteractionTimer: ReturnType<typeof setTimeout> | null = null
+let touchSettleTimer: ReturnType<typeof setTimeout> | null = null
+let touchActive = false
+
+function endInteractionIfIdle() {
+  if (!wheelInteractionTimer && !touchActive && !touchSettleTimer && mousePointerId === null) {
+    emit('interaction-end')
+  }
+}
+
+function onWheel() {
+  emit('interaction-start')
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  wheelInteractionTimer = setTimeout(() => {
+    wheelInteractionTimer = null
+    endInteractionIfIdle()
+  }, 150)
+}
+
+function finishTouchInteraction() {
+  if (touchSettleTimer) clearTimeout(touchSettleTimer)
+  touchSettleTimer = setTimeout(() => {
+    touchSettleTimer = null
+    endInteractionIfIdle()
+  }, 180)
+}
 
 // ---- 缩放 ----
 const zoomScale = ref(1)
@@ -386,6 +416,7 @@ function onImageLoad(index: number, ev: Event) {
   const width = contentWidth.value || img.clientWidth
   if (width <= 0) return
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
+  emit('geometry-change')
 }
 
 let scrollRafId: number | null = null
@@ -409,6 +440,7 @@ function updateBottomState() {
 }
 
 function onScroll() {
+  if (touchSettleTimer) finishTouchInteraction()
   if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
@@ -461,6 +493,7 @@ function scrollToIndex(index: number) {
 function refreshAfterResize() {
   const oldWidth = containerWidth.value
   if (!updateContainerSize()) return
+  emit('geometry-change')
   if (oldWidth <= 0) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     scheduleScrollToIndex(props.currentIndex)
@@ -615,9 +648,20 @@ function cycleDoubleTapZoom(clientX: number, clientY: number) {
 }
 
 function onTouch(ev: TouchEvent) {
-  if (ev.type === 'touchstart') onTS(ev)
-  else if (ev.type === 'touchmove') onTM(ev)
-  else if (ev.type === 'touchend' || ev.type === 'touchcancel') onTE(ev)
+  if (ev.type === 'touchstart') {
+    if (touchSettleTimer) clearTimeout(touchSettleTimer)
+    touchSettleTimer = null
+    touchActive = true
+    emit('interaction-start')
+    onTS(ev)
+  } else if (ev.type === 'touchmove') onTM(ev)
+  else if (ev.type === 'touchend' || ev.type === 'touchcancel') {
+    onTE(ev)
+    if (ev.touches.length === 0) {
+      touchActive = false
+      finishTouchInteraction()
+    }
+  }
 }
 
 function onTS(ev: TouchEvent) {
@@ -732,6 +776,7 @@ function onMousePointerDown(ev: PointerEvent) {
   if (!props.enableMouseControls || ev.pointerType !== 'mouse' || ev.button !== 0) {
     return
   }
+  emit('interaction-start')
   const el = containerRef.value
   if (!el) return
   ev.preventDefault()
@@ -774,6 +819,7 @@ function onMousePointerUp(ev: PointerEvent) {
   if (mousePointerId !== ev.pointerId) return
   containerRef.value?.releasePointerCapture(ev.pointerId)
   mousePointerId = null
+  endInteractionIfIdle()
 }
 
 function onMouseClick(ev: MouseEvent) {
@@ -829,6 +875,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
+  if (touchSettleTimer) clearTimeout(touchSettleTimer)
+  wheelInteractionTimer = null
+  touchSettleTimer = null
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
   if (scrollSyncRafId !== null) cancelAnimationFrame(scrollSyncRafId)
   resizeObserver?.disconnect()

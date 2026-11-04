@@ -88,6 +88,11 @@ public final class SettingsPluginHandler {
             Request.bool(request.enabled(), true)));
     }
 
+    public void setReaderAutoPlayInterval(Context context) {
+        settingsRequests.run(context, DoubleSettingRequest.class,
+            request -> settings.setReaderAutoPlayInterval(request.seconds()));
+    }
+
     public void getDownloadPublic(Context context) {
         settingsRequests.run(context, downloadLocation::get);
     }

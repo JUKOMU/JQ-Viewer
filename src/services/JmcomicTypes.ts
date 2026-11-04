@@ -213,6 +213,7 @@ export interface AllSettings {
   readerKeepScreenOn: boolean
   readerVolumeNavigation: boolean
   readerAutoShowToolbarAtEnd?: boolean
+  readerAutoPlayInterval?: number
   readerWidthPercent?: number
   apiRouteMode?: 'auto' | 'manual'
   apiRouteDomain?: string

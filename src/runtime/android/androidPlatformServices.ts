@@ -382,6 +382,8 @@ export function createAndroidPlatformServices(
         api: {
           setEnabled: (enabled) =>
             withRuntimeError(() => native.setReaderVolumeNavigation({ enabled })),
+          setAutoPlayActive: (enabled) =>
+            withRuntimeError(() => native.setReaderAutoPlayActive({ enabled })),
           onKey: (handler) => events.onVolumeKey((event) => handler(event.direction)),
         },
       },

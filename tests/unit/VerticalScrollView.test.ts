@@ -29,6 +29,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   resizeObserverTrigger = null
@@ -41,6 +42,126 @@ async function flushAnimationFrames() {
 }
 
 describe('VerticalScrollView', () => {
+  test('滚轮操作后防抖恢复自动播放', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: { imageMap: new Map<number, string>(), totalCount: 1, currentIndex: 0 },
+    })
+    await flushAnimationFrames()
+    vi.useFakeTimers()
+
+    await wrapper.get('.vertical-container').trigger('wheel')
+    expect(wrapper.emitted('interaction-start')).toHaveLength(1)
+    vi.advanceTimersByTime(149)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    vi.advanceTimersByTime(1)
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('触摸仍活动时滚轮结束不会恢复自动播放', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: { imageMap: new Map<number, string>(), totalCount: 1, currentIndex: 0 },
+    })
+    await flushAnimationFrames()
+    vi.useFakeTimers()
+    const container = wrapper.get('.vertical-container')
+
+    await container.trigger('wheel')
+    await container.trigger('touchstart', { touches: [{ clientX: 0, clientY: 20 }] })
+    vi.advanceTimersByTime(150)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 0, clientY: 10 }],
+    })
+    vi.advanceTimersByTime(180)
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('鼠标按住期间滚轮结束不会恢复自动播放', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map<number, string>(),
+        totalCount: 1,
+        currentIndex: 0,
+        enableMouseControls: true,
+      },
+    })
+    await flushAnimationFrames()
+    vi.useFakeTimers()
+    const container = wrapper.get('.vertical-container')
+    Object.defineProperties(container.element, {
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+    })
+    const pointer = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent
+      Object.defineProperties(event, {
+        pointerId: { value: 1 },
+        pointerType: { value: 'mouse' },
+        button: { value: 0 },
+        clientX: { value: 100 },
+        clientY: { value: 100 },
+      })
+      container.element.dispatchEvent(event)
+    }
+
+    pointer('pointerdown')
+    await container.trigger('wheel')
+    vi.advanceTimersByTime(150)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    pointer('pointerup')
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('图片加载报告布局变化但不结束用户交互', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: {
+        imageMap: new Map([[1, 'image-1']]),
+        totalCount: 1,
+        currentIndex: 0,
+      },
+    })
+    await flushAnimationFrames()
+    const image = wrapper.get('.reader-image').element
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 100 },
+      naturalHeight: { configurable: true, value: 200 },
+      clientWidth: { configurable: true, value: 100 },
+    })
+    await wrapper.get('.reader-image').trigger('load')
+
+    expect(wrapper.emitted('geometry-change')).toHaveLength(1)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('触摸结束后等待滚动稳定再恢复自动播放', async () => {
+    const wrapper = mount(VerticalScrollView, {
+      props: { imageMap: new Map<number, string>(), totalCount: 1, currentIndex: 0 },
+    })
+    await flushAnimationFrames()
+    vi.useFakeTimers()
+    const container = wrapper.get('.vertical-container')
+
+    await container.trigger('touchstart', { touches: [{ clientX: 0, clientY: 20 }] })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 0, clientY: 10 }],
+    })
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    vi.advanceTimersByTime(179)
+    await container.trigger('scroll')
+    vi.advanceTimersByTime(179)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    vi.advanceTimersByTime(1)
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   test('双指缩放上限为 5 倍', async () => {
     const wrapper = mount(VerticalScrollView, {
       props: {

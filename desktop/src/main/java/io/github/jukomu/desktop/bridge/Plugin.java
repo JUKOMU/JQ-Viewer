@@ -317,6 +317,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void setReaderAutoPlayInterval(Context context) {
+        settings.setReaderAutoPlayInterval(context);
+    }
+
+    @PluginMethod
     public void getDownloadPublic(Context context) {
         settings.getDownloadPublic(context);
     }

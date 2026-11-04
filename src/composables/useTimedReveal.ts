@@ -4,8 +4,8 @@ export function useTimedReveal(durationMs: number) {
   const visible = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  function reveal() {
-    if (visible.value) return
+  function startTimer() {
+    if (timer) clearTimeout(timer)
     visible.value = true
     timer = setTimeout(() => {
       visible.value = false
@@ -13,10 +13,19 @@ export function useTimedReveal(durationMs: number) {
     }, durationMs)
   }
 
+  function reveal() {
+    if (visible.value) return
+    startTimer()
+  }
+
+  function restart() {
+    startTimer()
+  }
+
   function dispose() {
     if (timer) clearTimeout(timer)
     timer = null
   }
 
-  return { visible, reveal, dispose }
+  return { visible, reveal, restart, dispose }
 }

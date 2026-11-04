@@ -21,6 +21,7 @@ public record SettingsResponse(
     boolean readerKeepScreenOn,
     boolean readerVolumeNavigation,
     boolean readerAutoShowToolbarAtEnd,
+    double readerAutoPlayInterval,
     Integer readerWidthPercent,
     String apiRouteMode,
     String apiRouteDomain,

@@ -113,6 +113,7 @@ vi.mock('@/services/SettingsService', () => ({
     getReaderBrightness: () => -1,
     getReaderKeepScreenOn: () => false,
     getReaderAutoShowToolbarAtEnd: () => mocks.autoShowToolbarAtEnd,
+    getReaderAutoPlayInterval: () => 2,
   },
 }))
 

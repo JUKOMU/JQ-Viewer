@@ -97,6 +97,7 @@ public class SettingsService {
             ret.put("readerKeepScreenOn", getReaderKeepScreenOn());
             ret.put("readerVolumeNavigation", getReaderVolumeNavigation());
             ret.put("readerAutoShowToolbarAtEnd", getReaderAutoShowToolbarAtEnd());
+            ret.put("readerAutoPlayInterval", getReaderAutoPlayInterval());
             ret.put("apiRouteMode", getApiRouteMode());
             ret.put("apiRouteDomain", settingsDb.getString("api_route_domain") == null
                 ? "" : settingsDb.getString("api_route_domain"));
@@ -240,6 +241,21 @@ public class SettingsService {
 
     public void setReaderAutoShowToolbarAtEnd(boolean enabled) {
         settingsDb.putString("reader_auto_show_toolbar_at_end", String.valueOf(enabled));
+    }
+
+    public double getReaderAutoPlayInterval() {
+        String raw = settingsDb.getString("reader_auto_play_interval");
+        return raw == null ? 10 : Double.parseDouble(raw);
+    }
+
+    /** 保存自动播放间隔；符号同时表示正常或反向播放。 */
+    public void setReaderAutoPlayInterval(double seconds) {
+        if (!Double.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
+            throw new IllegalArgumentException("seconds must be between 0.1 and 30, excluding zero");
+        }
+        if (!settingsDb.putString("reader_auto_play_interval", String.valueOf(seconds))) {
+            throw new IllegalStateException("保存自动播放间隔设置失败");
+        }
     }
 
     // ---- 下载公开/私有切换 ----

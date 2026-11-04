@@ -32,7 +32,7 @@ vi.mock('@ionic/vue', () => ({
   }),
 }))
 
-vi.mock('ionicons/icons', () => ({ closeOutline: 'close' }))
+vi.mock('ionicons/icons', () => ({ closeOutline: 'close', helpCircleOutline: 'help-circle' }))
 
 vi.mock('@/runtime/runtimeContext', () => ({
   getRuntime: () => ({
@@ -68,11 +68,13 @@ vi.mock('@/services/JmcomicService', () => ({
 
 vi.mock('@/services/SettingsService', () => ({
   persistPreloadConcurrency: vi.fn(),
+  persistReaderAutoPlayInterval: vi.fn(() => Promise.resolve()),
   SettingsStore: {
     getReaderWidthPercent: vi.fn(() => null),
     setReaderWidthPercent: vi.fn(),
     getPreloadConcurrency: vi.fn(() => 4),
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
+    getReaderAutoPlayInterval: vi.fn(() => 2),
     getReaderBrightness: vi.fn(() => -1),
     getReaderKeepScreenOn: vi.fn(() => false),
     getReaderPreloadPages: vi.fn(() => 10),
@@ -141,6 +143,19 @@ test.each([true, false])('桌面宽度实时变更和独立重置，纵向=%s', 
 
 test('非桌面阅读设置隐藏宽度控件', () => {
   const wrapper = mount(ReaderSettingsPanel, { props: { isVertical: true } })
-  expect(wrapper.find('input[type="range"]').exists()).toBe(false)
+  expect(wrapper.find('input[aria-label="默认宽度"]').exists()).toBe(false)
+  expect(wrapper.find('input[aria-label="自动播放速度"]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+test('自动播放速度滑块保存并通知阅读器', async () => {
+  const { persistReaderAutoPlayInterval } = await import('@/services/SettingsService')
+  const wrapper = mount(ReaderSettingsPanel, { props: { isVertical: true } })
+  const slider = wrapper.get('input[aria-label="自动播放速度"]')
+  await slider.setValue('150')
+  await slider.trigger('change')
+
+  expect(persistReaderAutoPlayInterval).toHaveBeenCalledWith(15.05)
+  expect(wrapper.emitted('update:auto-play-interval')?.at(-1)).toEqual([15.05])
   wrapper.unmount()
 })

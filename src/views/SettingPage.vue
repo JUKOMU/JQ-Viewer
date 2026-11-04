@@ -283,6 +283,46 @@
 
           <div class="row divider">
             <div class="row-left">
+              <div class="row-title-line">
+                <span class="row-title">自动播放速度</span>
+                <button type="button" class="setting-help-btn" aria-label="自动播放使用帮助" @click="showAutoPlayHelp">
+                  <IonIcon :icon="helpCircleOutline" />
+                </button>
+              </div>
+              <span class="row-subtitle">正数向下滚动，负数向上滚动，范围为 ±0.1 秒至 ±30 秒</span>
+            </div>
+            <div class="row-right auto-play-speed-control">
+              <div class="auto-play-slider-wrap">
+                <input
+                  class="auto-play-slider"
+                  type="range"
+                  min="-300"
+                  max="300"
+                  step="1"
+                  :value="readerAutoPlaySliderPosition(autoPlayInterval)"
+                  :style="readerAutoPlaySliderFill(autoPlayInterval)"
+                  :aria-valuetext="`${autoPlayInterval} 秒`"
+                  aria-label="自动播放速度"
+                  @input="onAutoPlaySliderInput"
+                  @change="onAutoPlaySliderChange"
+                />
+              </div>
+              <input
+                class="num-input"
+                type="number"
+                :value="autoPlayInterval"
+                min="-30"
+                max="30"
+                step="0.01"
+                aria-label="自动播放速度（秒）"
+                @change="onAutoPlayIntervalChange"
+              />
+              <span class="unit">秒</span>
+            </div>
+          </div>
+
+          <div class="row divider">
+            <div class="row-left">
               <span class="row-title">页面全屏</span>
               <span class="row-subtitle">
                 {{
@@ -599,7 +639,7 @@ import {
   IonToggle,
   IonToolbar,
 } from '@ionic/vue'
-import { chevronForwardOutline } from 'ionicons/icons'
+import { chevronForwardOutline, helpCircleOutline } from 'ionicons/icons'
 import type { ListenerHandle } from '@/runtime/BackendEvents'
 import { RuntimeError } from '@/runtime/errors'
 import { getRuntime } from '@/runtime/runtimeContext'
@@ -611,8 +651,14 @@ import {
   initSettings,
   persistDownloadConcurrency,
   persistPreloadConcurrency,
+  persistReaderAutoPlayInterval,
   SettingsStore,
 } from '@/services/SettingsService'
+import {
+  readerAutoPlayIntervalAtSliderPosition,
+  readerAutoPlaySliderFill,
+  readerAutoPlaySliderPosition,
+} from '@/utils/readerAutoPlaySlider'
 import { ExportFormatService } from '@/services/ExportFormatService'
 import { EXPORT_SAMPLE_DATA, ExportService } from '@/services/ExportService'
 import { useAuth } from '@/composables/useAuth'
@@ -704,6 +750,12 @@ const brightnessValue = ref(
 const keepScreenOn = ref(SettingsStore.getReaderKeepScreenOn())
 const volumeNavigation = ref(SettingsStore.getReaderVolumeNavigation())
 const autoShowToolbarAtEnd = ref(SettingsStore.getReaderAutoShowToolbarAtEnd())
+const autoPlayInterval = ref(SettingsStore.getReaderAutoPlayInterval())
+
+onActivated(() => {
+  autoPlayIntervalSaveVersion++
+  autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+})
 
 const exportPreview = computed(() => ExportFormatService.previewExportFormat(exportFormat.value))
 const downloadLocationTitle = computed(() => (isAndroidRuntime ? '公开下载内容' : '自定义下载位置'))
@@ -827,6 +879,7 @@ onMounted(async () => {
   keepScreenOn.value = SettingsStore.getReaderKeepScreenOn()
   volumeNavigation.value = SettingsStore.getReaderVolumeNavigation()
   autoShowToolbarAtEnd.value = SettingsStore.getReaderAutoShowToolbarAtEnd()
+  autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
 
   if (!isAndroidRuntime && runtime.services.storage.available) {
     try {
@@ -1280,6 +1333,68 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   SettingsStore.setReaderAutoShowToolbarAtEnd(enabled)
   JmcomicService.setReaderAutoShowToolbarAtEnd(enabled).catch(() => {})
 }
+
+function onAutoPlaySliderInput(event: Event) {
+  autoPlayDraftEditVersion++
+  const position = Number((event.target as HTMLInputElement).value)
+  autoPlayInterval.value = readerAutoPlayIntervalAtSliderPosition(position, autoPlayInterval.value)
+}
+
+async function onAutoPlaySliderChange() {
+  await saveAutoPlayInterval(autoPlayInterval.value)
+}
+
+async function onAutoPlayIntervalChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  await saveAutoPlayInterval(Number(input.value), input)
+}
+
+async function showAutoPlayHelp() {
+  const alert = await createAppAlert({
+    tone: 'info',
+    header: '自动播放使用帮助',
+    message: [
+      '【开始与暂停】',
+      '在阅读页轻触画面唤出自动播放按钮，点击播放开始；播放时点击暂停停止。',
+      '',
+      '【调整速度】',
+      '自动播放中，按音量减键或方向下/右键会增加向下滚动或向后翻页的速度；按音量加键或方向上/左键会增加向上滚动或向前翻页的速度。按相反按键会减慢当前方向的速度。也可在设置中拖动滑块或输入数值。',
+      '',
+      '【播放方向】',
+      '持续调速到当前方向的速度边界后，会自动切换到相反方向；切换后，按键对应的加速、减速方向也会改变。',
+      '',
+      '【速度环】',
+      '圆环上半部分表示向上滚动或向前翻页，下半部分表示向下滚动或向后翻页。填充从中线向对应方向延伸；填充越多，滚动或翻页越快。',
+    ].join('\n'),
+    buttons: [{ text: '知道了', role: 'cancel' }],
+  })
+  await alert.present()
+}
+
+let autoPlayIntervalSaveVersion = 0
+let autoPlayDraftEditVersion = 0
+
+async function saveAutoPlayInterval(value: number, input?: HTMLInputElement) {
+  const seconds = Math.round(value * 100) / 100
+  if (!Number.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
+    if (input) input.value = String(autoPlayInterval.value)
+    return
+  }
+  const saveVersion = ++autoPlayIntervalSaveVersion
+  const draftEditVersion = autoPlayDraftEditVersion
+  try {
+    await persistReaderAutoPlayInterval(seconds)
+    if (saveVersion !== autoPlayIntervalSaveVersion) return
+    autoPlayInterval.value = seconds
+  } catch (error) {
+    if (draftEditVersion === autoPlayDraftEditVersion) {
+      autoPlayInterval.value = SettingsStore.getReaderAutoPlayInterval()
+    }
+    if (saveVersion !== autoPlayIntervalSaveVersion) return
+    if (input) input.value = String(autoPlayInterval.value)
+    await showToast(sanitizeError(error, '保存自动播放速度失败'), 'danger')
+  }
+}
 </script>
 
 <style scoped>
@@ -1386,6 +1501,24 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   font-weight: 500;
 }
 
+.row-title-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.setting-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #8c6b5a;
+  background: transparent;
+  font-size: 16px;
+}
+
 .row-subtitle {
   font-size: 12px;
   color: #b89a84;
@@ -1411,6 +1544,96 @@ function onAutoShowToolbarAtEndChange(e: CustomEvent) {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.auto-play-speed-control {
+  max-width: 68%;
+}
+
+.auto-play-slider-wrap {
+  position: relative;
+  width: 150px;
+  height: 32px;
+  max-width: 30vw;
+  min-width: 75px;
+  flex: 0 1 150px;
+}
+
+.auto-play-slider-wrap::after {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  background: #b89a84;
+  content: '';
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.auto-play-slider {
+  width: 100%;
+  height: 32px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  accent-color: #f0a060;
+}
+
+.auto-play-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #f0e4db 0%,
+    #f0e4db var(--slider-fill-start),
+    #f0a060 var(--slider-fill-start),
+    #f0a060 var(--slider-fill-end),
+    #f0e4db var(--slider-fill-end),
+    #f0e4db 100%
+  );
+}
+
+.auto-play-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 3px;
+  background: #f0e4db;
+}
+
+.auto-play-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.auto-play-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #f0a060;
+  box-shadow: none;
+}
+
+.auto-play-slider:focus-visible {
+  outline: 2px solid #f0a060;
+  outline-offset: 2px;
 }
 
 .entry-arrow {

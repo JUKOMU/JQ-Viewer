@@ -28,6 +28,7 @@ export const COMMON_BACKEND_METHODS = [
   'setReaderPreloadPages',
   'setReaderDisplayMode',
   'setReaderAutoShowToolbarAtEnd',
+  'setReaderAutoPlayInterval',
   'downloadChapter',
   'getDownloadTasksPage',
   'getCompletedDownloadAlbumIds',

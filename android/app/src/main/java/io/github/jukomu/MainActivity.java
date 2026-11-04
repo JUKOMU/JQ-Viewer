@@ -116,7 +116,8 @@ public class MainActivity extends BridgeActivity {
             int code = event.getKeyCode();
             if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
                 JqViewerPlugin plugin = JqViewerPlugin.getInstance();
-                if (plugin != null && plugin.isReaderActive() && plugin.isVolumeNavigationEnabled()) {
+                if (plugin != null && plugin.isReaderActive()
+                    && (plugin.isVolumeNavigationEnabled() || plugin.isReaderAutoPlayActive())) {
                     plugin.notifyVolumeKey(code == KeyEvent.KEYCODE_VOLUME_UP ? "up" : "down");
                     return true;
                 }

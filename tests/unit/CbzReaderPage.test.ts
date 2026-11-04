@@ -70,6 +70,7 @@ vi.mock('@/services/SettingsService', () => ({
     getReaderScreenOrientation: () => 'auto',
     getReaderBrightness: () => -1,
     getReaderKeepScreenOn: () => false,
+    getReaderAutoPlayInterval: () => 2,
   },
 }))
 

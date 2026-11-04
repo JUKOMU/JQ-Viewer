@@ -116,6 +116,9 @@ export function createBackendClient(
     setReaderAutoShowToolbarAtEnd: (
       options: Parameters<JmcomicClient['setReaderAutoShowToolbarAtEnd']>[0],
     ) => call<'setReaderAutoShowToolbarAtEnd'>('setReaderAutoShowToolbarAtEnd', options),
+    setReaderAutoPlayInterval: (
+      options: Parameters<JmcomicClient['setReaderAutoPlayInterval']>[0],
+    ) => call<'setReaderAutoPlayInterval'>('setReaderAutoPlayInterval', options),
     downloadChapter: (options: Parameters<JmcomicClient['downloadChapter']>[0]) =>
       call<'downloadChapter'>('downloadChapter', options),
     getDownloadTasksPage: (options: Parameters<JmcomicClient['getDownloadTasksPage']>[0]) =>

@@ -78,6 +78,51 @@ function mountMouseView(currentIndex = 1, left = 0) {
 }
 
 describe('HorizontalPageView', () => {
+  test('新触摸期间旧翻页动画不会恢复自动播放', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container } = mountView()
+
+    await container.trigger('touchstart', { touches: [{ clientX: 200, clientY: 200 }] })
+    await container.trigger('touchmove', { touches: [{ clientX: 80, clientY: 200 }] })
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 80, clientY: 200 }],
+    })
+    await vi.advanceTimersByTimeAsync(300)
+    await container.trigger('touchstart', { touches: [{ clientX: 150, clientY: 200 }] })
+    await vi.advanceTimersByTimeAsync(320)
+
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+    expect(wrapper.emitted('update:currentIndex')).toEqual([[2]])
+    await container.trigger('touchend', {
+      touches: [],
+      changedTouches: [{ clientX: 150, clientY: 200 }],
+    })
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  test('鼠标按住期间滚轮结束不会恢复自动播放', async () => {
+    vi.useFakeTimers()
+    const { wrapper, container, pointer } = mountMouseView(0)
+    await wrapper.setProps({ widthPercent: 100 })
+    const image = wrapper.get('.page-image')
+    Object.defineProperties(image.element, {
+      naturalWidth: { configurable: true, value: 500 },
+      naturalHeight: { configurable: true, value: 1000 },
+    })
+    await image.trigger('load')
+
+    await pointer('pointerdown', 150)
+    await container.trigger('wheel', { deltaY: 100 })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(wrapper.emitted('interaction-end')).toBeUndefined()
+
+    await pointer('pointerup', 150)
+    expect(wrapper.emitted('interaction-end')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   test('页面槽位统一使用容器实际宽度', async () => {
     const { wrapper } = mountView(1, 1280)
     resizeObserverTrigger?.()

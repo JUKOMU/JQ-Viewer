@@ -56,6 +56,7 @@ public class SettingsStore extends SQLiteOpenHelper {
         insertDefault(db, "reader_keep_screen_on", "true", now);
         insertDefault(db, "reader_volume_navigation", "false", now);
         insertDefault(db, "reader_auto_show_toolbar_at_end", "true", now);
+        insertDefault(db, "reader_auto_play_interval", "10", now);
     }
 
     private void insertDefault(SQLiteDatabase db, String key, String value, long now) {

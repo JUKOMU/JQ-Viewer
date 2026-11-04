@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file -- test-only component stubs */
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, KeepAlive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   setDownloadPublic: vi.fn(),
   requestManageStorage: vi.fn(),
   setReaderWidthPercent: vi.fn(),
+  persistReaderAutoPlayInterval: vi.fn(),
+  readerAutoPlayInterval: 10,
   readerCapabilities: {
     orientation: { available: true, api: {} },
     brightness: { available: true, api: {} },
@@ -51,7 +53,10 @@ vi.mock('@ionic/vue', () => {
   }
 })
 
-vi.mock('ionicons/icons', () => ({ chevronForwardOutline: 'chevron-forward' }))
+vi.mock('ionicons/icons', () => ({
+  chevronForwardOutline: 'chevron-forward',
+  helpCircleOutline: 'help-circle',
+}))
 
 vi.mock('@/components/common/MenuToggleButton.vue', () => ({
   default: defineComponent({ name: 'MenuToggleButton', render: () => h('button') }),
@@ -86,12 +91,14 @@ vi.mock('@/services/SettingsService', () => ({
   initSettings: vi.fn().mockResolvedValue(undefined),
   persistDownloadConcurrency: vi.fn().mockResolvedValue(undefined),
   persistPreloadConcurrency: vi.fn().mockResolvedValue(undefined),
+  persistReaderAutoPlayInterval: mocks.persistReaderAutoPlayInterval,
   SettingsStore: {
     getCacheCapacityMb: vi.fn(() => 512),
     getDownloadConcurrency: vi.fn(() => 4),
     getDownloadPublic: vi.fn(() => false),
     getOcrEnabled: vi.fn(() => false),
     getPreloadConcurrency: vi.fn(() => 4),
+    getReaderAutoPlayInterval: vi.fn(() => mocks.readerAutoPlayInterval),
     getReaderAutoShowToolbarAtEnd: vi.fn(() => true),
     getReaderBrightness: vi.fn(() => -1),
     getReaderDisplayMode: vi.fn(() => 'vertical'),
@@ -159,6 +166,8 @@ beforeEach(() => {
     moved: 0,
   })
   mocks.setReaderWidthPercent.mockResolvedValue({ success: true })
+  mocks.persistReaderAutoPlayInterval.mockReset()
+  mocks.readerAutoPlayInterval = 10
   mocks.requestManageStorage.mockResolvedValue({
     granted: true,
     permissionType: 'MANAGE_EXTERNAL_STORAGE',
@@ -296,6 +305,91 @@ describe('SettingPage 导出格式重置', () => {
     await flushPromises()
     expect(mocks.setReaderWidthPercent).toHaveBeenLastCalledWith(null)
     expect(row?.text()).toContain('自动适配')
+    wrapper.unmount()
+  })
+})
+
+describe('SettingPage 自动播放速度保存', () => {
+  test('过期保存失败不回滚最新值或显示失败提示', async () => {
+    let rejectFirst!: (error: Error) => void
+    let resolveSecond!: () => void
+    mocks.persistReaderAutoPlayInterval
+      .mockReturnValueOnce(new Promise<void>((_, reject) => { rejectFirst = reject }))
+      .mockReturnValueOnce(new Promise<void>((resolve) => { resolveSecond = resolve }))
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    expect(intervalInput).toBeDefined()
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    await intervalInput!.setValue('8')
+    void intervalInput!.trigger('change')
+    mocks.readerAutoPlayInterval = 8
+    rejectFirst(new Error('stale save failed'))
+    resolveSecond()
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe('8')
+    expect(mocks.showToast).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('保存失败时保留用户正在拖动的速度草稿', async () => {
+    let rejectSave!: (error: Error) => void
+    mocks.persistReaderAutoPlayInterval.mockReturnValueOnce(
+      new Promise<void>((_, reject) => { rejectSave = reject }),
+    )
+    const wrapper = mount(SettingPage)
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    const slider = wrapper.get('input[aria-label="自动播放速度"]')
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    await slider.setValue('200')
+    const draft = intervalInput!.element.value
+    rejectSave(new Error('save failed'))
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe(draft)
+    wrapper.unmount()
+  })
+
+  test('重新激活后旧保存成功不会覆盖重新读取的间隔', async () => {
+    let resolveSave!: () => void
+    mocks.persistReaderAutoPlayInterval.mockReturnValueOnce(
+      new Promise<void>((resolve) => { resolveSave = resolve }),
+    )
+    let pageVisible!: ReturnType<typeof ref<boolean>>
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          pageVisible = ref(true)
+          return () => h(KeepAlive, null, () => pageVisible.value ? h(SettingPage) : null)
+        },
+      }),
+    )
+    await flushPromises()
+    const intervalInput = wrapper
+      .findAll('input.num-input')
+      .find((input) => input.attributes('min') === '-30')
+    expect(intervalInput).toBeDefined()
+
+    await intervalInput!.setValue('4')
+    void intervalInput!.trigger('change')
+    pageVisible.value = false
+    await flushPromises()
+    pageVisible.value = true
+    await flushPromises()
+    resolveSave()
+    await flushPromises()
+
+    expect(intervalInput!.element.value).toBe('10')
     wrapper.unmount()
   })
 })

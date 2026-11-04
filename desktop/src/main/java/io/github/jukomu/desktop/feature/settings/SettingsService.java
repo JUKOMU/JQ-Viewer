@@ -75,6 +75,7 @@ public final class SettingsService {
             true,
             false,
             bool("reader_auto_show_toolbar_at_end", true),
+            readerAutoPlayInterval(),
             readerWidthPercent(),
             apiRouteMode(),
             text("api_route_domain", ""),
@@ -244,6 +245,22 @@ public final class SettingsService {
     public synchronized SuccessResponse setAutoShow(boolean value) {
         put("reader_auto_show_toolbar_at_end", value);
         return SuccessResponse.ok();
+    }
+
+    /** 保存自动播放间隔；符号同时表示正常或反向播放。 */
+    public synchronized SuccessResponse setReaderAutoPlayInterval(double seconds) {
+        if (!Double.isFinite(seconds) || Math.abs(seconds) < 0.1 || Math.abs(seconds) > 30) {
+            throw badRequest("seconds必须在-30到30之间且不能为0");
+        }
+        put("reader_auto_play_interval", seconds);
+        return SuccessResponse.ok();
+    }
+
+    private double readerAutoPlayInterval() {
+        String value = text("reader_auto_play_interval", "10");
+        double seconds = Double.parseDouble(value);
+        return Double.isFinite(seconds) && Math.abs(seconds) >= 0.1 && Math.abs(seconds) <= 30
+            ? seconds : 10;
     }
 
     public synchronized SuccessResponse setReaderWidthPercent(Integer value) {

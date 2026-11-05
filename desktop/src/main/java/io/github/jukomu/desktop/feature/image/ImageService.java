@@ -567,9 +567,11 @@ public final class ImageService {
         if (width > THUMBNAIL_MAX_WIDTH) {
             int targetHeight = Math.max(1, (int) Math.round(height * (THUMBNAIL_MAX_WIDTH / (double) width)));
             BufferedImage scaled = new BufferedImage(THUMBNAIL_MAX_WIDTH, targetHeight, BufferedImage.TYPE_INT_RGB);
+            // 面积平均汇总源像素的覆盖范围，减少密集网点缩小时产生的伪纹理。
+            Image averaged = source.getScaledInstance(
+                scaled.getWidth(), scaled.getHeight(), Image.SCALE_AREA_AVERAGING);
             Graphics2D graphics = scaled.createGraphics();
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            graphics.drawImage(source, 0, 0, scaled.getWidth(), scaled.getHeight(), null);
+            graphics.drawImage(averaged, 0, 0, null);
             graphics.dispose();
             source = scaled;
         }

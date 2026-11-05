@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
+import androidx.core.graphics.BitmapCompat;
 import io.github.jukomu.feature.download.storage.FileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -837,7 +838,9 @@ public class ImageCache {
 
         float ratio = (float) THUMBNAIL_MAX_WIDTH / width;
         int targetHeight = Math.round(bitmap.getHeight() * ratio);
-        Bitmap scaled = Bitmap.createScaledBitmap(bitmap, THUMBNAIL_MAX_WIDTH, targetHeight, true);
+        // 分阶段缩小，降低漫画网点和细条纹在大比例缩小时的混叠。
+        Bitmap scaled = BitmapCompat.createScaledBitmap(
+            bitmap, THUMBNAIL_MAX_WIDTH, targetHeight, null, false);
         bitmap.recycle();
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();

@@ -8,11 +8,14 @@ import io.github.jukomu.jmcomic.api.client.JmClient;
 import io.github.jukomu.jmcomic.api.model.JmImage;
 import io.github.jukomu.jmcomic.api.model.JmPhoto;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -155,6 +158,35 @@ class ImageServiceTest {
             service.close();
             events.close();
             executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void thumbnailPreservesAverageBrightnessOfFineStripes(@TempDir Path directory) throws Exception {
+        BufferedImage source = new BufferedImage(1200, 16, BufferedImage.TYPE_INT_RGB);
+        // 每四列中一列白色，缩小四倍后应保留约四分之一白色的平均亮度。
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                source.setRGB(x, y, x % 4 == 0 ? 0xFFFFFF : 0);
+            }
+        }
+        Path image = directory.resolve("stripes.png");
+        ImageIO.write(source, "png", image.toFile());
+        EventHub events = new EventHub(new ObjectMapper());
+        ImageService service = new ImageService(() -> null, Runnable::run, events);
+        try {
+            ImageCache.Entry entry = service.readLocal("stripes", 1, "thumb", image);
+            BufferedImage thumbnail = ImageIO.read(new ByteArrayInputStream(entry.bytes()));
+            assertEquals(300, thumbnail.getWidth());
+            assertEquals(4, thumbnail.getHeight());
+            for (int y = 0; y < thumbnail.getHeight(); y++) {
+                for (int x = 0; x < thumbnail.getWidth(); x++) {
+                    assertEquals(64, thumbnail.getRGB(x, y) & 0xFF, 3);
+                }
+            }
+        } finally {
+            service.close();
+            events.close();
         }
     }
 

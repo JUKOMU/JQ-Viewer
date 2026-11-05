@@ -5,7 +5,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
-import androidx.core.graphics.BitmapCompat;
 import io.github.jukomu.feature.download.storage.FileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -838,15 +837,26 @@ public class ImageCache {
 
         float ratio = (float) THUMBNAIL_MAX_WIDTH / width;
         int targetHeight = Math.round(bitmap.getHeight() * ratio);
-        // 分阶段缩小，降低漫画网点和细条纹在大比例缩小时的混叠。
-        Bitmap scaled = BitmapCompat.createScaledBitmap(
-            bitmap, THUMBNAIL_MAX_WIDTH, targetHeight, null, false);
-        bitmap.recycle();
+        Bitmap scaled = bitmap;
+        try {
+            // 每步最多缩小两倍，避免密集网点在第一步被跳采。
+            while (scaled.getWidth() > THUMBNAIL_MAX_WIDTH) {
+                int nextWidth = Math.max(THUMBNAIL_MAX_WIDTH, (scaled.getWidth() + 1) / 2);
+                int nextHeight = Math.max(targetHeight, (scaled.getHeight() + 1) / 2);
+                Bitmap next = Bitmap.createScaledBitmap(scaled, nextWidth, nextHeight, true);
+                scaled.recycle();
+                scaled = next;
+            }
 
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        scaled.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
-        scaled.recycle();
-        return baos.toByteArray();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            scaled.compress(Bitmap.CompressFormat.JPEG, THUMBNAIL_JPEG_QUALITY, baos);
+            return baos.toByteArray();
+        } catch (OutOfMemoryError error) {
+            // 将缩小过程的内存不足交给现有图片失败链路处理。
+            throw new IllegalStateException("生成缩略图时内存不足", error);
+        } finally {
+            scaled.recycle();
+        }
     }
 
     public static class ImageEntry {

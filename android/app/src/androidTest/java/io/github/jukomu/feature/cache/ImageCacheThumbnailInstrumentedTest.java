@@ -18,35 +18,39 @@ public class ImageCacheThumbnailInstrumentedTest {
 
     @Test
     public void thumbnailPreservesAverageBrightnessOfFineStripes() {
-        Bitmap source = Bitmap.createBitmap(1200, 16, Bitmap.Config.ARGB_8888);
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try {
-            // 每四列中一列白色，缩小四倍后应保留约四分之一白色的平均亮度。
-            int[] row = new int[source.getWidth()];
-            for (int x = 0; x < row.length; x++) {
-                row[x] = x % 4 == 0 ? Color.WHITE : Color.BLACK;
-            }
-            for (int y = 0; y < source.getHeight(); y++) {
-                source.setPixels(row, 0, row.length, 0, y, row.length, 1);
-            }
-            assertTrue(source.compress(Bitmap.CompressFormat.PNG, 100, output));
-        } finally {
-            source.recycle();
-        }
-
-        byte[] bytes = ImageCache.createThumbnail(output.toByteArray());
-        Bitmap thumbnail = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-        assertNotNull(thumbnail);
-        try {
-            assertEquals(300, thumbnail.getWidth());
-            assertEquals(4, thumbnail.getHeight());
-            for (int y = 0; y < thumbnail.getHeight(); y++) {
-                for (int x = 0; x < thumbnail.getWidth(); x++) {
-                    assertEquals(64, Color.red(thumbnail.getPixel(x, y)), 3);
+        for (int factor : new int[]{2, 4, 8, 16}) {
+            Bitmap source = Bitmap.createBitmap(300 * factor, 4 * factor, Bitmap.Config.ARGB_8888);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            try {
+                // 每个采样周期中仅一列白色，缩小后应保留对应比例的平均亮度。
+                int[] row = new int[source.getWidth()];
+                for (int x = 0; x < row.length; x++) {
+                    row[x] = x % factor == 0 ? Color.WHITE : Color.BLACK;
                 }
+                for (int y = 0; y < source.getHeight(); y++) {
+                    source.setPixels(row, 0, row.length, 0, y, row.length, 1);
+                }
+                assertTrue(source.compress(Bitmap.CompressFormat.PNG, 100, output));
+            } finally {
+                source.recycle();
             }
-        } finally {
-            thumbnail.recycle();
+
+            byte[] bytes = ImageCache.createThumbnail(output.toByteArray());
+            Bitmap thumbnail = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            assertNotNull(thumbnail);
+            try {
+                assertEquals(300, thumbnail.getWidth());
+                assertEquals(4, thumbnail.getHeight());
+                int expected = Math.round(255f / factor);
+                for (int y = 0; y < thumbnail.getHeight(); y++) {
+                    for (int x = 0; x < thumbnail.getWidth(); x++) {
+                        assertEquals("缩小倍率=" + factor, expected,
+                            Color.red(thumbnail.getPixel(x, y)), 3);
+                    }
+                }
+            } finally {
+                thumbnail.recycle();
+            }
         }
     }
 }

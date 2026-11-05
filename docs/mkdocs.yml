@@ -1,0 +1,22 @@
+site_name: JQ Viewer 用户文档
+repo_url: https://github.com/JUKOMU/JQ-Viewer
+repo_name: JUKOMU/JQ-Viewer
+# 编辑入口跟随维护中的 dev 分支。
+edit_uri: edit/dev/docs/sources/
+
+docs_dir: sources
+site_dir: site
+
+theme:
+  name: material
+  language: zh
+  features:
+    - content.action.edit
+
+nav:
+  - 项目介绍: index.md
+  - 下载、安装与更新: installation.md
+  - 应用首页与侧边栏: first-open.md
+
+plugins:
+  - search

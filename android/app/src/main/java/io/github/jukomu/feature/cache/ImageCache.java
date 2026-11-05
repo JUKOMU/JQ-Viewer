@@ -842,7 +842,9 @@ public class ImageCache {
             // 每步最多缩小两倍，避免密集网点在第一步被跳采。
             while (scaled.getWidth() > THUMBNAIL_MAX_WIDTH) {
                 int nextWidth = Math.max(THUMBNAIL_MAX_WIDTH, (scaled.getWidth() + 1) / 2);
-                int nextHeight = Math.max(targetHeight, (scaled.getHeight() + 1) / 2);
+                int nextHeight = nextWidth == THUMBNAIL_MAX_WIDTH
+                    ? targetHeight
+                    : Math.max(targetHeight, (scaled.getHeight() + 1) / 2);
                 Bitmap next = Bitmap.createScaledBitmap(scaled, nextWidth, nextHeight, true);
                 scaled.recycle();
                 scaled = next;

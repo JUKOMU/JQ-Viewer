@@ -53,4 +53,25 @@ public class ImageCacheThumbnailInstrumentedTest {
             }
         }
     }
+
+    @Test
+    public void thumbnailKeepsRoundedAspectRatioForOddDimensions() {
+        Bitmap source = Bitmap.createBitmap(1199, 17, Bitmap.Config.ARGB_8888);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try {
+            assertTrue(source.compress(Bitmap.CompressFormat.PNG, 100, output));
+        } finally {
+            source.recycle();
+        }
+
+        byte[] bytes = ImageCache.createThumbnail(output.toByteArray());
+        Bitmap thumbnail = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        assertNotNull(thumbnail);
+        try {
+            assertEquals(300, thumbnail.getWidth());
+            assertEquals(4, thumbnail.getHeight());
+        } finally {
+            thumbnail.recycle();
+        }
+    }
 }

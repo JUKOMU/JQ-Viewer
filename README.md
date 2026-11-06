@@ -13,7 +13,7 @@ JMComic 第三方漫画阅读器，支持 Android 移动端和 Windows、Linux �
 
 ## 使用文档
 
-项目介绍、安装与更新、应用首页与侧边栏说明见 [用户文档](docs/sources/index.md)。
+使用说明见 [用户文档](docs/sources/index.md)，涵盖安装、搜索、阅读、收藏、下载导出、历史、设置和常见问题。
 
 ## 项目状态
 

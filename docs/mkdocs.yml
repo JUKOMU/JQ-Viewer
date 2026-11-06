@@ -17,6 +17,13 @@ nav:
   - 项目介绍: index.md
   - 下载、安装与更新: installation.md
   - 应用首页与侧边栏: first-open.md
+  - 首页搜索与分类: search-and-categories.md
+  - 作品详情与阅读: reading.md
+  - 收藏夹: favorites.md
+  - 下载: downloads.md
+  - 历史: history.md
+  - 设置与下级页面: settings.md
+  - 常见问题与反馈: troubleshooting.md
 
 plugins:
   - search

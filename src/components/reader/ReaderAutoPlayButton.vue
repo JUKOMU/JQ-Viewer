@@ -1,6 +1,6 @@
 <template>
   <button
-    v-if="(visible || focused) && !leftMenuOpen"
+    v-if="visible && !leftMenuOpen"
     class="reader-auto-play-button"
     :class="[{ dimmed }, intervalSeconds < 0 ? 'negative' : intervalSeconds > 0 ? 'positive' : '']"
     :style="{ '--speed-fill': `${speedFillPercent}%` }"
@@ -9,8 +9,6 @@
     :title="isPlaying ? '暂停自动播放' : '开始自动播放'"
     :aria-pressed="isPlaying"
     :disabled="disabled"
-    @focus="focused = true"
-    @blur="focused = false"
     @click.stop="emit('toggle')"
   >
     <span class="reader-auto-play-speed-ring" aria-hidden="true">
@@ -48,7 +46,6 @@ const props = defineProps<{
 const emit = defineEmits<{ toggle: [] }>()
 const { visible, reveal, restart, dispose } = useTimedReveal(2000)
 const dimmed = ref(false)
-const focused = ref(false)
 const showDirectionIcon = ref(false)
 const speedFillPercent = computed(
   () => Math.floor(((30 - Math.abs(props.intervalSeconds)) / 29.9) * 10000) / 100,

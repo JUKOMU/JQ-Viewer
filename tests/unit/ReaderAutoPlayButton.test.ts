@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('ReaderAutoPlayButton', () => {
-  test('保持键盘焦点直到用户离开按钮', async () => {
+  test('点击后仍在2秒后隐藏按钮', async () => {
     vi.useFakeTimers()
     const wrapper = mount(ReaderAutoPlayButton, {
       props: { isPlaying: false, isVertical: true, intervalSeconds: 10, speedAdjustmentVersion: 0 },
@@ -21,8 +21,6 @@ describe('ReaderAutoPlayButton', () => {
     vi.advanceTimersByTime(2000)
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('button').exists()).toBe(true)
-    await button.trigger('blur')
     expect(wrapper.find('button').exists()).toBe(false)
     wrapper.unmount()
   })

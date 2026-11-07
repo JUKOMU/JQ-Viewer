@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'io.github.jukomu',
-  appName: 'JQViewer',
+  appName: 'JQ Viewer',
   webDir: 'dist',
 };
 

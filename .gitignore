@@ -7,7 +7,6 @@
 /.idea/
 /android/.gradle/
 /.claude/
-/docs/search-result-refactor-plan.md
 /connectMumu.bat
 /JMComic-Api-Java/
 /.run/
@@ -23,4 +22,3 @@ DEV_REVIEW_FIX_PLAN.md
 /desktop/target/
 /desktop/src/main/resources/static/*
 !/desktop/src/main/resources/static/.gitkeep
-/docs/site/

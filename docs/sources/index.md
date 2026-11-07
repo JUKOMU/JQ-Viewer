@@ -40,7 +40,10 @@ JQ Viewer 是一款 JMComic 第三方漫画阅读器，支持 Android 移动端�
 6. [收藏夹](favorites.md)
 7. [下载](downloads.md)
 8. [历史](history.md)
-9. [设置与下级页面](settings.md)
+9. [设置总览](settings.md)
+
+   相关页面：[图片缓存](settings/cache.md)、[导出模板帮助](settings/export-templates.md)、[网络状态](settings/network.md)、[用户与登录](settings/user.md)、[应用日志](settings/logs.md)、[关于与诊断](settings/about.md)
+
 10. [常见问题与反馈](troubleshooting.md)
 
 ## 项目与资源说明

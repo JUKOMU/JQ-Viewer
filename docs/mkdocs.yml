@@ -10,20 +10,67 @@ site_dir: site
 theme:
   name: material
   language: zh
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: 切换到浅色主题
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色主题
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 主题跟随系统
   features:
     - content.action.edit
+    - navigation.sections
+    - content.code.copy
+    - content.code.select
+    - search.suggest
+    - search.highlight
+    - search.share
+    - navigation.tabs
+    - navigation.top
 
 nav:
-  - 项目介绍: index.md
-  - 下载、安装与更新: installation.md
-  - 应用首页与侧边栏: first-open.md
-  - 首页搜索与分类: search-and-categories.md
-  - 作品详情与阅读: reading.md
-  - 收藏夹: favorites.md
-  - 下载: downloads.md
-  - 历史: history.md
-  - 设置与下级页面: settings.md
+  - 快速上手:
+      - 项目介绍: index.md
+      - 下载、安装与更新: installation.md
+      - 初次打开：应用首页与侧边栏: first-open.md
+  - 使用指南:
+      - 首页搜索与分类: search-and-categories.md
+      - 作品详情与阅读: reading.md
+      - 收藏夹: favorites.md
+      - 下载: downloads.md
+      - 历史: history.md
+  - 设置:
+      - 设置总览: settings.md
+      - 图片缓存: settings/cache.md
+      - 导出模板帮助: settings/export-templates.md
+      - 网络状态: settings/network.md
+      - 用户与登录: settings/user.md
+      - 应用日志: settings/logs.md
+      - 关于、更新与诊断: settings/about.md
   - 常见问题与反馈: troubleshooting.md
 
 plugins:
   - search
+
+markdown_extensions:
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets

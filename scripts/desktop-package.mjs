@@ -437,10 +437,15 @@ function buildAppImage({
 
 function packageWindows({ version, installerVersion, appImages, outputDirectory, workDirectory }) {
   const packageDirectory = path.join(workDirectory, 'native-package')
+  const jpackageTemp = path.join(workDirectory, 'windows-msi')
   mkdirSync(packageDirectory, { recursive: true })
   run(executable('jpackage'), [
+    '-J-Duser.language=en',
+    '-J-Duser.country=US',
     '--type',
-    'exe',
+    'msi',
+    '--temp',
+    jpackageTemp,
     '--name',
     applicationName,
     '--app-image',
@@ -466,7 +471,26 @@ function packageWindows({ version, installerVersion, appImages, outputDirectory,
   ])
 
   const [installerName, portableName] = desktopAssetNames(version, 'windows', 'x64')
-  renameSinglePackage(packageDirectory, '.exe', path.join(outputDirectory, installerName))
+  const baseMsi = path.join(workDirectory, 'JQ-Viewer.msi')
+  const transform = path.join(workDirectory, 'zh-CN.mst')
+  renameSinglePackage(packageDirectory, '.msi', baseMsi)
+  run('powershell.exe', [
+    '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+    '-File', path.join(root, 'scripts', 'windows-installer-localization.ps1'),
+    '-BaseMsi', baseMsi,
+    '-JpackageTemp', jpackageTemp,
+    '-TransformPath', transform,
+  ])
+  run(executable('makensis'), [
+    '/V2',
+    `/DMSI_PATH=${baseMsi}`,
+    `/DMST_PATH=${transform}`,
+    `/DOUTPUT_PATH=${path.join(outputDirectory, installerName)}`,
+    `/DICON_PATH=${appIconIco}`,
+    `/DINSTALLER_VERSION=${installerVersion}`,
+    path.join(desktopDirectory, 'packaging', 'windows', 'bootstrap.nsi'),
+  ])
+  validateFile(path.join(outputDirectory, installerName), 'Windows bilingual installer')
 
   const archivePath = path.join(outputDirectory, portableName)
   rmSync(archivePath, { force: true })

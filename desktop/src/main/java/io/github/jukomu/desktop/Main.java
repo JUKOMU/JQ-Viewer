@@ -15,6 +15,10 @@ public final class Main {
     }
 
     public static void main(String[] args) {
+        // 默认代理选择器初始化前启用系统代理，保留显式传入的设置。
+        if (System.getProperty("java.net.useSystemProxies") == null) {
+            System.setProperty("java.net.useSystemProxies", "true");
+        }
         Paths paths = Paths.current();
         try {
             ApplicationLogging.initialize(paths);

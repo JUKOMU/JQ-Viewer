@@ -13,8 +13,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -40,7 +42,10 @@ public final class DesktopUpdateService implements AutoCloseable {
     private static final int MANIFEST_MAX_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 64 * 1024;
     private static final Duration MANIFEST_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration MANIFEST_ROUND_TIMEOUT = Duration.ofSeconds(90);
     private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(30);
+    private static final Duration DOWNLOAD_HEADER_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DOWNLOAD_IDLE_TIMEOUT = Duration.ofSeconds(30);
     private static final long PROGRESS_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
 
     private final DesktopUpdateConfiguration configuration;
@@ -52,6 +57,9 @@ public final class DesktopUpdateService implements AutoCloseable {
     private final ExecutorService executor;
     private final ScheduledExecutorService timeoutExecutor;
     private final Duration downloadTimeout;
+    private final Duration headerTimeout;
+    private final Duration idleTimeout;
+    private final Duration manifestRoundTimeout;
     private final Object stateLock = new Object();
     private final AtomicLong revision = new AtomicLong();
 
@@ -86,6 +94,9 @@ public final class DesktopUpdateService implements AutoCloseable {
                 return thread;
             }),
             DOWNLOAD_TIMEOUT,
+            DOWNLOAD_HEADER_TIMEOUT,
+            DOWNLOAD_IDLE_TIMEOUT,
+            MANIFEST_ROUND_TIMEOUT,
             new DesktopUpdateInstaller(configuration, paths)::launch);
     }
 
@@ -104,6 +115,9 @@ public final class DesktopUpdateService implements AutoCloseable {
                 return thread;
             }),
             DOWNLOAD_TIMEOUT,
+            DOWNLOAD_HEADER_TIMEOUT,
+            DOWNLOAD_IDLE_TIMEOUT,
+            MANIFEST_ROUND_TIMEOUT,
             new DesktopUpdateInstaller(configuration, paths)::launch);
     }
 
@@ -116,6 +130,9 @@ public final class DesktopUpdateService implements AutoCloseable {
         ExecutorService executor,
         ScheduledExecutorService timeoutExecutor,
         Duration downloadTimeout,
+        Duration headerTimeout,
+        Duration idleTimeout,
+        Duration manifestRoundTimeout,
         Consumer<Path> installationLauncher
     ) {
         this.configuration = Objects.requireNonNull(configuration, "configuration");
@@ -128,10 +145,17 @@ public final class DesktopUpdateService implements AutoCloseable {
         this.http = Objects.requireNonNull(http, "http");
         this.executor = Objects.requireNonNull(executor, "executor");
         this.timeoutExecutor = Objects.requireNonNull(timeoutExecutor, "timeoutExecutor");
-        this.downloadTimeout = Objects.requireNonNull(downloadTimeout, "downloadTimeout");
-        if (downloadTimeout.isZero() || downloadTimeout.isNegative()) {
-            throw new IllegalArgumentException("downloadTimeout必须为正数");
+        this.downloadTimeout = requirePositive(downloadTimeout, "downloadTimeout");
+        this.headerTimeout = requirePositive(headerTimeout, "headerTimeout");
+        this.idleTimeout = requirePositive(idleTimeout, "idleTimeout");
+        this.manifestRoundTimeout = requirePositive(manifestRoundTimeout, "manifestRoundTimeout");
+    }
+
+    private static Duration requirePositive(Duration duration, String name) {
+        if (duration == null || duration.isZero() || duration.isNegative()) {
+            throw new IllegalArgumentException(name + "必须为正数");
         }
+        return duration;
     }
 
     public void attachExitRequest(Runnable request) {
@@ -157,10 +181,11 @@ public final class DesktopUpdateService implements AutoCloseable {
         }
         LOGGER.info("desktop_update operation=check status=started");
         try {
+            long roundDeadline = System.nanoTime() + manifestRoundTimeout.toNanos();
             Future<ManifestAttempt> github = executor.submit(this::fetchGithubManifest);
             Future<ManifestAttempt> gitee = executor.submit(this::fetchGiteeManifest);
-            ManifestAttempt githubAttempt = awaitAttempt(github, "GitHub");
-            ManifestAttempt giteeAttempt = awaitAttempt(gitee, "Gitee");
+            ManifestAttempt githubAttempt = awaitAttempt(github, "GitHub", roundDeadline);
+            ManifestAttempt giteeAttempt = awaitAttempt(gitee, "Gitee", roundDeadline);
             VerifiedRelease release = resolveManifests(githubAttempt, giteeAttempt);
             synchronized (stateLock) {
                 checkedRelease = release;
@@ -317,8 +342,8 @@ public final class DesktopUpdateService implements AutoCloseable {
                 release.response().versionName(), release.artifact().sizeBytes(), elapsedMs(startedNanos));
             return ManifestAttempt.success(release);
         } catch (Exception exception) {
-            LOGGER.warn("desktop_update_manifest source=github event=verified status=failed error={} errorClass={} elapsedMs={}",
-                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
+            LOGGER.warn("desktop_update_manifest source=github event=verified status=failed error={} errorClass={} detail={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), messageOf(exception), elapsedMs(startedNanos));
             return ManifestAttempt.failure(messageOf(exception));
         }
     }
@@ -345,8 +370,8 @@ public final class DesktopUpdateService implements AutoCloseable {
                 verifiedRelease.response().versionName(), verifiedRelease.artifact().sizeBytes(), elapsedMs(startedNanos));
             return ManifestAttempt.success(verifiedRelease);
         } catch (Exception exception) {
-            LOGGER.warn("desktop_update_manifest source=gitee event=verified status=failed error={} errorClass={} elapsedMs={}",
-                errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
+            LOGGER.warn("desktop_update_manifest source=gitee event=verified status=failed error={} errorClass={} detail={} elapsedMs={}",
+                errorCategory(exception), exception.getClass().getSimpleName(), messageOf(exception), elapsedMs(startedNanos));
             return ManifestAttempt.failure(messageOf(exception));
         }
     }
@@ -385,17 +410,42 @@ public final class DesktopUpdateService implements AutoCloseable {
             + github.error + "；Gitee: " + gitee.error);
     }
 
-    private ManifestAttempt awaitAttempt(Future<ManifestAttempt> future, String source) {
+    private ManifestAttempt awaitAttempt(
+        Future<ManifestAttempt> future,
+        String source,
+        long roundDeadline
+    ) {
+        long remainingNanos = roundDeadline - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return finishedOrTimeout(future, source);
+        }
         try {
-            return future.get(45, TimeUnit.SECONDS);
+            return future.get(remainingNanos, TimeUnit.NANOSECONDS);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             future.cancel(true);
             return ManifestAttempt.failure(source + " 更新检查已取消");
+        } catch (TimeoutException exception) {
+            return finishedOrTimeout(future, source);
         } catch (Exception exception) {
             future.cancel(true);
             return ManifestAttempt.failure(source + " 更新检查失败: " + messageOf(exception));
         }
+    }
+
+    private static ManifestAttempt finishedOrTimeout(Future<ManifestAttempt> future, String source) {
+        if (future.isDone() && !future.isCancelled()) {
+            try {
+                return future.get();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return ManifestAttempt.failure(source + " 更新检查已取消");
+            } catch (Exception exception) {
+                return ManifestAttempt.failure(source + " 更新检查失败: " + messageOf(exception));
+            }
+        }
+        future.cancel(true);
+        return ManifestAttempt.failure(source + " 更新检查超时");
     }
 
     private byte[] fetchLimited(URI uri, int maximumBytes) throws IOException, InterruptedException {
@@ -443,13 +493,17 @@ public final class DesktopUpdateService implements AutoCloseable {
         LOGGER.info("desktop_update_download source={} event=started expectedSizeBytes={}",
             label(source), artifact.sizeBytes());
         try {
-            long deadline = deadlineAfter(downloadTimeout);
+            long overallDeadline = deadlineAfter(downloadTimeout);
             HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(downloadTimeout)
+                .timeout(headerTimeout)
                 .GET()
                 .build();
-            HttpResponse<InputStream> response = http.send(
-                request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response;
+            try {
+                response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            } catch (HttpTimeoutException exception) {
+                throw downloadHeaderFailure(exception);
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 response.body().close();
                 throw new IOException("HTTP " + response.statusCode());
@@ -465,12 +519,13 @@ public final class DesktopUpdateService implements AutoCloseable {
             try (InputStream input = response.body();
                  var output = Files.newOutputStream(target, StandardOpenOption.CREATE,
                      StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
-                AtomicBoolean timedOut = new AtomicBoolean();
-                ScheduledFuture<?> timeout = closeAtDeadline(input, deadline, timedOut);
+                BodyWatch watch = new BodyWatch(input, overallDeadline, idleTimeout);
+                ScheduledFuture<?> timeout = watch.start();
                 byte[] buffer = new byte[BUFFER_SIZE];
                 try {
                     for (int read; (read = input.read(buffer)) >= 0; ) {
                         if (read == 0) continue;
+                        watch.markData();
                         if (session.cancelled.get() || session.winner.get() != null) {
                             throw new InterruptedException("download cancelled");
                         }
@@ -483,11 +538,11 @@ public final class DesktopUpdateService implements AutoCloseable {
                         publishProgress(session);
                     }
                 } catch (IOException exception) {
-                    throw bodyReadException(timedOut, exception);
+                    throw bodyReadException(watch.reason(), exception);
                 } finally {
                     timeout.cancel(false);
                 }
-                if (timedOut.get()) throw new IOException("响应正文读取超时");
+                if (watch.reason() != null) throw new IOException(watch.reason());
             }
             synchronized (session) {
                 if (session.cancelled.get() || session.winner.get() != null) {
@@ -537,8 +592,10 @@ public final class DesktopUpdateService implements AutoCloseable {
         } catch (Exception exception) {
             session.recordError(source, messageOf(exception));
             deleteQuietly(target);
-            LOGGER.warn("desktop_update_download source={} event=finished status=failed error={} errorClass={} elapsedMs={}",
-                label(source), errorCategory(exception), exception.getClass().getSimpleName(), elapsedMs(startedNanos));
+            LOGGER.warn("desktop_update_download source={} event=finished status=failed error={} errorClass={} causeClass={} detail={} elapsedMs={}",
+                label(source), errorCategory(exception), exception.getClass().getSimpleName(),
+                exception.getCause() == null ? "" : exception.getCause().getClass().getSimpleName(),
+                messageOf(exception), elapsedMs(startedNanos));
         } finally {
             session.finished.countDown();
         }
@@ -635,7 +692,8 @@ public final class DesktopUpdateService implements AutoCloseable {
         long deadline,
         AtomicBoolean timedOut
     ) {
-        long delay = Math.max(0, deadline - System.nanoTime());
+        long delay = deadline - System.nanoTime();
+        if (delay < 1L) delay = 1L;
         return timeoutExecutor.schedule(() -> {
             timedOut.set(true);
             try {
@@ -645,13 +703,55 @@ public final class DesktopUpdateService implements AutoCloseable {
         }, delay, TimeUnit.NANOSECONDS);
     }
 
-    private static IOException bodyReadException(
-        AtomicBoolean timedOut,
-        IOException exception
-    ) {
-        return timedOut.get()
-            ? new IOException("响应正文读取超时")
-            : exception;
+    private static IOException bodyReadException(AtomicBoolean timedOut, IOException exception) {
+        return timedOut.get() ? new IOException("响应正文读取超时") : exception;
+    }
+
+    /**
+     * 正文总时限从请求开始计算，不因收到数据而重置。
+     * 空闲时限只在读到新字节时重置，到期关闭流，让阻塞的 read 返回。
+     */
+    private final class BodyWatch {
+        private final InputStream input;
+        private final long overallDeadline;
+        private final long idleNanos;
+        private final AtomicLong lastDataNanos = new AtomicLong(System.nanoTime());
+        private final AtomicReference<String> reason = new AtomicReference<>();
+
+        private BodyWatch(InputStream input, long overallDeadline, Duration idleTimeout) {
+            this.input = input;
+            this.overallDeadline = overallDeadline;
+            this.idleNanos = idleTimeout.toNanos();
+        }
+
+        private ScheduledFuture<?> start() {
+            return timeoutExecutor.scheduleWithFixedDelay(this::check, 20, 20, TimeUnit.MILLISECONDS);
+        }
+
+        private void markData() {
+            lastDataNanos.set(System.nanoTime());
+        }
+
+        private String reason() {
+            return reason.get();
+        }
+
+        private void check() {
+            long now = System.nanoTime();
+            String next = now >= overallDeadline
+                ? "下载总时限"
+                : now - lastDataNanos.get() >= idleNanos ? "响应正文读取超时" : null;
+            if (next != null && reason.compareAndSet(null, next)) {
+                try {
+                    input.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static IOException bodyReadException(String reason, IOException exception) {
+        return reason == null ? exception : new IOException(reason);
     }
 
     static int compareVersions(String left, String right) {
@@ -691,7 +791,23 @@ public final class DesktopUpdateService implements AutoCloseable {
         }
     }
 
+    /**
+     * 建连超时单独成文，并保留原始异常。响应头超时不带 cause，避免和建连阶段混成同一句。
+     */
+    static IOException downloadHeaderFailure(HttpTimeoutException exception) {
+        if (exception instanceof HttpConnectTimeoutException) {
+            return new IOException("连接超时", exception);
+        }
+        return new IOException("响应头超时");
+    }
+
     private static String messageOf(Throwable exception) {
+        if (exception instanceof IOException
+            && exception.getCause() instanceof HttpTimeoutException
+            && exception.getMessage() != null
+            && !exception.getMessage().isBlank()) {
+            return exception.getMessage();
+        }
         Throwable current = exception;
         while (current.getCause() != null && current != current.getCause()) {
             current = current.getCause();

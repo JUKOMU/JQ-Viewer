@@ -17,9 +17,11 @@ import java.net.CookieHandler;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,7 +45,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -125,9 +130,152 @@ class DesktopUpdateServiceTest {
             assertTrue(fixture.service.start().started());
             awaitPhase(fixture.service, "failed");
 
-            assertTrue(fixture.service.snapshot().error().contains("响应正文读取超时"),
+            assertTrue(fixture.service.snapshot().error().contains("下载总时限"),
                     fixture.service.snapshot()::toString);
             assertThrows(UpdateException.class, fixture.service::install);
+        }
+    }
+
+    @Test
+    void closesIdleResponseBodiesBeforeTheOverallDeadline() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofSeconds(10), Duration.ofSeconds(5), Duration.ofMillis(80), Duration.ofSeconds(90)))) {
+            fixture.http.stallDownloads.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            assertTrue(fixture.service.snapshot().error().contains("响应正文读取超时"),
+                    fixture.service.snapshot()::toString);
+        }
+    }
+
+    @Test
+    void failsWhenResponseHeadersNeverArrive() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofSeconds(10), Duration.ofMillis(80), Duration.ofSeconds(5), Duration.ofSeconds(90)))) {
+            fixture.http.stallHeaders.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            assertTrue(fixture.service.snapshot().error().contains("响应头超时"),
+                    fixture.service.snapshot()::toString);
+        }
+    }
+
+    @Test
+    void connectTimeoutStaysDistinctFromHeaderTimeout() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, Duration.ofSeconds(2))) {
+            fixture.http.failConnect.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            String error = fixture.service.snapshot().error();
+            assertTrue(error.contains("连接超时"), error);
+            assertFalse(error.contains("响应头超时"), error);
+            assertFalse(error.contains("HTTP connect timed out"), error);
+        }
+    }
+
+    @Test
+    void connectTimeoutPreservesTheOriginalCause() {
+        HttpConnectTimeoutException connect = new HttpConnectTimeoutException("HTTP connect timed out");
+        IOException mapped = DesktopUpdateService.downloadHeaderFailure(connect);
+        assertEquals("连接超时", mapped.getMessage());
+        assertSame(connect, mapped.getCause());
+
+        HttpTimeoutException header = new HttpTimeoutException("request timed out");
+        IOException headerFailure = DesktopUpdateService.downloadHeaderFailure(header);
+        assertEquals("响应头超时", headerFailure.getMessage());
+        assertNull(headerFailure.getCause());
+    }
+
+    @Test
+    void continuousDripStopsAtTheOverallDeadline() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofMillis(250), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(90)))) {
+            fixture.http.dripDownloads.set(true);
+            fixture.service.check();
+            long started = System.nanoTime();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertTrue(fixture.service.snapshot().error().contains("下载总时限"),
+                    fixture.service.snapshot()::toString);
+            assertTrue(elapsedMs < 3_000, "elapsedMs=" + elapsedMs);
+        }
+    }
+
+    @Test
+    void oneSourceHttp404StillInstallsFromTheOtherSource() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, Duration.ofSeconds(2))) {
+            fixture.http.githubPackageStatus.set(404);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "ready_to_install");
+            assertEquals("", fixture.service.snapshot().error());
+        }
+    }
+
+    @Test
+    void http404AndOtherSourceTimeoutNamesBothFailures() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofMillis(80), Duration.ofSeconds(5), Duration.ofSeconds(30), Duration.ofSeconds(90)))) {
+            fixture.http.githubPackageStatus.set(404);
+            fixture.http.stallDownloads.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            String error = fixture.service.snapshot().error();
+            assertTrue(error.contains("HTTP 404"), error);
+            assertTrue(error.contains("下载总时限"), error);
+        }
+    }
+
+    @Test
+    void oneManifestTimeoutStillAcceptsTheOtherSource() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofSeconds(2), Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofMillis(400)))) {
+            fixture.http.blockNextGithubManifest.set(true);
+            long started = System.nanoTime();
+            assertTrue(fixture.service.check().updateAvailable());
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertTrue(elapsedMs < 3_000, "elapsedMs=" + elapsedMs);
+        }
+    }
+
+    @Test
+    void bothManifestTimeoutsFailWithinTheSharedRoundBudget() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofSeconds(2), Duration.ofSeconds(30), Duration.ofSeconds(30), Duration.ofMillis(250)))) {
+            fixture.http.blockAllManifests.set(true);
+            long started = System.nanoTime();
+            UpdateException error = assertThrows(UpdateException.class, fixture.service::check);
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertTrue(error.getMessage().contains("更新检查超时"), error.getMessage());
+            assertTrue(elapsedMs < 3_000, "elapsedMs=" + elapsedMs);
+        }
+    }
+
+    @Test
+    void userCancelDoesNotReportADownloadFailure() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, Duration.ofSeconds(2))) {
+            fixture.http.stallDownloads.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "racing");
+
+            assertTrue(fixture.service.cancel().cancelled());
+            Thread.sleep(300);
+            assertEquals("cancelled", fixture.service.snapshot().phase());
+            assertEquals("", fixture.service.snapshot().error());
         }
     }
 
@@ -150,7 +298,23 @@ class DesktopUpdateServiceTest {
         }
     }
 
+    private record Limits(
+            Duration downloadTimeout,
+            Duration headerTimeout,
+            Duration idleTimeout,
+            Duration manifestRoundTimeout
+    ) {
+        private static Limits overall(Duration downloadTimeout) {
+            return new Limits(downloadTimeout, Duration.ofSeconds(30),
+                    Duration.ofSeconds(30), Duration.ofSeconds(90));
+        }
+    }
+
     private static Fixture fixture(Consumer<Path> launcher, Duration downloadTimeout) throws Exception {
+        return fixture(launcher, Limits.overall(downloadTimeout));
+    }
+
+    private static Fixture fixture(Consumer<Path> launcher, Limits limits) throws Exception {
         Path root = Files.createTempDirectory("jq-viewer-update-service-");
         Paths paths = new Paths(root.resolve("program"), root.resolve("home"), Map.of(), "Linux");
         KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
@@ -166,7 +330,8 @@ class DesktopUpdateServiceTest {
         ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
         DesktopUpdateService service = new DesktopUpdateService(
                 configuration, MAPPER, events, paths, http, executor, timeoutExecutor,
-                downloadTimeout, launcher);
+                limits.downloadTimeout(), limits.headerTimeout(), limits.idleTimeout(),
+                limits.manifestRoundTimeout(), launcher);
         return new Fixture(service, events, http, executor);
     }
 
@@ -265,6 +430,7 @@ class DesktopUpdateServiceTest {
     ) implements AutoCloseable {
         @Override
         public void close() {
+            http.releaseBlockedManifest.countDown();
             service.close();
             events.close();
         }
@@ -274,8 +440,14 @@ class DesktopUpdateServiceTest {
         private final byte[] manifest;
         private final byte[] signature;
         private final AtomicBoolean blockNextGithubManifest = new AtomicBoolean();
+        private final AtomicBoolean blockAllManifests = new AtomicBoolean();
         private final AtomicBoolean stallDownloads = new AtomicBoolean();
+        private final AtomicBoolean stallHeaders = new AtomicBoolean();
+        private final AtomicBoolean failConnect = new AtomicBoolean();
+        private final AtomicBoolean dripDownloads = new AtomicBoolean();
         private final AtomicBoolean blockGithubDownloadAtEof = new AtomicBoolean();
+        private final AtomicInteger githubPackageStatus = new AtomicInteger(200);
+        private final AtomicInteger giteePackageStatus = new AtomicInteger(200);
         private final CountDownLatch blockedManifestEntered = new CountDownLatch(1);
         private final CountDownLatch releaseBlockedManifest = new CountDownLatch(1);
         private final CountDownLatch githubDownloadReachedEof = new CountDownLatch(1);
@@ -293,11 +465,26 @@ class DesktopUpdateServiceTest {
                 HttpResponse.BodyHandler<T> responseBodyHandler
         ) throws IOException, InterruptedException {
             URI uri = request.uri();
-            if (DesktopUpdateService.GITHUB_MANIFEST.equals(uri)
-                    && blockNextGithubManifest.compareAndSet(true, false)) {
+            if (shouldBlockManifest(uri)) {
                 blockedManifestEntered.countDown();
                 releaseBlockedManifest.await();
             }
+            if (failConnect.get() && isPackage(uri)) {
+                throw new HttpConnectTimeoutException("HTTP connect timed out");
+            }
+            if (stallHeaders.get() && isPackage(uri)) {
+                long waitMs = request.timeout().orElse(Duration.ofMillis(80)).toMillis();
+                if (waitMs > 0) {
+                    try {
+                        Thread.sleep(waitMs);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw exception;
+                    }
+                }
+                throw new HttpTimeoutException("request timed out");
+            }
+            int status = 200;
             InputStream body;
             if (DesktopUpdateService.GITHUB_MANIFEST.equals(uri) || uri.getPath().endsWith("latest.json")) {
                 body = new ByteArrayInputStream(manifest);
@@ -306,12 +493,18 @@ class DesktopUpdateServiceTest {
                 body = new ByteArrayInputStream(signature);
             } else if (DesktopUpdateService.GITEE_LATEST_RELEASE.equals(uri)) {
                 body = new ByteArrayInputStream(giteeRelease().getBytes(StandardCharsets.UTF_8));
-            } else if (uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64.tar.gz")) {
+            } else if (isPackage(uri)) {
                 if (blockGithubDownloadAtEof.get() && "gitee.com".equals(uri.getHost())) {
                     githubDownloadReachedEof.await();
                 }
-                if (stallDownloads.get()) {
+                status = "github.com".equals(uri.getHost())
+                        ? githubPackageStatus.get() : giteePackageStatus.get();
+                if (status < 200 || status >= 300) {
+                    body = new ByteArrayInputStream(new byte[0]);
+                } else if (stallDownloads.get()) {
                     body = new StalledInputStream();
+                } else if (dripDownloads.get()) {
+                    body = new DripInputStream();
                 } else if (blockGithubDownloadAtEof.get()
                         && "github.com".equals(uri.getHost())) {
                     body = new BlockingEofInputStream(
@@ -322,7 +515,20 @@ class DesktopUpdateServiceTest {
             } else {
                 throw new IOException("unexpected URI: " + uri);
             }
-            return (HttpResponse<T>) new TestResponse(request, body);
+            return (HttpResponse<T>) new TestResponse(request, body, status);
+        }
+
+        private boolean shouldBlockManifest(URI uri) {
+            if (DesktopUpdateService.GITHUB_MANIFEST.equals(uri)
+                    && blockNextGithubManifest.compareAndSet(true, false)) {
+                return true;
+            }
+            return blockAllManifests.get() && (DesktopUpdateService.GITHUB_MANIFEST.equals(uri)
+                    || DesktopUpdateService.GITEE_LATEST_RELEASE.equals(uri));
+        }
+
+        private static boolean isPackage(URI uri) {
+            return uri.getPath().endsWith("JQ-Viewer-1.4.7-linux-x64.tar.gz");
         }
 
         private String giteeRelease() {
@@ -370,14 +576,45 @@ class DesktopUpdateServiceTest {
         }
     }
 
-    private record TestResponse(HttpRequest request, InputStream body)
+    private record TestResponse(HttpRequest request, InputStream body, int statusCode)
             implements HttpResponse<InputStream> {
-        @Override public int statusCode() { return 200; }
         @Override public Optional<HttpResponse<InputStream>> previousResponse() { return Optional.empty(); }
         @Override public HttpHeaders headers() { return HttpHeaders.of(Map.of(), (left, right) -> true); }
         @Override public Optional<javax.net.ssl.SSLSession> sslSession() { return Optional.empty(); }
         @Override public URI uri() { return request.uri(); }
         @Override public HttpClient.Version version() { return HttpClient.Version.HTTP_1_1; }
+    }
+
+    private static final class DripInputStream extends InputStream {
+        private boolean closed;
+
+        @Override
+        public synchronized int read() throws IOException {
+            byte[] one = new byte[1];
+            int count = read(one, 0, 1);
+            return count < 0 ? -1 : one[0] & 0xff;
+        }
+
+        @Override
+        public synchronized int read(byte[] bytes, int offset, int length) throws IOException {
+            if (closed) throw new IOException("closed");
+            if (length <= 0) return 0;
+            try {
+                wait(30);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted", exception);
+            }
+            if (closed) throw new IOException("closed");
+            bytes[offset] = 1;
+            return 1;
+        }
+
+        @Override
+        public synchronized void close() {
+            closed = true;
+            notifyAll();
+        }
     }
 
     private static final class StalledInputStream extends InputStream {

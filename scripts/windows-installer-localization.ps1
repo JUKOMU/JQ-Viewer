@@ -15,8 +15,9 @@ $localizedMsi = [IO.Path]::ChangeExtension($TransformPath, '.msi')
 $localization = Join-Path $config 'MsiInstallerStrings_zh_CN.wxl'
 Push-Location $image
 try {
+    # jpackage 的自定义动作 DLL 位于配置目录，链接时加入资源搜索路径。
     & light.exe -nologo -spdb -ext WixUtilExtension -ext WixUIExtension -sice:ICE27 -sice:ICE91 `
-        -cultures:zh-cn -loc $localization -out $localizedMsi @objects
+        -b $config -cultures:zh-cn -loc $localization -out $localizedMsi @objects
     if ($LASTEXITCODE -ne 0) { throw "Chinese MSI linking failed: $LASTEXITCODE" }
 } finally {
     Pop-Location
@@ -25,10 +26,11 @@ try {
 # Windows Installer 的 COM 索引属性通过标准 IDispatch 接口读取。
 function Read-MsiProperty($Database, [string]$Name) {
     $view = $Database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = '$Name'")
-    $view.Execute()
+    # COM 的空返回值不参与管道输出，保证函数仅返回属性字符串。
+    [void]$view.Execute()
     $record = $view.Fetch()
     $value = $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @(1))
-    $view.Close()
+    [void]$view.Close()
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($record)
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($view)
     return $value

@@ -1,0 +1,96 @@
+name: Build dev APK · arm64-v8a Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build dev Release APK
+    runs-on: ubuntu-latest
+    env:
+      CYPRESS_INSTALL_BINARY: '0'
+
+    steps:
+      # 手动入口在主分支，构建源码始终取 dev，版本沿用源码配置。
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          submodules: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+
+      - name: Setup release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required release signing secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          cat > android/keystore.properties <<PROPS
+          storeFile=app/release.keystore
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          PROPS
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease -PenableAbiSplits=true --no-daemon
+
+      # 使用已有的 ABI 拆包输出，仅提供 arm64-v8a 包，不进入 Release 发布流程。
+      - name: Prepare arm64-v8a APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-arm64-v8a-release.apk \
+            JQ-Viewer-dev-arm64-v8a.apk
+
+      - name: Upload downloadable APK
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-release-arm64-v8a-${{ github.run_number }}-${{ github.run_attempt }}
+          path: JQ-Viewer-dev-arm64-v8a.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Add download link to summary
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          {
+            echo '### dev Release APK · arm64-v8a'
+            echo
+            echo "源码：dev，提交 $(git rev-parse HEAD)"
+            echo
+            echo "[下载 APK 构建产物]($ARTIFACT_URL)（保留 7 天，解压后安装 APK）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup signing files
+        if: ${{ always() }}
+        run: rm -f android/app/release.keystore android/keystore.properties

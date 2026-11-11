@@ -11,7 +11,7 @@ import java.util.List;
  * 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。
  */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 12;
+    private static final int SCHEMA_VERSION = 13;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -185,6 +185,7 @@ public final class Database implements AutoCloseable {
                 migrateV9ToV10(connection);
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
+                migrateV12ToV13(connection);
             });
             return;
         }
@@ -193,6 +194,7 @@ public final class Database implements AutoCloseable {
                 migrateV9ToV10(connection);
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
+                migrateV12ToV13(connection);
             });
             return;
         }
@@ -200,11 +202,19 @@ public final class Database implements AutoCloseable {
             transaction(connection, () -> {
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
+                migrateV12ToV13(connection);
             });
             return;
         }
         if (currentVersion == 11) {
-            transaction(connection, () -> migrateV11ToV12(connection));
+            transaction(connection, () -> {
+                migrateV11ToV12(connection);
+                migrateV12ToV13(connection);
+            });
+            return;
+        }
+        if (currentVersion == 12) {
+            transaction(connection, () -> migrateV12ToV13(connection));
             return;
         }
         if (currentVersion != SCHEMA_VERSION) {
@@ -402,6 +412,13 @@ public final class Database implements AutoCloseable {
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_download_tasks_status_album "
                 + "ON download_tasks(status, album_id, chapter_id)");
             statement.executeUpdate("UPDATE desktop_schema_version SET version=12");
+        }
+    }
+
+    // 保留已发布的版本号，避免现存的 13 版数据库被误判为不支持。
+    private static void migrateV12ToV13(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=13");
         }
     }
 

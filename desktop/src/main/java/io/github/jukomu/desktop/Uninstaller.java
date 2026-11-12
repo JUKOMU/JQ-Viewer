@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
+import java.util.ResourceBundle;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,40 +31,43 @@ public final class Uninstaller {
     }
 
     public static void main(String[] args) {
+        int systemLanguage = "zh".equals(Locale.getDefault(Locale.Category.DISPLAY).getLanguage()) ? 2052 : 1033;
+        ResourceBundle messages = messagesForLanguage(systemLanguage);
         if (!isWindows()) {
-            showError("JQ Viewer 的安装目录维护入口仅支持 Windows。");
+            showError(messages.getString("windowsOnly"), messages);
             return;
         }
 
-        String productCode = findProductCode();
-        if (productCode == null) {
-            showError("找不到 JQ Viewer 的 Windows 安装记录，请从系统设置中执行卸载。");
+        Installation installation = findInstallation();
+        if (installation == null) {
+            showError(messages.getString("missingInstallation"), messages);
             return;
         }
-
-        String[] options = {"修复/重新安装", "卸载并保留用户数据", "卸载并删除用户数据", "取消"};
-        int choice = JOptionPane.showOptionDialog(
-            null,
-            "请选择要执行的操作。\n默认会保留 %LOCALAPPDATA%\\JQViewer 中的用户数据。",
-            "JQ Viewer 维护",
-            JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            options,
-            options[0]);
-
+        messages = messagesForLanguage(installation.language());
+        JOptionPane.setDefaultLocale(messages.getLocale());
+        String[] options = {messages.getString("repair"), messages.getString("uninstallKeep"),
+            messages.getString("uninstallDelete"), messages.getString("cancel")};
+        int choice = JOptionPane.showOptionDialog(null, messages.getString("prompt"), messages.getString("title"),
+            JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
         try {
             switch (choice) {
-                case 0 -> launchRepair(productCode);
-                case 1 -> launchUninstall(productCode, false);
-                case 2 -> launchUninstall(productCode, true);
+                case 0 -> launchRepair(installation.productCode());
+                case 1 -> launchUninstall(installation.productCode(), false, messages);
+                case 2 -> launchUninstall(installation.productCode(), true, messages);
                 default -> {
                     // 用户取消维护操作。
                 }
             }
         } catch (IOException exception) {
-            showError("无法启动 Windows Installer：" + exception.getMessage());
+            showError(messages.getString("launchFailed") + " " + exception.getMessage(), messages);
         }
+    }
+
+    /** 维护界面沿用 MSI 的安装语言；其余语言使用英文基础资源。 */
+    static ResourceBundle messagesForLanguage(int language) {
+        Locale locale = (language & 0x3ff) == 4 ? Locale.SIMPLIFIED_CHINESE : Locale.ENGLISH;
+        return ResourceBundle.getBundle("io.github.jukomu.desktop.UninstallerMessages", locale,
+            ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES));
     }
 
     private static void launchRepair(String productCode) throws IOException {
@@ -70,7 +75,7 @@ public final class Uninstaller {
             .start();
     }
 
-    private static void launchUninstall(String productCode, boolean removeData) throws IOException {
+    private static void launchUninstall(String productCode, boolean removeData, ResourceBundle messages) throws IOException {
         Path script = Files.createTempFile("jq-viewer-uninstall-", ".ps1");
         String dataDirectory = localAppData().resolve("JQViewer").toAbsolutePath().normalize().toString();
         String scriptContent = """
@@ -82,10 +87,10 @@ public final class Uninstaller {
             if ($success -and $removeData) {
               Remove-Item -LiteralPath '%s' -Recurse -Force -ErrorAction SilentlyContinue
               if (Test-Path -LiteralPath '%s') {
-                $warningMessage = '卸载完成，但用户数据删除失败。'
+                $warningMessage = '%s'
               }
             } elseif (-not $success -and $removeData) {
-              $warningMessage = '卸载未完成，用户数据未删除。'
+              $warningMessage = '%s'
             }
             if ($warningMessage) {
               Add-Type -AssemblyName System.Windows.Forms
@@ -97,8 +102,11 @@ public final class Uninstaller {
             escapePowerShell(productCode),
             removeData ? "$true" : "$false",
             escapePowerShell(dataDirectory),
-            escapePowerShell(dataDirectory));
-        Files.writeString(script, scriptContent, StandardCharsets.UTF_8);
+            escapePowerShell(dataDirectory),
+            escapePowerShell(messages.getString("deleteFailed")),
+            escapePowerShell(messages.getString("uninstallFailed")));
+        // Windows PowerShell 5.1 依靠 BOM 识别脚本中的中文提示。
+        Files.writeString(script, "\uFEFF" + scriptContent, StandardCharsets.UTF_8);
         new ProcessBuilder(
             "powershell.exe",
             "-NoLogo",
@@ -113,13 +121,13 @@ public final class Uninstaller {
             .start();
     }
 
-    private static String findProductCode() {
+    private static Installation findInstallation() {
         Path installationDirectory = installationDirectory();
         if (installationDirectory == null) return null;
         for (Path root : List.of(USER_UNINSTALL_ROOT, MACHINE_UNINSTALL_ROOT)) {
             String result = queryRegistry(root);
-            String productCode = parseProductCode(result, installationDirectory);
-            if (productCode != null) return productCode;
+            Installation installation = parseInstallation(result, installationDirectory);
+            if (installation != null) return installation;
         }
         return null;
     }
@@ -140,20 +148,25 @@ public final class Uninstaller {
         }
     }
 
-    static String parseProductCode(String output, Path installationDirectory) {
+    record Installation(String productCode, int language) {}
+
+    static Installation parseInstallation(String output, Path installationDirectory) {
         String currentKey = null;
         String displayName = null;
         String uninstallString = null;
         String installLocation = null;
+        // 注册表项的语言值只在确认匹配本安装后解析。
+        String language = null;
         for (String line : output.split("\\R")) {
             if (KEY_PATTERN.matcher(line.trim()).matches()) {
                 String productCode = productCode(
                     displayName, installLocation, uninstallString, currentKey, installationDirectory);
-                if (productCode != null) return productCode;
+                if (productCode != null) return new Installation(productCode, language(language));
                 currentKey = line.trim();
                 displayName = null;
                 uninstallString = null;
                 installLocation = null;
+                language = null;
                 continue;
             }
             String value = value(line, "DisplayName");
@@ -162,9 +175,21 @@ public final class Uninstaller {
             if (value != null) uninstallString = value;
             value = value(line, "InstallLocation");
             if (value != null) installLocation = value;
+            value = value(line, "Language");
+            if (value != null) language = value;
         }
-        return productCode(
+        String productCode = productCode(
             displayName, installLocation, uninstallString, currentKey, installationDirectory);
+        return productCode == null ? null : new Installation(productCode, language(language));
+    }
+
+    private static int language(String value) {
+        if (value == null) return 1033;
+        try {
+            return Integer.decode(value);
+        } catch (NumberFormatException exception) {
+            return 1033;
+        }
     }
 
     private static String productCode(
@@ -237,7 +262,9 @@ public final class Uninstaller {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
-    private static void showError(String message) {
-        JOptionPane.showMessageDialog(null, message, "JQ Viewer", JOptionPane.ERROR_MESSAGE);
+    private static void showError(String message, ResourceBundle messages) {
+        String[] options = {messages.getString("ok")};
+        JOptionPane.showOptionDialog(null, message, APPLICATION_NAME, JOptionPane.DEFAULT_OPTION,
+            JOptionPane.ERROR_MESSAGE, null, options, options[0]);
     }
 }

@@ -29,6 +29,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -46,6 +47,8 @@ public final class UpdateService {
     private static final String UPDATE_DIRECTORY = "update";
     private static final int CONNECT_TIMEOUT_MS = 10000;
     private static final int READ_TIMEOUT_MS = 20000;
+    private static final int MANIFEST_DEADLINE_MS = 20_000;
+    private static final long DOWNLOAD_DEADLINE_MS = 30L * 60L * 1000L;
     private static final int MANIFEST_MAX_BYTES = 1024 * 1024;
     private static final int BUFFER_SIZE = 32 * 1024;
     private static final long MAX_DOWNLOAD_BYTES = 300L * 1024L * 1024L;
@@ -56,6 +59,7 @@ public final class UpdateService {
     private final File updateDirectory;
     private final ExecutorService executor;
     private final ExecutorService manifestExecutor;
+    private final ScheduledExecutorService deadlineExecutor;
     private final Object stateLock = new Object();
     private final AtomicInteger revision = new AtomicInteger();
     private volatile Consumer<Snapshot> progressSink;
@@ -74,6 +78,7 @@ public final class UpdateService {
         this.updateDirectory = new File(this.context.getFilesDir(), UPDATE_DIRECTORY);
         this.executor = ServiceExecutors.fixed("app-update", 3);
         this.manifestExecutor = ServiceExecutors.fixed("app-update-manifest", 2);
+        this.deadlineExecutor = ServiceExecutors.scheduled("app-update-deadline", 1);
     }
 
     /**
@@ -391,6 +396,7 @@ public final class UpdateService {
         cancelUpdate();
         executor.shutdownNow();
         manifestExecutor.shutdownNow();
+        deadlineExecutor.shutdownNow();
     }
 
     static ManifestResolution resolveManifests(ManifestAttempt github, ManifestAttempt gitee) {
@@ -424,8 +430,8 @@ public final class UpdateService {
                 source, manifest.getVersionCode(), manifest.getSizeBytes(), elapsedMs(startedAt));
             return ManifestAttempt.success(manifest);
         } catch (Exception error) {
-            LOGGER.warn("应用更新清单获取失败: event=manifest_failed, source={}, elapsedMs={}, errorType={}",
-                source, elapsedMs(startedAt), error.getClass().getSimpleName());
+            LOGGER.warn("应用更新清单获取失败: event=manifest_failed, source={}, elapsedMs={}, errorType={}, error={}",
+                source, elapsedMs(startedAt), error.getClass().getSimpleName(), userMessage(error));
             return ManifestAttempt.failure(userMessage(error));
         }
     }
@@ -443,37 +449,42 @@ public final class UpdateService {
     }
 
     private JSONObject fetchJson(String endpoint) throws Exception {
+        return JsonUtils.parseJsonObject(fetchBytes(endpoint));
+    }
+
+    private JSONArray fetchArray(String endpoint) throws Exception {
+        return JsonUtils.parseJsonArray(fetchBytes(endpoint));
+    }
+
+    private byte[] fetchBytes(String endpoint) throws Exception {
         HttpURLConnection connection = null;
+        RequestDeadline deadline = null;
         try {
             connection = openConnection(endpoint);
-            int status = connection.getResponseCode();
+            deadline = new RequestDeadline(deadlineExecutor, connection, MANIFEST_DEADLINE_MS);
+            int status;
+            try {
+                status = connection.getResponseCode();
+            } catch (IOException error) {
+                throw manifestReadFailure(deadline, error);
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException("HTTP " + status);
             }
-            byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return JsonUtils.parseJsonObject(body);
+            return readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES, deadline);
         } finally {
+            if (deadline != null) {
+                deadline.close();
+            }
             if (connection != null) {
                 connection.disconnect();
             }
         }
     }
 
-    private JSONArray fetchArray(String endpoint) throws Exception {
-        HttpURLConnection connection = null;
-        try {
-            connection = openConnection(endpoint);
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                throw new IOException("HTTP " + status);
-            }
-            byte[] body = readLimited(connection.getInputStream(), MANIFEST_MAX_BYTES);
-            return JsonUtils.parseJsonArray(body);
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
+    private static IOException manifestReadFailure(RequestDeadline deadline, IOException error) {
+        return UpdateDownloadRules.readFailure(deadline.expired(), error,
+            "更新元数据读取超时", "更新元数据读取超时");
     }
 
     private String findGiteeAssetUrl(JSONObject release) throws Exception {
@@ -551,6 +562,7 @@ public final class UpdateService {
         File partFile = source == UpdateRaceState.Source.GITHUB
             ? session.githubPart : session.giteePart;
         HttpURLConnection connection = null;
+        RequestDeadline deadline = null;
         boolean successful = false;
         try {
             if (session.completionGate.isCancelled() || session.raceState.isCancelled()
@@ -562,7 +574,13 @@ public final class UpdateService {
             }
             connection = openConnection(url);
             setConnection(session, source, connection);
-            int status = connection.getResponseCode();
+            deadline = new RequestDeadline(deadlineExecutor, connection, DOWNLOAD_DEADLINE_MS);
+            int status;
+            try {
+                status = connection.getResponseCode();
+            } catch (IOException error) {
+                throw downloadReadFailure(deadline, error);
+            }
             if (status < 200 || status >= 300) {
                 throw new IOException("HTTP " + status);
             }
@@ -574,9 +592,20 @@ public final class UpdateService {
                  BufferedOutputStream output = new BufferedOutputStream(
                      new FileOutputStream(partFile))) {
                 byte[] buffer = new byte[BUFFER_SIZE];
-                int count;
                 long downloaded = 0L;
-                while ((count = input.read(buffer)) != -1) {
+                while (true) {
+                    int count;
+                    try {
+                        count = input.read(buffer);
+                    } catch (IOException error) {
+                        throw downloadReadFailure(deadline, error);
+                    }
+                    if (deadline.expired()) {
+                        throw new IOException("下载总时限");
+                    }
+                    if (count == -1) {
+                        break;
+                    }
                     if (Thread.currentThread().isInterrupted() || session.completionGate.isCancelled()
                         || session.raceState.isCancelled()) {
                         throw new InterruptedException("更新已取消");
@@ -606,14 +635,28 @@ public final class UpdateService {
             LOGGER.debug("应用更新下载源取消: event=source_cancelled, revision={}, source={}, bytes={}",
                 session.revision, sourceName(source), sourceBytes(session, source));
         } catch (IOException error) {
-            LOGGER.warn("应用更新下载源失败: event=source_failed, revision={}, source={}, bytes={}, elapsedMs={}, errorType={}",
+            String message = userMessage(error);
+            if (source == UpdateRaceState.Source.GITHUB) {
+                session.githubError = message;
+            } else {
+                session.giteeError = message;
+            }
+            LOGGER.warn("应用更新下载源失败: event=source_failed, revision={}, source={}, bytes={}, elapsedMs={}, errorType={}, error={}",
                 session.revision, sourceName(source), sourceBytes(session, source), elapsedMs(startedAt),
-                error.getClass().getSimpleName());
+                error.getClass().getSimpleName(), message);
         } finally {
+            if (deadline != null) {
+                deadline.close();
+            }
             if (connection != null) {
                 connection.disconnect();
             }
             clearConnection(session, source, connection);
+            if (source == UpdateRaceState.Source.GITHUB) {
+                session.githubCompleted = successful;
+            } else {
+                session.giteeCompleted = successful;
+            }
             session.raceState.sourceFinished(source, successful);
             if (successful && session.raceState.getWinner() == source) {
                 cancelOtherSource(session, source);
@@ -630,10 +673,15 @@ public final class UpdateService {
                 return;
             }
             UpdateRaceState.Source winner = session.raceState.getWinner();
-            if (winner == null) {
-                LOGGER.warn("应用更新下载失败: event=download_failed, revision={}, reason=no_winner, elapsedMs={}",
-                    session.revision, elapsedMs(startedAt));
-                failSession(session, "两个下载源均未完成");
+            boolean winnerCompleted = winner == UpdateRaceState.Source.GITHUB
+                ? session.githubCompleted
+                : winner == UpdateRaceState.Source.GITEE && session.giteeCompleted;
+            String failure = UpdateDownloadRules.failureIfDownloadIncomplete(
+                winner, winnerCompleted, session.githubError, session.giteeError);
+            if (failure != null) {
+                LOGGER.warn("应用更新下载失败: event=download_failed, revision={}, reason={}, elapsedMs={}",
+                    session.revision, failure, elapsedMs(startedAt));
+                failSession(session, failure);
                 return;
             }
             synchronized (stateLock) {
@@ -759,13 +807,24 @@ public final class UpdateService {
         return connection;
     }
 
-    private byte[] readLimited(InputStream source, int maxBytes) throws IOException {
+    private byte[] readLimited(InputStream source, int maxBytes, RequestDeadline deadline) throws IOException {
         try (InputStream input = source) {
             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream(Math.min(maxBytes, 8192));
             byte[] buffer = new byte[8192];
             int total = 0;
-            int count;
-            while ((count = input.read(buffer)) != -1) {
+            while (true) {
+                int count;
+                try {
+                    count = input.read(buffer);
+                } catch (IOException error) {
+                    throw manifestReadFailure(deadline, error);
+                }
+                if (deadline.expired()) {
+                    throw new IOException("更新元数据读取超时");
+                }
+                if (count == -1) {
+                    break;
+                }
                 total += count;
                 if (total > maxBytes) {
                     throw new IOException("更新元数据过大");
@@ -774,6 +833,11 @@ public final class UpdateService {
             }
             return output.toByteArray();
         }
+    }
+
+    private static IOException downloadReadFailure(RequestDeadline deadline, IOException error) {
+        return UpdateDownloadRules.readFailure(deadline.expired(), error,
+            "下载总时限", "下载空闲超时");
     }
 
     private void updateBytes(UpdateSession session, UpdateRaceState.Source source, long bytes) {
@@ -1017,6 +1081,10 @@ public final class UpdateService {
         private volatile HttpURLConnection giteeConnection;
         private volatile long githubBytes;
         private volatile long giteeBytes;
+        private volatile boolean githubCompleted;
+        private volatile boolean giteeCompleted;
+        private volatile String githubError = "未知错误";
+        private volatile String giteeError = "未知错误";
         private long lastSpeedBytes;
         private long lastSpeedAtMs;
         private volatile long speedBytesPerSecond;

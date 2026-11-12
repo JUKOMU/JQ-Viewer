@@ -494,14 +494,20 @@ public final class DesktopUpdateService implements AutoCloseable {
             label(source), artifact.sizeBytes());
         try {
             long overallDeadline = deadlineAfter(downloadTimeout);
+            // 等待响应头也受整次下载的截止时间约束。
+            long remainingNanos = Math.max(1L, overallDeadline - System.nanoTime());
+            boolean overallTimeoutIsFirst = remainingNanos <= headerTimeout.toNanos();
             HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(headerTimeout)
+                .timeout(Duration.ofNanos(Math.min(headerTimeout.toNanos(), remainingNanos)))
                 .GET()
                 .build();
             HttpResponse<InputStream> response;
             try {
                 response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
             } catch (HttpTimeoutException exception) {
+                if (overallTimeoutIsFirst && !(exception instanceof HttpConnectTimeoutException)) {
+                    throw new IOException("下载总时限");
+                }
                 throw downloadHeaderFailure(exception);
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {

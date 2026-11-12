@@ -60,6 +60,26 @@ class UninstallerTest {
     }
 
     @Test
+    void ignoresInvalidLanguagesOutsideTheMatchingInstallationAndDefaultsInvalidValue() {
+        Path directory = Path.of("target", "jq-viewer").toAbsolutePath().normalize();
+        String output = """
+            HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{11111111-1111-1111-1111-111111111111}
+                DisplayName    REG_SZ    Other App
+                InstallLocation    REG_SZ    %s
+                Language    REG_SZ    en-US
+            HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{22222222-2222-2222-2222-222222222222}
+                DisplayName    REG_SZ    JQ-Viewer
+                InstallLocation    REG_SZ    %s
+                Language    REG_SZ    en-US
+            """.formatted(directory.resolveSibling("other-app"), directory);
+
+        Uninstaller.Installation installation = Uninstaller.parseInstallation(output, directory);
+
+        assertEquals("{22222222-2222-2222-2222-222222222222}", installation.productCode());
+        assertEquals(1033, installation.language());
+    }
+
+    @Test
     void maintenanceTranslationsContainTheSameKeys() throws Exception {
         Properties english = new Properties();
         Properties chinese = new Properties();

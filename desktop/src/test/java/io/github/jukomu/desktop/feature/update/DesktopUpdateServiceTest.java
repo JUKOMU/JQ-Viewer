@@ -165,6 +165,20 @@ class DesktopUpdateServiceTest {
     }
 
     @Test
+    void downloadDeadlineAlsoBoundsWaitingForResponseHeaders() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofMillis(80), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(90)))) {
+            fixture.http.stallHeaders.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            assertTrue(fixture.service.snapshot().error().contains("下载总时限"),
+                    fixture.service.snapshot()::toString);
+        }
+    }
+
+    @Test
     void connectTimeoutStaysDistinctFromHeaderTimeout() throws Exception {
         try (Fixture fixture = fixture(path -> {
         }, Duration.ofSeconds(2))) {

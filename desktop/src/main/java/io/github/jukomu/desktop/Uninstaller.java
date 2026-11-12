@@ -155,17 +155,18 @@ public final class Uninstaller {
         String displayName = null;
         String uninstallString = null;
         String installLocation = null;
-        int language = 1033;
+        // 注册表项的语言值只在确认匹配本安装后解析。
+        String language = null;
         for (String line : output.split("\\R")) {
             if (KEY_PATTERN.matcher(line.trim()).matches()) {
                 String productCode = productCode(
                     displayName, installLocation, uninstallString, currentKey, installationDirectory);
-                if (productCode != null) return new Installation(productCode, language);
+                if (productCode != null) return new Installation(productCode, language(language));
                 currentKey = line.trim();
                 displayName = null;
                 uninstallString = null;
                 installLocation = null;
-                language = 1033;
+                language = null;
                 continue;
             }
             String value = value(line, "DisplayName");
@@ -175,11 +176,20 @@ public final class Uninstaller {
             value = value(line, "InstallLocation");
             if (value != null) installLocation = value;
             value = value(line, "Language");
-            if (value != null) language = Integer.decode(value);
+            if (value != null) language = value;
         }
         String productCode = productCode(
             displayName, installLocation, uninstallString, currentKey, installationDirectory);
-        return productCode == null ? null : new Installation(productCode, language);
+        return productCode == null ? null : new Installation(productCode, language(language));
+    }
+
+    private static int language(String value) {
+        if (value == null) return 1033;
+        try {
+            return Integer.decode(value);
+        } catch (NumberFormatException exception) {
+            return 1033;
+        }
     }
 
     private static String productCode(

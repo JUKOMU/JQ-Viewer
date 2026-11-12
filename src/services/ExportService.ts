@@ -50,6 +50,8 @@ export interface ExportPlanOptions {
   exportFolder?: FolderRef
   exportFolderDisplayPath?: string
   splitPages: number
+  deleteSourceAfterExport: boolean
+  retainDownloadEntry: boolean
 }
 
 export interface ExportPlan {
@@ -479,6 +481,8 @@ export const ExportService = {
         useOriginal,
         compressionRatio,
         splitPages: options.splitPages,
+        deleteSourceAfterExport: options.deleteSourceAfterExport,
+        retainDownloadEntry: options.retainDownloadEntry,
       }
 
       return {
@@ -511,6 +515,8 @@ export const ExportService = {
       useOriginal,
       compressionRatio,
       splitPages: options.splitPages,
+      deleteSourceAfterExport: options.deleteSourceAfterExport,
+      retainDownloadEntry: options.retainDownloadEntry,
     }))
 
     return {

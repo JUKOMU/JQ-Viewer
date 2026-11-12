@@ -45,11 +45,11 @@ public class LocalFileStoreInstrumentedTest {
     }
 
     @Test
-    public void newDatabaseCreatesVersionElevenGenericSchemaWithoutResetNotice() throws Exception {
+    public void newDatabaseCreatesVersionTwelveGenericSchemaWithoutResetNotice() throws Exception {
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase database = store.getWritableDatabase();
 
-        assertEquals(11, database.getVersion());
+        assertEquals(12, database.getVersion());
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILES));
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILE_CHAPTERS));
         assertTrue(tableExists(database, LocalFileStore.TABLE_TASKS));
@@ -57,6 +57,16 @@ public class LocalFileStoreInstrumentedTest {
         assertTrue(tableExists(database, LocalFileStore.TABLE_VOLUMES));
         assertTrue(tableExists(database, LocalFileStore.TABLE_META));
         assertEquals(1L, scalarLong(database, "PRAGMA foreign_keys"));
+        assertEquals(0L, scalarLong(database,
+            "SELECT COUNT(*) FROM " + LocalFileStore.TABLE_TASKS
+                + " WHERE delete_source_after_export<>0 OR retain_download_entry<>0"));
+        assertThrows(SQLiteException.class, () -> database.execSQL(
+            "INSERT INTO " + LocalFileStore.TABLE_TASKS
+                + "(export_id,batch_id,format,mode,album_id,display_title,target_folder_ref,target_name,"
+                + "use_original,compression_ratio,status,phase,created_at,updated_at,"
+                + "delete_source_after_export,retain_download_entry) "
+                + "VALUES ('invalid-retain','batch','pdf','chapter','album','title','folder','file.pdf',"
+                + "1,1,'queued','queued',1,1,0,1)"));
         assertFalse(store.getManagementState().getJSONObject("databaseResetInfo")
             .optBoolean("pending"));
     }
@@ -110,7 +120,7 @@ public class LocalFileStoreInstrumentedTest {
 
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase upgraded = store.getWritableDatabase();
-        assertEquals(11, upgraded.getVersion());
+        assertEquals(12, upgraded.getVersion());
         assertEquals(2L, store.countFiles());
         JSONArray importedFiles = store.getAllFiles(null, LocalFileStore.SOURCE_IMPORTED);
         assertEquals(1, importedFiles.length());
@@ -164,7 +174,7 @@ public class LocalFileStoreInstrumentedTest {
         }
 
         LocalFileStore store = LocalFileStore.getInstance(context);
-        assertEquals(11, store.getWritableDatabase().getVersion());
+        assertEquals(12, store.getWritableDatabase().getVersion());
         assertEquals(5, store.countFiles());
         JSONObject file = store.getFileByRef("file:path:" + physicalFile.getAbsolutePath());
         assertEquals("pdf", file.getString("format"));
@@ -251,7 +261,7 @@ public class LocalFileStoreInstrumentedTest {
             }
             LocalFileStore store = LocalFileStore.getInstance(context);
             SQLiteDatabase upgraded = store.getWritableDatabase();
-            assertEquals(11, upgraded.getVersion());
+            assertEquals(12, upgraded.getVersion());
             assertEquals(0, store.countFiles());
             assertEquals(0, store.getAllExportTasks().length());
             for (String table : oldTables) assertFalse(table, tableExists(upgraded, table));

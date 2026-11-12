@@ -215,6 +215,9 @@ public class ExportService {
         if (!LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
             throw new IllegalStateException("活动导出任务不能删除");
         }
+        if (task.optBoolean("retainDownloadEntry")) {
+            throw LocalFileOperationException.conflict("导出任务仍关联下载列表，请先删除对应文件");
+        }
         cleanupKnownArtifacts(exportId, true);
         cleanupStagingDirectoryQuietly(task);
         if (!localFileStore.deleteExportTask(exportId)) {
@@ -244,6 +247,8 @@ public class ExportService {
         task.put("useOriginal", job.useOriginal);
         task.put("compressionRatio", job.compressionRatio);
         task.put("splitPages", job.splitPages);
+        task.put("deleteSourceAfterExport", job.deleteSourceAfterExport);
+        task.put("retainDownloadEntry", job.retainDownloadEntry);
         task.put("status", status);
         task.put("phase", status);
         task.put("totalPages", preflight == null ? 0 : preflight.totalPages);
@@ -312,6 +317,8 @@ public class ExportService {
         job.useOriginal = task.optBoolean("useOriginal", true);
         job.compressionRatio = (float) task.optDouble("compressionRatio", 1D);
         job.splitPages = task.optInt("splitPages");
+        job.deleteSourceAfterExport = task.optBoolean("deleteSourceAfterExport");
+        job.retainDownloadEntry = task.optBoolean("retainDownloadEntry");
         job.chapters = new ArrayList<>();
         for (int index = 0; index < chapters.length(); index++) {
             JSONObject value = chapters.optJSONObject(index);
@@ -450,6 +457,8 @@ public class ExportService {
         public float compressionRatio; // 0.1~1.0
         public int splitPages;         // 0=不分卷, >0=每卷页数
         public boolean allowOverwrite;
+        public boolean deleteSourceAfterExport;
+        public boolean retainDownloadEntry;
     }
 
     public static class ExportChapter {
@@ -618,6 +627,11 @@ public class ExportService {
                     updateProgress(job.exportId, "completed", "completed", preflight.totalPages,
                         preflight.totalPages, preflight.volumes.size(), preflight.volumes.size(),
                         null, null);
+                    if (!deleteSourceDownloads(job)) {
+                        updateProgress(job.exportId, "completed", "completed", preflight.totalPages,
+                            preflight.totalPages, preflight.volumes.size(), preflight.volumes.size(),
+                            "SOURCE_CLEANUP_FAILED", "导出已完成，但部分原下载文件未能删除");
+                    }
                     success++;
                     logExportEvent(job, String.valueOf(batchId), "completed", "completed", "completed",
                         preflight.totalPages, preflight.totalPages, null, null, null);
@@ -827,6 +841,27 @@ public class ExportService {
             + ", outputBytes=" + totalOutputBytes
             + ", outputInputRatio=" + formatRatio(totalOutputBytes, preflight.totalImageBytes)
             + ", totalMs=" + formatMillis(SystemClock.elapsedRealtimeNanos() - exportStartedAt));
+    }
+
+    private boolean deleteSourceDownloads(ExportJob job) {
+        if (!job.deleteSourceAfterExport || "zip".equals(job.format)) return true;
+        DownloadStore downloadStore = DownloadStore.getInstance(context);
+        boolean complete = true;
+        for (ExportChapter chapter : requestedChapters(job)) {
+            String taskId = chapter.albumId + "_" + chapter.chapterId;
+            try {
+                FileStore.getInstance().deleteChapter(chapter.albumId, chapter.chapterId);
+                if (!job.retainDownloadEntry) {
+                    downloadStore.deleteImages(taskId);
+                    downloadStore.deleteTask(taskId);
+                }
+            } catch (RuntimeException error) {
+                complete = false;
+                LOGGER.warn("导出已完成，但原下载文件清理失败: albumId={} chapterId={} errorClass={}",
+                    chapter.albumId, chapter.chapterId, error.getClass().getSimpleName(), error);
+            }
+        }
+        return complete;
     }
 
     private String publishVolume(ExportJob job, ExportVolume volume) throws IOException {

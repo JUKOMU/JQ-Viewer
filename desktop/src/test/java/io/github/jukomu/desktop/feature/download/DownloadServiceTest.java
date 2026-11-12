@@ -7,6 +7,7 @@ import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.download.model.DownloadChapterRequest;
 import io.github.jukomu.desktop.feature.download.model.DownloadProgressEvent;
 import io.github.jukomu.desktop.feature.download.model.DownloadTasksPageRequest;
@@ -213,6 +214,7 @@ class DownloadServiceTest {
             DownloadService unavailable = new DownloadService(
                     fixture.store,
                     fixture.files,
+                    fixture.exports,
                     () -> null,
                     () -> null,
                     Runnable::run,
@@ -306,6 +308,7 @@ class DownloadServiceTest {
         private final Database database;
         private final DownloadStore store;
         private final DownloadFiles files;
+        private final ExportStore exports;
         private final ObjectMapper mapper = new ObjectMapper();
         private final EventHub events = new EventHub(mapper);
         private final TestClient client;
@@ -317,16 +320,17 @@ class DownloadServiceTest {
             this.database = database;
             this.store = new DownloadStore(database);
             this.files = new DownloadFiles(paths);
+            this.exports = new ExportStore(database);
             this.client = new TestClient(mode, pngBytes());
             this.downloadClient = client.downloadClient();
             this.service = new DownloadService(
-                    store, files, client.client(), downloadClient, Runnable::run, events);
+                    store, files, exports, client.client(), downloadClient, Runnable::run, events);
         }
 
         private DownloadService newService(Mode mode) throws Exception {
             TestClient restarted = new TestClient(mode, pngBytes());
             return new DownloadService(
-                    store, files, restarted.client(), restarted.downloadClient(),
+                    store, files, exports, restarted.client(), restarted.downloadClient(),
                     Runnable::run, events);
         }
 

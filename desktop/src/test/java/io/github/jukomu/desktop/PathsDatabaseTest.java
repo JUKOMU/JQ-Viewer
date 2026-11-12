@@ -99,7 +99,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(13, result.getInt(1));
+                assertEquals(14, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -156,6 +156,12 @@ class PathsDatabaseTest {
                     .getTables(null, null, "export_task_volumes", null)) {
                 assertTrue(result.next());
             }
+            assertThrows(SQLException.class, () -> database.connection().createStatement()
+                    .executeUpdate("INSERT INTO export_tasks(export_id,batch_id,format,mode,album_id,"
+                            + "display_title,target_folder_ref,target_name,use_original,compression_ratio,"
+                            + "status,phase,created_at,updated_at,delete_source_after_export,retain_download_entry) "
+                            + "VALUES ('invalid-retain','batch','pdf','chapter','album','title','folder',"
+                            + "'file.pdf',1,1,'queued','queued',1,1,0,1)"));
             assertTrue(database.isOpen());
         }
 
@@ -204,7 +210,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(13, result.getInt(1));
+                assertEquals(14, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT format,chapter_link_status FROM local_files "
@@ -223,9 +229,12 @@ class PathsDatabaseTest {
                 assertEquals(4, result.getInt("page_count"));
             }
             try (ResultSet result = database.connection().createStatement()
-                    .executeQuery("SELECT format FROM export_tasks WHERE export_id='export-1'")) {
+                    .executeQuery("SELECT format,delete_source_after_export,retain_download_entry "
+                            + "FROM export_tasks WHERE export_id='export-1'")) {
                 assertTrue(result.next());
                 assertEquals("pdf", result.getString("format"));
+                assertEquals(0, result.getInt("delete_source_after_export"));
+                assertEquals(0, result.getInt("retain_download_entry"));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT chapter_id,start_page,end_page,page_count "

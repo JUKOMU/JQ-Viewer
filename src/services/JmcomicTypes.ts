@@ -327,6 +327,16 @@ export interface DownloadTask {
   speed?: number
   downloadedBytes?: number
   totalSize?: number
+  retainedExport?: RetainedDownloadExport
+}
+
+export interface RetainedDownloadExport {
+  exportId: string
+  format: 'pdf' | 'cbz'
+  fileId: number
+  fileRef: FileRef
+  startPage: number
+  pageCount: number
 }
 
 export interface CompletedGroup {
@@ -636,6 +646,8 @@ export interface ExportTask {
   compressionRatio: number // 0.1~1.0
   splitPages: number // 0=不分卷, >0=每卷页数
   allowOverwrite?: boolean
+  deleteSourceAfterExport: boolean
+  retainDownloadEntry: boolean
 }
 
 export type ExportStatus =
@@ -680,6 +692,8 @@ export interface ExportTaskRecord extends ExportProgressEvent {
   useOriginal: boolean
   compressionRatio: number
   splitPages: number
+  deleteSourceAfterExport: boolean
+  retainDownloadEntry: boolean
   cancelRequested: boolean
   createdAt: number
   startedAt?: number

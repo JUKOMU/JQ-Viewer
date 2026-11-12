@@ -3,6 +3,7 @@ package io.github.jukomu.desktop.feature.pdf;
 import io.github.jukomu.desktop.data.Database;
 import io.github.jukomu.desktop.data.Paths;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
@@ -188,6 +189,7 @@ class LocalFileManagementServiceTest {
         LocalFileManagementService service = new LocalFileManagementService(
                 new LocalFileStore(database),
                 new DownloadStore(database),
+                new DownloadFiles(paths),
                 files,
                 new PdfDocumentService(new PdfPageCache(paths.cacheDirectory())),
                 new CbzDocumentService()

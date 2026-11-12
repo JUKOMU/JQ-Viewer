@@ -30,9 +30,9 @@ public final class ExportStore {
                 "INSERT INTO export_tasks(export_id,batch_id,format,mode,album_id,album_title,"
                     + "cover_url,authors,is_single_episode,chapter_id,display_title,"
                     + "target_folder_ref,target_name,display_path,allow_overwrite,use_original,"
-                    + "compression_ratio,split_pages,status,phase,total_pages,total_volumes,"
+                    + "compression_ratio,split_pages,delete_source_after_export,retain_download_entry,status,phase,total_pages,total_volumes,"
                     + "snapshot_revision,cancel_requested,error_code,error_message,created_at,"
-                    + "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?)")) {
+                    + "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,1,0,?,?,?,?)")) {
                 int index = 1;
                 statement.setString(index++, task.exportId());
                 statement.setString(index++, task.batchId());
@@ -53,6 +53,8 @@ public final class ExportStore {
                 statement.setInt(index++, task.useOriginal() ? 1 : 0);
                 statement.setDouble(index++, task.compressionRatio());
                 statement.setInt(index++, task.splitPages());
+                statement.setInt(index++, task.deleteSourceAfterExport() ? 1 : 0);
+                statement.setInt(index++, task.retainDownloadEntry() ? 1 : 0);
                 statement.setString(index++, task.status());
                 statement.setString(index++, task.phase());
                 statement.setInt(index++, task.totalPages());
@@ -111,6 +113,29 @@ public final class ExportStore {
             }
         } catch (SQLException exception) {
             throw failure("读取导出任务失败", exception);
+        }
+    }
+
+    /** 查找章节当前使用的最近可用保留导出文件。 */
+    public synchronized RetainedExport findRetainedExportForChapter(String albumId, String chapterId) {
+        String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
+            + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
+            + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
+            + "JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
+            + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
+            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next() ? new RetainedExport(rows.getString("export_id"),
+                    rows.getString("format"), rows.getLong("file_id"), rows.getString("file_ref"),
+                    rows.getInt("start_page"), rows.getInt("page_count")) : null;
+            }
+        } catch (SQLException exception) {
+            throw failure("读取保留导出文件失败", exception);
         }
     }
 
@@ -605,7 +630,8 @@ public final class ExportStore {
             rows.getString("target_name"), rows.getString("output_file_ref"),
             rows.getString("response_display_path"), rows.getInt("allow_overwrite") == 1,
             rows.getInt("use_original") == 1, rows.getDouble("compression_ratio"),
-            rows.getInt("split_pages"), rows.getString("status"), rows.getString("phase"),
+            rows.getInt("split_pages"), rows.getInt("delete_source_after_export") == 1,
+            rows.getInt("retain_download_entry") == 1, rows.getString("status"), rows.getString("phase"),
             rows.getInt("current_page"), rows.getInt("total_pages"),
             rows.getInt("current_volume"), rows.getInt("total_volumes"),
             rows.getLong("snapshot_revision"), rows.getInt("cancel_requested") == 1,
@@ -690,6 +716,8 @@ public final class ExportStore {
         boolean useOriginal,
         double compressionRatio,
         int splitPages,
+        boolean deleteSourceAfterExport,
+        boolean retainDownloadEntry,
         String status,
         String phase,
         int totalPages,
@@ -697,6 +725,18 @@ public final class ExportStore {
         String errorMessage,
         long createdAt
     ) {
+        public ReserveTask(String exportId, String batchId, String format, String mode,
+                           String albumId, String albumTitle, String coverUrl, String authors,
+                           Boolean singleEpisode, String chapterId, String displayTitle,
+                           String targetFolderRef, String targetName, String displayPath,
+                           boolean allowOverwrite, boolean useOriginal, double compressionRatio,
+                           int splitPages, String status, String phase, int totalPages,
+                           String errorCode, String errorMessage, long createdAt) {
+            this(exportId, batchId, format, mode, albumId, albumTitle, coverUrl, authors,
+                singleEpisode, chapterId, displayTitle, targetFolderRef, targetName, displayPath,
+                allowOverwrite, useOriginal, compressionRatio, splitPages, false, false,
+                status, phase, totalPages, errorCode, errorMessage, createdAt);
+        }
     }
 
     public record Chapter(
@@ -730,6 +770,10 @@ public final class ExportStore {
     }
 
     public record Page(List<ExportTaskResponse> tasks, String nextCursor) {
+    }
+
+    public record RetainedExport(String exportId, String format, long fileId, String fileRef,
+                                 int startPage, int pageCount) {
     }
 
     public record DiagnosticSnapshot(

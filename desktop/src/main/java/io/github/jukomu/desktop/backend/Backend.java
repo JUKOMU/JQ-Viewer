@@ -328,6 +328,7 @@ public final class Backend implements AutoCloseable {
             startedDownloadService = new DownloadService(
                 downloadStore,
                 downloadFiles,
+                exportStore,
                 clientSession::getClient,
                 () -> clientSession.getClient() instanceof JmDownloadClient client
                     ? client
@@ -377,6 +378,7 @@ public final class Backend implements AutoCloseable {
             LocalFileManagementService pdfManagementService = new LocalFileManagementService(
                 new LocalFileStore(database),
                 downloadStore,
+                downloadFiles,
                 fileService,
                 new PdfDocumentService(pdfPageCache),
                 cbzDocuments

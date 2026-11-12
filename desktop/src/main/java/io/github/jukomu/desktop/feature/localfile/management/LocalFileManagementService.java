@@ -5,6 +5,7 @@ import io.github.jukomu.desktop.bridge.Request;
 import io.github.jukomu.desktop.bridge.model.SuccessResponse;
 import io.github.jukomu.desktop.feature.cbz.CbzDocumentService;
 import io.github.jukomu.desktop.feature.download.data.DownloadStore;
+import io.github.jukomu.desktop.feature.download.DownloadFiles;
 import io.github.jukomu.desktop.feature.files.FileReferences;
 import io.github.jukomu.desktop.feature.files.FileService;
 import io.github.jukomu.desktop.feature.localfile.data.LocalFileStore;
@@ -42,6 +43,7 @@ public final class LocalFileManagementService {
 
     private final LocalFileStore store;
     private final DownloadStore downloads;
+    private final DownloadFiles downloadFiles;
     private final FileService files;
     private final PdfDocumentService documents;
     private final CbzDocumentService cbzDocuments;
@@ -49,12 +51,14 @@ public final class LocalFileManagementService {
     public LocalFileManagementService(
         LocalFileStore store,
         DownloadStore downloads,
+        DownloadFiles downloadFiles,
         FileService files,
         PdfDocumentService documents,
         CbzDocumentService cbzDocuments
     ) {
         this.store = store;
         this.downloads = downloads;
+        this.downloadFiles = downloadFiles;
         this.files = files;
         this.documents = documents;
         this.cbzDocuments = cbzDocuments;
@@ -289,6 +293,8 @@ public final class LocalFileManagementService {
         long startedNanos = System.nanoTime();
         String operationId = operationId();
         StoredLocalFile record = requireFile(id);
+        List<io.github.jukomu.desktop.feature.localfile.data.StoredLocalFileChapter> retainedChapters =
+            "exported".equals(record.sourceType()) ? store.retainedChapters(id) : List.of();
         Path file = FileReferences.parseFile(record.fileRef());
         LOGGER.info("local_file.delete event=started operationId={} fileId={} format={} fileName={} elapsedMs=0",
             clean(operationId), id, clean(record.format()), clean(record.fileName()));
@@ -318,6 +324,15 @@ public final class LocalFileManagementService {
             LOGGER.error("local_file.delete event=failed operationId={} fileId={} format={} fileName={} errorCode=STORE_REMOVE_FAILED elapsedMs={}",
                 clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos));
             throw new ApiException("internal", 500, "本地文件已处理，但文件库记录移除失败");
+        }
+        for (var chapter : retainedChapters) {
+            if (!store.hasRetainedExportForChapter(chapter.albumId(), chapter.chapterId())) {
+                var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
+                if (download != null) {
+                    downloadFiles.cleanup(download.relativeDirectory());
+                    downloads.deleteTask(download.taskId());
+                }
+            }
         }
         LOGGER.info("local_file.delete event=completed operationId={} fileId={} format={} fileName={} result={} elapsedMs={}",
             clean(operationId), id, clean(record.format()), clean(record.fileName()), clean(result),

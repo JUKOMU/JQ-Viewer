@@ -52,7 +52,7 @@ public class JqViewerStartupInstrumentedTest {
             }
             try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
                 scenario.onActivity(activity -> assertLocalPluginWorks(activity, false));
-                assertEquals(11, LocalFileStore.getInstance(context).getReadableDatabase().getVersion());
+                assertEquals(12, LocalFileStore.getInstance(context).getReadableDatabase().getVersion());
                 assertTrue(LocalFileStore.getInstance(context).getManagementState()
                     .getJSONObject("databaseResetInfo").getBoolean("pending"));
             }

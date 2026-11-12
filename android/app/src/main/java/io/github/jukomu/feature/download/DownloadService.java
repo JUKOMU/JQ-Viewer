@@ -7,6 +7,7 @@ import io.github.jukomu.feature.download.data.DownloadStore;
 import io.github.jukomu.feature.download.model.DownloadProgressData;
 import io.github.jukomu.feature.download.notification.DownloadForegroundService;
 import io.github.jukomu.feature.download.notification.DownloadNotificationHelper;
+import io.github.jukomu.feature.localfile.data.LocalFileStore;
 import io.github.jukomu.feature.download.storage.FileStore;
 import io.github.jukomu.feature.download.validation.ImageFileValidator;
 import io.github.jukomu.jmcomic.api.download.task.BaseDownloadTask;
@@ -249,6 +250,7 @@ public class DownloadService {
     public JSONObject getDownloadTasksPage(String status, String sort, String direction,
                                            String cursor, int limit) throws org.json.JSONException {
         JSONObject result = downloadDb.getTasksPage(status, sort, direction, cursor, limit);
+        attachRetainedExports(result);
         result.put("usedBytes", getUsedBytes());
         result.put("availableBytes", getAvailableBytes());
         result.put("totalBytes", fileStore.getTotalBytes());
@@ -256,11 +258,40 @@ public class DownloadService {
     }
 
     public List<JSONObject> getCompletedDownloadChapters(String albumId) {
-        return downloadDb.getCompletedChapters(albumId);
+        List<JSONObject> tasks = downloadDb.getCompletedChapters(albumId);
+        tasks.forEach(this::attachRetainedExport);
+        return tasks;
     }
 
     public List<JSONObject> getDownloadTaskStatuses(String albumId) {
-        return downloadDb.getAlbumTaskStatuses(albumId);
+        List<JSONObject> tasks = downloadDb.getAlbumTaskStatuses(albumId);
+        tasks.forEach(this::attachRetainedExport);
+        return tasks;
+    }
+
+    private void attachRetainedExports(JSONObject result) throws org.json.JSONException {
+        JSONArray items = result.getJSONArray("items");
+        for (int index = 0; index < items.length(); index++) {
+            JSONObject item = items.getJSONObject(index);
+            JSONArray chapters = item.optJSONArray("chapters");
+            if (chapters == null) {
+                attachRetainedExport(item);
+                continue;
+            }
+            for (int chapterIndex = 0; chapterIndex < chapters.length(); chapterIndex++) {
+                attachRetainedExport(chapters.getJSONObject(chapterIndex));
+            }
+        }
+    }
+
+    private void attachRetainedExport(JSONObject task) {
+        try {
+            JSONObject retained = LocalFileStore.getInstance(context)
+                .findRetainedExportForChapter(task.getString("albumId"), task.getString("chapterId"));
+            if (retained != null) task.put("retainedExport", retained);
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException(error);
+        }
     }
 
     public List<JSONObject> getActiveDownloadProgress() {

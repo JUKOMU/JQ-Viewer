@@ -70,6 +70,9 @@
 
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
+        <span v-if="(task as DownloadTask).retainedExport" class="tag export-format-tag">
+          {{ (task as DownloadTask).retainedExport?.format.toUpperCase() }}
+        </span>
         <span v-if="!isLocalFileEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
         <span v-if="isLocalFileEntry && displayLocalFilePageCount > 0" class="tag completed"
           >共 {{ displayLocalFilePageCount }} 页</span
@@ -79,7 +82,9 @@
           :icon="documentOutline"
           class="tag-icon local-file-tag-icon"
         />
-        <span v-if="sizeText" class="size-text">{{ sizeText }}</span>
+        <span v-if="sizeText && !(task as DownloadTask).retainedExport" class="size-text">
+          {{ sizeText }}
+        </span>
       </div>
 
       <!-- 部分失败 -->
@@ -615,6 +620,12 @@ const onCardClick = () => {
 .tag.completed {
   background: #eaf7ea;
   color: #52a86b;
+}
+
+.tag.export-format-tag {
+  background: #fff0e7;
+  color: #a95128;
+  font-weight: 700;
 }
 
 .tag.failed {

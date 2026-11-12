@@ -182,6 +182,7 @@ class DesktopUpdateServiceTest {
     void connectTimeoutStaysDistinctFromHeaderTimeout() throws Exception {
         try (Fixture fixture = fixture(path -> {
         }, Duration.ofSeconds(2))) {
+            fixture.http.connectTimeout = Duration.ofMillis(80);
             fixture.http.failConnect.set(true);
             fixture.service.check();
             assertTrue(fixture.service.start().started());
@@ -191,6 +192,36 @@ class DesktopUpdateServiceTest {
             assertTrue(error.contains("连接超时"), error);
             assertFalse(error.contains("响应头超时"), error);
             assertFalse(error.contains("HTTP connect timed out"), error);
+        }
+    }
+
+    @Test
+    void downloadDeadlineWinsWhenItPrecedesTheConnectionTimeout() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofMillis(80), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(90)))) {
+            fixture.http.connectTimeout = Duration.ofSeconds(5);
+            fixture.http.failConnect.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            assertTrue(fixture.service.snapshot().error().contains("下载总时限"),
+                    fixture.service.snapshot()::toString);
+        }
+    }
+
+    @Test
+    void connectionTimeoutWinsWhenItPrecedesTheDownloadDeadline() throws Exception {
+        try (Fixture fixture = fixture(path -> {
+        }, new Limits(Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(90)))) {
+            fixture.http.connectTimeout = Duration.ofMillis(80);
+            fixture.http.failConnect.set(true);
+            fixture.service.check();
+            assertTrue(fixture.service.start().started());
+            awaitPhase(fixture.service, "failed");
+
+            assertTrue(fixture.service.snapshot().error().contains("连接超时"),
+                    fixture.service.snapshot()::toString);
         }
     }
 
@@ -462,6 +493,7 @@ class DesktopUpdateServiceTest {
         private final AtomicBoolean blockGithubDownloadAtEof = new AtomicBoolean();
         private final AtomicInteger githubPackageStatus = new AtomicInteger(200);
         private final AtomicInteger giteePackageStatus = new AtomicInteger(200);
+        private volatile Duration connectTimeout = Duration.ofSeconds(10);
         private final CountDownLatch blockedManifestEntered = new CountDownLatch(1);
         private final CountDownLatch releaseBlockedManifest = new CountDownLatch(1);
         private final CountDownLatch githubDownloadReachedEof = new CountDownLatch(1);
@@ -484,6 +516,9 @@ class DesktopUpdateServiceTest {
                 releaseBlockedManifest.await();
             }
             if (failConnect.get() && isPackage(uri)) {
+                long waitNanos = Math.min(connectTimeout.toNanos(),
+                        request.timeout().orElse(connectTimeout).toNanos());
+                TimeUnit.NANOSECONDS.sleep(waitNanos);
                 throw new HttpConnectTimeoutException("HTTP connect timed out");
             }
             if (stallHeaders.get() && isPackage(uri)) {
@@ -572,7 +607,7 @@ class DesktopUpdateServiceTest {
         }
 
         @Override public Optional<CookieHandler> cookieHandler() { return Optional.empty(); }
-        @Override public Optional<Duration> connectTimeout() { return Optional.empty(); }
+        @Override public Optional<Duration> connectTimeout() { return Optional.of(connectTimeout); }
         @Override public Redirect followRedirects() { return Redirect.NEVER; }
         @Override public Optional<ProxySelector> proxy() { return Optional.empty(); }
         @Override public SSLContext sslContext() { return defaultSslContext(); }

@@ -133,6 +133,7 @@ describe('VerticalScrollView', () => {
       clientWidth: { configurable: true, value: 100 },
     })
     await wrapper.get('.reader-image').trigger('load')
+    await flushAnimationFrames()
 
     expect(wrapper.emitted('geometry-change')).toHaveLength(1)
     expect(wrapper.emitted('interaction-end')).toBeUndefined()
@@ -439,6 +440,12 @@ describe('VerticalScrollView', () => {
     })
     const container = wrapper.get('.vertical-container')
     Object.defineProperties(container.element, {
+      scrollHeight: {
+        configurable: true,
+        get: () => Number.parseFloat(
+          (wrapper.get('.virtual-inner').element as HTMLElement).style.height,
+        ),
+      },
       clientHeight: { configurable: true, value: 400 },
       clientWidth: { configurable: true, value: 600 },
       scrollTop: { configurable: true, value: 0, writable: true },
@@ -500,6 +507,12 @@ test('纵向百分比绕过 720px 限制，0% 保留页位，重置恢复默认�
   })
   const container = wrapper.get('.vertical-container')
   Object.defineProperties(container.element, {
+    scrollHeight: {
+      configurable: true,
+      get: () => Number.parseFloat(
+        (wrapper.get('.virtual-inner').element as HTMLElement).style.height,
+      ),
+    },
     clientHeight: { configurable: true, value: 400 },
     clientWidth: { configurable: true, value: 1440 },
     scrollTop: { configurable: true, value: 0, writable: true },

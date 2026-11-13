@@ -1,5 +1,5 @@
 /* eslint-disable vue/one-component-per-file -- 多个小型宿主分别覆盖自动播放状态 */
-import { defineComponent, h, ref } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
@@ -27,12 +27,193 @@ vi.mock('@/services/SettingsService', () => ({
 }))
 
 import { useReaderAutoPlay } from '@/composables/useReaderAutoPlay'
+import VerticalScrollView from '@/components/reader/VerticalScrollView.vue'
+
+const horizontalScrollActions = {
+  advanceScroll: async () => true,
+  cancelScroll: () => {},
+}
+
+async function mountVerticalReader(round: (value: number) => number) {
+  const frames = new Map<number, FrameRequestCallback>()
+  let frameId = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++frameId, callback)
+    return frameId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+  vi.stubGlobal('ResizeObserver', class {
+    observe() {}
+    disconnect() {}
+  })
+  const view = ref<InstanceType<typeof VerticalScrollView> | null>(null)
+  let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+  const wrapper = mount(defineComponent({
+    setup() {
+      const currentIndex = ref(0)
+      autoPlay = useReaderAutoPlay({
+        isVertical: ref(true),
+        currentIndex,
+        totalCount: ref(6),
+        getScrollContainer: () => view.value?.containerRef ?? null,
+        advanceScroll: (distance) => view.value!.advanceScroll(distance),
+        cancelScroll: () => view.value?.cancelAutoScroll(),
+        goToIndex: () => {},
+      })
+      return () => h(VerticalScrollView, {
+        ref: view,
+        imageMap: new Map(Array.from({ length: 6 }, (_, i) => [i + 1, `image-${i}`])),
+        totalCount: 6,
+        currentIndex: currentIndex.value,
+        'onUpdate:currentIndex': (index: number) => { currentIndex.value = index },
+        onGeometryChange: autoPlay.resumeAfterGeometryChange,
+      })
+    },
+  }))
+  const container = wrapper.get('.vertical-container').element as HTMLElement
+  const inner = wrapper.get('.virtual-inner').element as HTMLElement
+  let top = 0
+  const contentHeight = () => Number.parseFloat(inner.style.height)
+  Object.defineProperties(container, {
+    clientWidth: { configurable: true, value: 600 },
+    clientHeight: { configurable: true, value: 600 },
+    scrollHeight: { configurable: true, get: contentHeight },
+    scrollTop: {
+      configurable: true,
+      get: () => Math.min(top, Math.max(0, contentHeight() - 600)),
+      set: (value: number) => { top = Math.max(0, Math.min(contentHeight() - 600, round(value))) },
+    },
+  })
+  function fireFrame(now: number) {
+    const callbacks = [...frames.values()]
+    frames.clear()
+    callbacks.forEach((callback) => callback(now))
+  }
+  async function flush() {
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+  }
+  async function frame(now: number) {
+    fireFrame(now)
+    await flush()
+    container.dispatchEvent(new Event('scroll'))
+    await flush()
+  }
+  function loadImage(index: number, height: number) {
+    const image = wrapper.get(`[data-index="${index}"] img`).element
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 600 },
+      naturalHeight: { configurable: true, value: height },
+    })
+    image.dispatchEvent(new Event('load'))
+  }
+  await nextTick()
+  await frame(100)
+  await frame(200)
+  view.value!.scrollToIndex(1)
+  await nextTick()
+  await frame(300)
+  await frame(400)
+  return { wrapper, view, autoPlay, container, frames, fireFrame, frame, flush, loadImage }
+}
 
 afterEach(() => {
   vi.clearAllMocks()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 describe('useReaderAutoPlay', () => {
+  test.each([
+    ['小数', (value: number) => value],
+    ['取整', Math.trunc],
+  ] as const)('%s scrollTop 下双向低速位移在 120Hz 下累计', async (_label, round) => {
+    for (const direction of [1, -1]) {
+      const reader = await mountVerticalReader(round)
+      const start = reader.container.scrollTop
+      reader.autoPlay.toggle()
+      reader.autoPlay.updateInterval(direction * 30)
+      await reader.frame(1000)
+      for (let i = 1; i <= 120; i++) await reader.frame(1000 + i * 1000 / 120)
+      expect(Math.abs(reader.container.scrollTop - start - direction * 20)).toBeLessThan(1.000001)
+      reader.wrapper.unmount()
+    }
+  })
+
+  test.each([[1, 1200], [1, 400], [-1, 1200], [-1, 400]])(
+    '方向 %s、图片高度 %s 时补偿与低速播放同批提交', async (direction, height) => {
+    const reader = await mountVerticalReader(Math.trunc)
+    const start = reader.container.scrollTop
+    reader.autoPlay.toggle()
+    reader.autoPlay.updateInterval(direction * 30)
+    await reader.frame(1000)
+    reader.fireFrame(1000 + 1000 / 120)
+    reader.loadImage(0, height)
+    await reader.flush()
+    for (let i = 2; i <= 120; i++) await reader.frame(1000 + i * 1000 / 120)
+    expect(Math.abs(reader.container.scrollTop - start - (height - 800) - direction * 20))
+      .toBeLessThan(1.000001)
+    reader.wrapper.unmount()
+  })
+
+  test('同批多张图片增减高度时，播放增量只应用一次', async () => {
+    const reader = await mountVerticalReader((value) => value)
+    reader.view.value!.scrollToIndex(3)
+    await nextTick()
+    await reader.frame(1000)
+    const start = reader.container.scrollTop
+    const scroll = reader.view.value!.advanceScroll(0.25)
+    reader.loadImage(0, 1200)
+    reader.loadImage(1, 400)
+    await scroll
+    expect(reader.container.scrollTop).toBe(start + 0.25)
+    reader.wrapper.unmount()
+  })
+
+  test('暂停撤销待提交播放量，保留图片补偿；恢复后从新时间起点推进', async () => {
+    const reader = await mountVerticalReader((value) => value)
+    const start = reader.container.scrollTop
+    reader.autoPlay.toggle()
+    reader.autoPlay.updateInterval(30)
+    await reader.frame(1000)
+    reader.fireFrame(1500)
+    reader.loadImage(0, 1200)
+    reader.autoPlay.pauseForInteraction()
+    await reader.flush()
+    expect(reader.container.scrollTop).toBe(start + 400)
+    reader.autoPlay.resumeAfterInteraction()
+    await reader.frame(9000)
+    expect(reader.container.scrollTop).toBe(start + 400)
+    await reader.frame(9050)
+    expect(reader.container.scrollTop).toBeCloseTo(start + 401)
+    reader.wrapper.unmount()
+  })
+
+  test('图片补偿在新内容高度提交后写入，不被旧滚动边界裁剪', async () => {
+    const reader = await mountVerticalReader((value) => value)
+    reader.container.scrollTop = 4400
+    reader.container.dispatchEvent(new Event('scroll'))
+    await reader.frame(1000)
+    reader.loadImage(3, 1200)
+    await reader.flush()
+    expect(reader.container.scrollTop).toBe(4800)
+    reader.wrapper.unmount()
+  })
+
+  test('跳页和卸载使已排队的位置提交失效', async () => {
+    const reader = await mountVerticalReader((value) => value)
+    const pending = reader.view.value!.advanceScroll(10)
+    reader.loadImage(0, 1200)
+    reader.view.value!.scrollToIndex(2)
+    await pending
+    await reader.frame(1000)
+    expect(reader.container.scrollTop).toBe(2120)
+    const position = reader.container.scrollTop
+    const beforeUnmount = reader.view.value!.advanceScroll(100)
+    reader.wrapper.unmount()
+    await beforeUnmount
+    expect(reader.container.scrollTop).toBe(position)
+  })
+
   test('横向自动播放按方向推进页面', () => {
     vi.useFakeTimers()
     let autoPlay!: ReturnType<typeof useReaderAutoPlay>
@@ -46,6 +227,7 @@ describe('useReaderAutoPlay', () => {
             currentIndex,
             totalCount: ref(4),
             getScrollContainer: () => null,
+            ...horizontalScrollActions,
             goToIndex,
           })
           return () => h('div')
@@ -74,6 +256,7 @@ describe('useReaderAutoPlay', () => {
             currentIndex,
             totalCount: ref(3),
             getScrollContainer: () => null,
+            ...horizontalScrollActions,
             goToIndex,
           })
           return () => h('div')
@@ -104,6 +287,7 @@ describe('useReaderAutoPlay', () => {
             currentIndex: ref(0),
             totalCount: ref(3),
             getScrollContainer: () => null,
+            ...horizontalScrollActions,
             goToIndex,
           })
           return () => h('div')
@@ -139,6 +323,12 @@ describe('useReaderAutoPlay', () => {
             currentIndex: ref(0),
             totalCount: ref(3),
             getScrollContainer: () => container,
+            advanceScroll: async (distance) => {
+              const max = container.scrollHeight - container.clientHeight
+              container.scrollTop = Math.max(0, Math.min(max, container.scrollTop + distance))
+              return distance === 0 || container.scrollTop < max
+            },
+            cancelScroll: () => {},
             goToIndex: () => {},
           })
           return () => h('div')
@@ -150,21 +340,23 @@ describe('useReaderAutoPlay', () => {
     const first = frames.entries().next().value!
     frames.delete(first[0])
     first[1](1000)
+    await Promise.resolve()
     const second = frames.entries().next().value!
     frames.delete(second[0])
     second[1](2000)
+    await Promise.resolve()
     const third = frames.entries().next().value!
     frames.delete(third[0])
     third[1](3000)
+    await Promise.resolve()
     const fourth = frames.entries().next().value!
     frames.delete(fourth[0])
     fourth[1](4000)
+    await Promise.resolve()
     const fifth = frames.entries().next().value!
     frames.delete(fifth[0])
     fifth[1](5000)
-    const sixth = frames.entries().next().value!
-    frames.delete(sixth[0])
-    sixth[1](6000)
+    await Promise.resolve()
     expect(container.scrollTop).toBe(200)
     expect(frames.size).toBe(0)
 
@@ -190,6 +382,7 @@ describe('useReaderAutoPlay', () => {
             currentIndex: ref(1),
             totalCount: ref(2),
             getScrollContainer: () => null,
+            ...horizontalScrollActions,
             goToIndex,
           })
           return () => h('div')
@@ -218,6 +411,7 @@ describe('useReaderAutoPlay', () => {
             currentIndex,
             totalCount,
             getScrollContainer: () => null,
+            ...horizontalScrollActions,
             goToIndex: () => {},
           })
           return () => h('div')

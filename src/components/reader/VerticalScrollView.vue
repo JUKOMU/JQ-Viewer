@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { refreshOutline } from 'ionicons/icons'
 
@@ -356,15 +356,18 @@ function updateZoomCurrentIndex() {
 
 function resetZoom(preserveViewport = false) {
   const el = containerRef.value
+  const hadZoom = zoomScale.value !== 1 || zoomTx.value !== 0 || zoomTy.value !== 0
   const focusContentY = preserveViewport ? getZoomFocusContentY() : 0
   const ch = containerHeight.value || el?.clientHeight || 0
   zoomScale.value = 1
   zoomTx.value = 0
   zoomTy.value = 0
-  if (preserveViewport && el) {
+  if (preserveViewport && el && hadZoom) {
+    resetScrollPosition()
     const targetTop = Math.max(0, focusContentY - ch * 0.35)
     isAdjusting = true
     el.scrollTop = targetTop
+    lastWrittenScrollTop = el.scrollTop
     updateVisibleRange(targetTop)
     emitCurrentIndex(getCurrentIndex(targetTop))
     window.requestAnimationFrame(() => {
@@ -390,24 +393,13 @@ function updateMeasuredHeight(index: number, nextHeight: number) {
   const prevHeight = heights.value[index] ?? getEstimatedHeight()
   if (Math.abs(prevHeight - nextHeight) < 1) return
 
-  const el = containerRef.value
-  const anchorScrollTop = el?.scrollTop ?? 0
-  const anchorIndex = getCurrentIndex(anchorScrollTop)
-  const anchorOffset = anchorScrollTop - getPageTop(anchorIndex)
+  const update = queueScrollUpdate()
+  update.geometryChanged = true
 
   const nextHeights = heights.value.slice()
   nextHeights[index] = nextHeight
   heights.value = nextHeights
   rebuildPrefixSums(nextHeights)
-
-  if (el) {
-    isAdjusting = true
-    el.scrollTop = Math.max(0, getPageTop(anchorIndex) + anchorOffset)
-    window.requestAnimationFrame(() => {
-      isAdjusting = false
-      updateVisibleRange(el.scrollTop)
-    })
-  }
 }
 
 function onImageLoad(index: number, ev: Event) {
@@ -416,7 +408,82 @@ function onImageLoad(index: number, ev: Event) {
   const width = contentWidth.value || img.clientWidth
   if (width <= 0) return
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
-  emit('geometry-change')
+}
+
+/** 一次 DOM 更新内共享的布局锚点；像素播放量与宽度缩放分开计算。 */
+interface ScrollUpdate {
+  index: number
+  offset: number
+  // 包含上次写入未生效的小数位移，宽度变化不缩放播放距离。
+  distance: number
+  insideStart: boolean
+  geometryChanged: boolean
+  // 同批调用等待同一次提交，避免播放循环先读取旧布局边界。
+  settled: Promise<void>
+}
+
+let pendingScroll: ScrollUpdate | null = null
+let scrollRemainder = 0
+let lastWrittenScrollTop = 0
+
+/** 同批测高保持同一个锚点，播放距离独立累计，待新布局生效后统一提交。 */
+function queueScrollUpdate(): ScrollUpdate {
+  if (pendingScroll) return pendingScroll
+  const el = containerRef.value!
+  const insideStart = el.scrollTop < contentOffset.value
+  const index = insideStart ? 0 : getCurrentIndex(el.scrollTop)
+  const update: ScrollUpdate = {
+    index,
+    offset: el.scrollTop - getPageTop(index),
+    distance: scrollRemainder,
+    insideStart,
+    geometryChanged: false,
+    // 锚点在改高度前捕获；下一微任务再等待 Vue，确保更新队列已经建立。
+    settled: Promise.resolve().then(() => nextTick()).then(() => {
+      if (pendingScroll !== update) return
+      const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
+      const target = Math.max(
+        0,
+        Math.min(maxTop, getPageTop(update.index) + update.offset + update.distance),
+      )
+      el.scrollTop = target
+      lastWrittenScrollTop = el.scrollTop
+      // 自身 scroll 回读不清除量化余量；真实边界外的距离已由 target 裁掉。
+      scrollRemainder = target - lastWrittenScrollTop
+      pendingScroll = null
+      updateVisibleRange(lastWrittenScrollTop)
+      emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
+      updateBottomState()
+      if (update.geometryChanged) emit('geometry-change')
+    }),
+  }
+  scrollRemainder = 0
+  pendingScroll = update
+  return update
+}
+
+/** 推进带方向的 CSS 像素增量，提交后返回该方向是否仍有可滚动空间。 */
+async function advanceScroll(distance: number) {
+  const el = containerRef.value!
+  const update = queueScrollUpdate()
+  update.distance += distance
+  await update.settled
+  const position = el.scrollTop + scrollRemainder
+  return distance < 0
+    ? position > 0
+    : distance === 0 || position < Math.max(0, el.scrollHeight - el.clientHeight)
+}
+
+/** 交互或播放状态变化只撤销播放量，同批图片尺寸补偿仍须提交。 */
+function cancelAutoScroll() {
+  scrollRemainder = 0
+  if (pendingScroll) pendingScroll.distance = 0
+}
+
+/** 显式跳页或外部滚动接管位置，旧锚点不能再写回。 */
+function resetScrollPosition() {
+  pendingScroll = null
+  scrollRemainder = 0
 }
 
 let scrollRafId: number | null = null
@@ -441,6 +508,11 @@ function updateBottomState() {
 
 function onScroll() {
   if (touchSettleTimer) finishTouchInteraction()
+  const el = containerRef.value
+  if (el && el.scrollTop !== lastWrittenScrollTop) {
+    resetScrollPosition()
+    lastWrittenScrollTop = el.scrollTop
+  }
   if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
@@ -457,6 +529,7 @@ function onScroll() {
 
 function applyScrollToIndex(index: number) {
   if (!containerRef.value || props.totalCount <= 0) return true
+  resetScrollPosition()
   resetZoom(false)
   updateContainerSize()
   const next = clampIndex(index)
@@ -464,6 +537,7 @@ function applyScrollToIndex(index: number) {
   isAdjusting = true
   containerRef.value.scrollTop = targetTop
   const actualTop = containerRef.value.scrollTop
+  lastWrittenScrollTop = actualTop
   updateVisibleRange(actualTop)
   emitCurrentIndex(next)
   window.requestAnimationFrame(() => {
@@ -473,6 +547,7 @@ function applyScrollToIndex(index: number) {
 }
 
 function scheduleScrollToIndex(index: number, retries = SCROLL_SYNC_RETRY_MAX) {
+  resetScrollPosition()
   const token = ++scrollSyncToken
   nextTick(() => {
     scrollSyncRafId = window.requestAnimationFrame(() => {
@@ -493,31 +568,24 @@ function scrollToIndex(index: number) {
 function refreshAfterResize() {
   const oldWidth = containerWidth.value
   if (!updateContainerSize()) return
-  emit('geometry-change')
   if (oldWidth <= 0) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     scheduleScrollToIndex(props.currentIndex)
+    emit('geometry-change')
     return
   }
+  const update = queueScrollUpdate()
+  update.geometryChanged = true
   if (oldWidth === containerWidth.value) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     return
   }
 
   const ratio = containerWidth.value / oldWidth
-  const anchorScrollTop = containerRef.value?.scrollTop ?? 0
-  const anchorIndex = getCurrentIndex(anchorScrollTop)
-  const anchorOffset = anchorScrollTop - getPageTop(anchorIndex)
-  const isInsideStartIndicator = anchorScrollTop < contentOffset.value
   const nextHeights = heights.value.map((h) => h * ratio)
   heights.value = nextHeights
   rebuildPrefixSums(nextHeights)
-  if (containerRef.value) {
-    containerRef.value.scrollTop = isInsideStartIndicator
-      ? anchorScrollTop
-      : getPageTop(anchorIndex) + anchorOffset * ratio
-    updateVisibleRange(containerRef.value.scrollTop)
-  }
+  if (!update.insideStart) update.offset *= ratio
 }
 
 watch(
@@ -800,7 +868,9 @@ function onMousePointerMove(ev: PointerEvent) {
   const el = containerRef.value
   if (!el) return
   if (zoomScale.value <= 1) {
+    resetScrollPosition()
     el.scrollTop = mouseStartScrollTop - dy
+    lastWrittenScrollTop = el.scrollTop
     onScroll()
     return
   }
@@ -874,7 +944,10 @@ onMounted(() => {
   resizeObserver.observe(el)
 })
 
+onDeactivated(resetScrollPosition)
+
 onUnmounted(() => {
+  resetScrollPosition()
   if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
   if (touchSettleTimer) clearTimeout(touchSettleTimer)
   wheelInteractionTimer = null
@@ -895,13 +968,24 @@ onUnmounted(() => {
   el.removeEventListener('pointercancel', onMousePointerUp)
 })
 
-defineExpose({ scrollToIndex, containerRef, isAtBottom, zoomIn, zoomOut, resetZoom })
+defineExpose({
+  scrollToIndex,
+  containerRef,
+  isAtBottom,
+  zoomIn,
+  zoomOut,
+  resetZoom,
+  advanceScroll,
+  cancelAutoScroll,
+})
 </script>
 
 <style scoped>
 .vertical-container {
   height: 100%;
   overflow-y: auto;
+  /* 阅读位置由组件按图片尺寸补偿，避免原生锚定叠加位移。 */
+  overflow-anchor: none;
   overscroll-behavior: none;
   overflow-x: hidden;
   background: #000;

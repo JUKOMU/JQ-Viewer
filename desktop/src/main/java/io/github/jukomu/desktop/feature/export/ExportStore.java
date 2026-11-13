@@ -139,6 +139,27 @@ public final class ExportStore {
         }
     }
 
+    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code "
+            + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
+            + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
+            + "AND t.retain_download_entry=1 "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next() && rows.getInt("delete_source_after_export") == 1
+                    && rows.getInt("retain_download_entry") == 1
+                    && "completed".equals(rows.getString("status"))
+                    && rows.getString("error_code") == null;
+            }
+        } catch (SQLException exception) {
+            throw failure("读取原下载文件清理状态失败", exception);
+        }
+    }
+
     public synchronized Page list(
         String format,
         String status,

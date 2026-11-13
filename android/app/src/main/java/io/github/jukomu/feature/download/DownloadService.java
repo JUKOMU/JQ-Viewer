@@ -320,7 +320,18 @@ public class DownloadService {
     }
 
     public List<String> getDownloadedResourceKeys(List<String> albumIds, List<String> chapterIds) {
-        return downloadDb.getCompletedResourceKeys(albumIds, chapterIds);
+        if (albumIds == null || chapterIds == null || albumIds.size() != chapterIds.size()) return List.of();
+        List<String> completed = downloadDb.getCompletedResourceKeys(albumIds, chapterIds);
+        List<String> result = new ArrayList<>();
+        LocalFileStore localFileStore = LocalFileStore.getInstance(context);
+        for (int index = 0; index < albumIds.size(); index++) {
+            String key = albumIds.get(index) + "|" + chapterIds.get(index);
+            if (completed.contains(key)
+                && !localFileStore.isSourceDeletedAfterExport(albumIds.get(index), chapterIds.get(index))) {
+                result.add(key);
+            }
+        }
+        return result;
     }
 
     public JSONObject clearDownloadTasks(String status) throws org.json.JSONException {

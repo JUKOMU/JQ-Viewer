@@ -72,6 +72,39 @@ public class LocalFileStoreInstrumentedTest {
     }
 
     @Test
+    public void sourceCleanupStateUsesRetainedExportOptionsAndFailureCode() throws Exception {
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        JSONObject task = new JSONObject()
+            .put("exportId", "cleanup-state")
+            .put("batchId", "batch-cleanup-state")
+            .put("format", "pdf")
+            .put("mode", "chapter")
+            .put("albumId", "album-1")
+            .put("chapterId", "chapter-1")
+            .put("displayTitle", "Chapter 1")
+            .put("targetFolderRef", LocalFileRef.createPathFolderRef(
+                context.getCacheDir().getCanonicalPath()))
+            .put("targetName", "chapter-1.pdf")
+            .put("displayPath", new File(context.getCacheDir(), "chapter-1.pdf").getCanonicalPath())
+            .put("deleteSourceAfterExport", true)
+            .put("retainDownloadEntry", true)
+            .put("status", "completed")
+            .put("phase", "completed")
+            .put("createdAt", 1L);
+        JSONArray chapters = new JSONArray().put(new JSONObject()
+            .put("albumId", "album-1")
+            .put("chapterId", "chapter-1")
+            .put("chapterTitle", "Chapter 1"));
+
+        store.reserveExport(task, chapters, new JSONArray());
+
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        store.updateExportProgress("cleanup-state", "completed", "completed",
+            0, 0, 0, 0, "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
+        assertFalse(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+    }
+
+    @Test
     public void versionTenDatabaseMigratesFilesTasksVolumesAndChapterRanges() throws Exception {
         File databaseFile = context.getDatabasePath(DB_NAME);
         File parent = databaseFile.getParentFile();

@@ -268,6 +268,11 @@ class ExportServiceTest {
             assertFalse(Files.exists(sourceImage));
             assertNotNull(fixture.downloads.findTask("album-1", "chapter-1"));
             assertNotNull(fixture.store.findRetainedExportForChapter("album-1", "chapter-1"));
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+            fixture.store.updateProgress(queued.exportId(), "completed", "completed",
+                    completed.currentPage(), completed.totalPages(), completed.currentVolume(),
+                    completed.totalVolumes(), "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
+            assertFalse(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
         }
     }
 

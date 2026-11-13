@@ -193,7 +193,16 @@ public final class DownloadService implements AutoCloseable {
     public List<String> getDownloadedResourceKeys(List<DownloadResourceKeysRequest.Item> items) {
         List<String> albums = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::albumId).toList();
         List<String> chapters = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::chapterId).toList();
-        return store.completedResourceKeys(albums, chapters);
+        Set<String> completed = new HashSet<>(store.completedResourceKeys(albums, chapters));
+        List<String> result = new ArrayList<>();
+        for (int index = 0; index < albums.size(); index++) {
+            String key = albums.get(index) + "|" + chapters.get(index);
+            if (completed.contains(key)
+                && !exports.isSourceDeletedAfterExport(albums.get(index), chapters.get(index))) {
+                result.add(key);
+            }
+        }
+        return List.copyOf(result);
     }
 
     public Map<String, Integer> clearDownloadTasks(String status) {

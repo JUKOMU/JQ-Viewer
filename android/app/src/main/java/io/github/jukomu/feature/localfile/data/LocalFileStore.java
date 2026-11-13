@@ -942,6 +942,22 @@ public class LocalFileStore extends SQLiteOpenHelper {
         }
     }
 
+    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    public boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code "
+            + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
+            + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
+            + "AND t.retain_download_entry=1 "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
+            if (!cursor.moveToFirst()) return false;
+            return getInt(cursor, "delete_source_after_export") == 1
+                && getInt(cursor, "retain_download_entry") == 1
+                && "completed".equals(getString(cursor, "status"))
+                && cursor.isNull(cursor.getColumnIndexOrThrow("error_code"));
+        }
+    }
+
     /** 返回指定导出文件关联的保留下载章节。 */
     public JSONArray getRetainedChaptersForFile(long fileId) {
         JSONArray chapters = new JSONArray();

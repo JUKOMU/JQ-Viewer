@@ -139,6 +139,7 @@ public final class DownloadService implements AutoCloseable {
                     relativeDirectory,
                     System.currentTimeMillis()
                 );
+                exports.invalidateSourceCleanup(albumId, chapterId);
                 runtimes.put(taskId, runtime);
                 logInfo("submit", taskId, albumId, chapterId, "submit", null, null, 0,
                     null, "queued", null, 0);
@@ -674,15 +675,15 @@ public final class DownloadService implements AutoCloseable {
             task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
             task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
             task.error(), task.downloadedBytes(), task.totalSize(),
-            retainedExportResponse(task.albumId(), task.chapterId())
+            retainedExportResponses(task.albumId(), task.chapterId())
         );
     }
 
-    private RetainedDownloadExport retainedExportResponse(String albumId, String chapterId) {
-        ExportStore.RetainedExport retained = exports.findRetainedExportForChapter(albumId, chapterId);
-        if (retained == null) return null;
-        return new RetainedDownloadExport(retained.exportId(), retained.format(), retained.fileId(),
-            retained.fileRef(), retained.startPage(), retained.pageCount());
+    private List<RetainedDownloadExport> retainedExportResponses(String albumId, String chapterId) {
+        return exports.findRetainedExportsForChapter(albumId, chapterId).stream()
+            .map(retained -> new RetainedDownloadExport(retained.exportId(), retained.format(), retained.fileId(),
+                retained.fileRef(), retained.startPage(), retained.pageCount()))
+            .toList();
     }
 
     private CompletedDownloadGroupResponse completedResponse(DownloadStore.CompletedAlbum album) {

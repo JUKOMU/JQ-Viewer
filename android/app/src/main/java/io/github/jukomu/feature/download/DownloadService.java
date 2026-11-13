@@ -110,6 +110,7 @@ public class DownloadService {
         taskStartedAtNanos.put(taskId, SystemClock.elapsedRealtimeNanos());
         downloadDb.insertTask(taskId, albumId, chapterId,
             albumTitle, chapterTitle, coverUrl);
+        LocalFileStore.getInstance(context).invalidateSourceCleanup(albumId, chapterId);
         logDownloadEvent(taskId, albumId, chapterId, "started", "submit", STATUS_QUEUED,
             0, 0, 0, 0, null, null, null);
         notificationHelper.registerTask(taskId);
@@ -286,9 +287,9 @@ public class DownloadService {
 
     private void attachRetainedExport(JSONObject task) {
         try {
-            JSONObject retained = LocalFileStore.getInstance(context)
-                .findRetainedExportForChapter(task.getString("albumId"), task.getString("chapterId"));
-            if (retained != null) task.put("retainedExport", retained);
+            JSONArray retained = LocalFileStore.getInstance(context)
+                .findRetainedExportsForChapter(task.getString("albumId"), task.getString("chapterId"));
+            if (retained.length() > 0) task.put("retainedExports", retained);
         } catch (org.json.JSONException error) {
             throw new IllegalStateException(error);
         }

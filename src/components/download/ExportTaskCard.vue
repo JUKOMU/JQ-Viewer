@@ -67,13 +67,8 @@
       <button
         v-if="deletable"
         type="button"
-        :disabled="task.retainDownloadEntry"
         :aria-label="`删除 ${task.format.toUpperCase()} 导出任务记录`"
-        :title="
-          task.retainDownloadEntry
-            ? '该任务关联下载列表，删除对应文件后才能清理任务记录'
-            : '删除任务记录'
-        "
+        title="删除任务记录"
         @pointerdown.stop
         @click.stop="$emit('delete')"
       >

@@ -215,7 +215,9 @@ public class ExportService {
         if (!LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
             throw new IllegalStateException("活动导出任务不能删除");
         }
-        if (task.optBoolean("retainDownloadEntry")) {
+        if (task.optBoolean("retainDownloadEntry")
+            && "completed".equals(task.optString("status"))
+            && localFileStore.hasRetainedExportForTask(exportId)) {
             throw LocalFileOperationException.conflict("导出任务仍关联下载列表，请先删除对应文件");
         }
         cleanupKnownArtifacts(exportId, true);
@@ -624,14 +626,11 @@ public class ExportService {
                     publishExportForeground(sessionId, job, "准备写入", 0, preflight.totalPages, 1,
                         preflight.volumes.size());
                     exportJob(job, preflight, notificationId, sessionId, String.valueOf(batchId));
+                    boolean cleanupComplete = deleteSourceDownloads(job);
                     updateProgress(job.exportId, "completed", "completed", preflight.totalPages,
                         preflight.totalPages, preflight.volumes.size(), preflight.volumes.size(),
-                        null, null);
-                    if (!deleteSourceDownloads(job)) {
-                        updateProgress(job.exportId, "completed", "completed", preflight.totalPages,
-                            preflight.totalPages, preflight.volumes.size(), preflight.volumes.size(),
-                            "SOURCE_CLEANUP_FAILED", "导出已完成，但部分原下载文件未能删除");
-                    }
+                        cleanupComplete ? null : "SOURCE_CLEANUP_FAILED",
+                        cleanupComplete ? null : "导出已完成，但部分原下载文件未能删除");
                     success++;
                     logExportEvent(job, String.valueOf(batchId), "completed", "completed", "completed",
                         preflight.totalPages, preflight.totalPages, null, null, null);
@@ -855,8 +854,10 @@ public class ExportService {
                     downloadStore.deleteImages(taskId);
                     downloadStore.deleteTask(taskId);
                 }
+                localFileStore.updateSourceCleanup(job.exportId, chapter.albumId, chapter.chapterId, "deleted");
             } catch (RuntimeException error) {
                 complete = false;
+                localFileStore.updateSourceCleanup(job.exportId, chapter.albumId, chapter.chapterId, "failed");
                 LOGGER.warn("导出已完成，但原下载文件清理失败: albumId={} chapterId={} errorClass={}",
                     chapter.albumId, chapter.chapterId, error.getClass().getSimpleName(), error);
             }

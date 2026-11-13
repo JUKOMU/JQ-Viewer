@@ -45,11 +45,11 @@ public class LocalFileStoreInstrumentedTest {
     }
 
     @Test
-    public void newDatabaseCreatesVersionTwelveGenericSchemaWithoutResetNotice() throws Exception {
+    public void newDatabaseCreatesVersionThirteenGenericSchemaWithoutResetNotice() throws Exception {
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase database = store.getWritableDatabase();
 
-        assertEquals(12, database.getVersion());
+        assertEquals(13, database.getVersion());
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILES));
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILE_CHAPTERS));
         assertTrue(tableExists(database, LocalFileStore.TABLE_TASKS));
@@ -97,6 +97,7 @@ public class LocalFileStoreInstrumentedTest {
             .put("chapterTitle", "Chapter 1"));
 
         store.reserveExport(task, chapters, new JSONArray());
+        store.updateSourceCleanup("cleanup-state", "album-1", "chapter-1", "deleted");
 
         assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
         store.updateExportProgress("cleanup-state", "completed", "completed",
@@ -153,7 +154,7 @@ public class LocalFileStoreInstrumentedTest {
 
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase upgraded = store.getWritableDatabase();
-        assertEquals(12, upgraded.getVersion());
+        assertEquals(13, upgraded.getVersion());
         assertEquals(2L, store.countFiles());
         JSONArray importedFiles = store.getAllFiles(null, LocalFileStore.SOURCE_IMPORTED);
         assertEquals(1, importedFiles.length());
@@ -207,7 +208,7 @@ public class LocalFileStoreInstrumentedTest {
         }
 
         LocalFileStore store = LocalFileStore.getInstance(context);
-        assertEquals(12, store.getWritableDatabase().getVersion());
+        assertEquals(13, store.getWritableDatabase().getVersion());
         assertEquals(5, store.countFiles());
         JSONObject file = store.getFileByRef("file:path:" + physicalFile.getAbsolutePath());
         assertEquals("pdf", file.getString("format"));
@@ -294,7 +295,7 @@ public class LocalFileStoreInstrumentedTest {
             }
             LocalFileStore store = LocalFileStore.getInstance(context);
             SQLiteDatabase upgraded = store.getWritableDatabase();
-            assertEquals(12, upgraded.getVersion());
+            assertEquals(13, upgraded.getVersion());
             assertEquals(0, store.countFiles());
             assertEquals(0, store.getAllExportTasks().length());
             for (String table : oldTables) assertFalse(table, tableExists(upgraded, table));

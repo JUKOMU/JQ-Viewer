@@ -327,7 +327,7 @@ export interface DownloadTask {
   speed?: number
   downloadedBytes?: number
   totalSize?: number
-  retainedExport?: RetainedDownloadExport
+  retainedExports?: RetainedDownloadExport[]
 }
 
 export interface RetainedDownloadExport {

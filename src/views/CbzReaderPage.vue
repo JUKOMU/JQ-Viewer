@@ -161,7 +161,10 @@ let toolbarTimer: ReturnType<typeof setTimeout> | null = null
 let readerSession: LocalReaderSession | null = null
 
 const pageUrl = (page: number) =>
-  runtime.resources.cbzPageUrl({ file: fileRef, page: readerSession?.physicalPage(page) ?? page })
+  runtime.resources.cbzPageUrl({
+    file: asFileRef(readerSession?.fileRefForPage(page) || fileRef),
+    page: readerSession?.physicalPage(page) ?? page,
+  })
 
 const ensureWindow = (center: number, start = center, end = center + 1) => {
   const preload = Math.max(2, SettingsStore.getReaderPreloadPages())
@@ -392,9 +395,15 @@ onMounted(async () => {
   }
   activateReader()
   try {
-    const info = await JmcomicService.getCbzInfo(fileRef)
-    if (info.pageCount <= 0) throw new Error('CBZ 中没有可阅读图片')
-    readerSession = createLocalReaderSession(route.query, info.pageCount)
+    const retainedVolumes = JSON.parse(String(route.query.retainedVolumes ?? '[]')) as {
+      fileRef: string
+    }[]
+    const volumes = retainedVolumes.length ? retainedVolumes : [{ fileRef: String(fileRef) }]
+    const pageCount = (await Promise.all(
+      volumes.map((volume) => JmcomicService.getCbzInfo(asFileRef(volume.fileRef))),
+    )).reduce((total, info) => total + info.pageCount, 0)
+    if (pageCount <= 0) throw new Error('CBZ 中没有可阅读图片')
+    readerSession = createLocalReaderSession(route.query, pageCount)
     totalCount.value = readerSession.totalPages
     const initialPage = readerSession.initialPage(route.query.page)
     moveToIndex(initialPage - 1)

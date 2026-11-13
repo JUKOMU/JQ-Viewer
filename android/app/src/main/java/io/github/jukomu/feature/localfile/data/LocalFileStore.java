@@ -21,7 +21,7 @@ import java.util.List;
 public class LocalFileStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "jq_pdf_import.db";
-    private static final int DB_VERSION = 12;
+    private static final int DB_VERSION = 13;
 
     public static final String SOURCE_IMPORTED = "imported";
     public static final String SOURCE_EXPORTED = "exported";
@@ -67,20 +67,25 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (oldVersion >= 1 && oldVersion < 9 && newVersion == 12) {
+        if (oldVersion >= 1 && oldVersion < 9 && newVersion == 13) {
             rebuildLegacyDatabase(db, oldVersion);
             return;
         }
-        if (oldVersion == 9 && newVersion == 12) {
+        if (oldVersion == 9 && newVersion == 13) {
             migrateV9ToV11(db);
             return;
         }
-        if (oldVersion == 10 && newVersion == 12) {
+        if (oldVersion == 10 && newVersion == 13) {
             migrateV10ToV11(db);
             return;
         }
-        if (oldVersion == 11 && newVersion == 12) {
+        if (oldVersion == 11 && newVersion == 13) {
             migrateV11ToV12(db);
+            migrateV12ToV13(db);
+            return;
+        }
+        if (oldVersion == 12 && newVersion == 13) {
+            migrateV12ToV13(db);
             return;
         }
         throw new IllegalStateException(
@@ -335,7 +340,9 @@ public class LocalFileStore extends SQLiteOpenHelper {
             + "chapter_id TEXT NOT NULL,"
             + "chapter_title TEXT NOT NULL DEFAULT '',"
             + "sort_order INTEGER NOT NULL DEFAULT 0,"
-            + "expected_page_count INTEGER NOT NULL DEFAULT 0,"
+                + "expected_page_count INTEGER NOT NULL DEFAULT 0,"
+                + "source_cleanup_status TEXT NOT NULL DEFAULT 'not_attempted' "
+                + "CHECK(source_cleanup_status IN ('not_attempted','deleted','failed')) ,"
             + "PRIMARY KEY(export_id, sequence),"
             + "FOREIGN KEY(export_id) REFERENCES " + TABLE_TASKS
             + "(export_id) ON DELETE CASCADE"
@@ -409,7 +416,10 @@ public class LocalFileStore extends SQLiteOpenHelper {
             + "target_name,display_path,allow_overwrite,use_original,compression_ratio,split_pages,status,"
             + "phase,current_page,total_pages,current_volume,total_volumes,snapshot_revision,cancel_requested,"
             + "error_code,error_message,created_at,started_at,updated_at,completed_at FROM pdf_export_tasks");
-        db.execSQL("INSERT INTO " + TABLE_CHAPTERS + " SELECT * FROM pdf_export_chapters");
+        db.execSQL("INSERT INTO " + TABLE_CHAPTERS
+            + "(export_id,sequence,album_id,chapter_id,chapter_title,sort_order,expected_page_count) "
+            + "SELECT export_id,sequence,album_id,chapter_id,chapter_title,sort_order,expected_page_count "
+            + "FROM pdf_export_chapters");
         db.execSQL("INSERT INTO " + TABLE_VOLUMES + " SELECT * FROM pdf_export_volumes");
 
         rebuildExportedFileChapters(db);
@@ -438,6 +448,12 @@ public class LocalFileStore extends SQLiteOpenHelper {
             + "(retain_download_entry,status,updated_at DESC,export_id)");
         db.execSQL("CREATE INDEX idx_export_task_chapters_chapter ON " + TABLE_CHAPTERS
             + "(album_id,chapter_id,export_id,sequence)");
+    }
+
+    private static void migrateV12ToV13(SQLiteDatabase db) {
+        db.execSQL("ALTER TABLE " + TABLE_CHAPTERS
+            + " ADD COLUMN source_cleanup_status TEXT NOT NULL DEFAULT 'not_attempted' "
+            + "CHECK(source_cleanup_status IN ('not_attempted','deleted','failed'))");
     }
 
     private static void rebuildExportedFileChapters(SQLiteDatabase db) {
@@ -917,8 +933,8 @@ public class LocalFileStore extends SQLiteOpenHelper {
         }
     }
 
-    /** 查找章节当前使用的最近可用保留导出文件。 */
-    public JSONObject findRetainedExportForChapter(String albumId, String chapterId) {
+    /** 查找章节当前使用的最近可用保留导出分卷。 */
+    public JSONArray findRetainedExportsForChapter(String albumId, String chapterId) {
         String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "JOIN " + TABLE_VOLUMES + " v ON v.export_id=t.export_id AND v.status='completed' "
@@ -926,25 +942,39 @@ public class LocalFileStore extends SQLiteOpenHelper {
             + "JOIN " + TABLE_FILE_CHAPTERS + " c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
             + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
-            + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index LIMIT 1";
+            + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
+        JSONArray result = new JSONArray();
         try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
-            if (!cursor.moveToFirst()) return null;
-            JSONObject result = new JSONObject();
-            result.put("exportId", getString(cursor, "export_id"));
-            result.put("format", getString(cursor, "format"));
-            result.put("fileId", getLong(cursor, "file_id"));
-            result.put("fileRef", getString(cursor, "file_ref"));
-            result.put("startPage", getInt(cursor, "start_page"));
-            result.put("pageCount", getInt(cursor, "page_count"));
+            String exportId = null;
+            while (cursor.moveToNext()) {
+                String currentExportId = getString(cursor, "export_id");
+                if (exportId == null) exportId = currentExportId;
+                if (!exportId.equals(currentExportId)) break;
+                JSONObject volume = new JSONObject();
+                volume.put("exportId", currentExportId);
+                volume.put("format", getString(cursor, "format"));
+                volume.put("fileId", getLong(cursor, "file_id"));
+                volume.put("fileRef", getString(cursor, "file_ref"));
+                volume.put("startPage", getInt(cursor, "start_page"));
+                volume.put("pageCount", getInt(cursor, "page_count"));
+                result.put(volume);
+            }
             return result;
         } catch (org.json.JSONException error) {
             throw new IllegalStateException(error);
         }
     }
 
+    /** 查找章节当前使用的第一个可用保留导出分卷。 */
+    public JSONObject findRetainedExportForChapter(String albumId, String chapterId) {
+        JSONArray exports = findRetainedExportsForChapter(albumId, chapterId);
+        return exports.optJSONObject(0);
+    }
+
     /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
     public boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
-        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code "
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code,"
+            + "ec.source_cleanup_status "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
             + "AND t.retain_download_entry=1 "
@@ -954,8 +984,38 @@ public class LocalFileStore extends SQLiteOpenHelper {
             return getInt(cursor, "delete_source_after_export") == 1
                 && getInt(cursor, "retain_download_entry") == 1
                 && "completed".equals(getString(cursor, "status"))
-                && cursor.isNull(cursor.getColumnIndexOrThrow("error_code"));
+                && cursor.isNull(cursor.getColumnIndexOrThrow("error_code"))
+                && "deleted".equals(getString(cursor, "source_cleanup_status"));
         }
+    }
+
+    /** 判断导出任务是否仍关联可用的保留下载文件。 */
+    public boolean hasRetainedExportForTask(String exportId) {
+        String sql = "SELECT 1 FROM " + TABLE_TASKS + " t JOIN " + TABLE_VOLUMES
+            + " v ON v.export_id=t.export_id JOIN " + TABLE_FILES
+            + " f ON f.file_ref=v.output_file_ref WHERE t.export_id=? "
+            + "AND t.status='completed' AND t.retain_download_entry=1 "
+            + "AND v.status='completed' AND f.availability='available' LIMIT 1";
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{exportId})) {
+            return cursor.moveToFirst();
+        }
+    }
+
+    /** 更新导出章节对应原下载目录的清理结果。 */
+    public void updateSourceCleanup(String exportId, String albumId, String chapterId, String status) {
+        ContentValues values = new ContentValues();
+        values.put("source_cleanup_status", status);
+        getWritableDatabase().update(TABLE_CHAPTERS, values,
+            "export_id=? AND album_id=? AND chapter_id=?",
+            new String[]{exportId, albumId, chapterId});
+    }
+
+    /** 下载重新建立后清除该章节之前的原文件清理状态。 */
+    public void invalidateSourceCleanup(String albumId, String chapterId) {
+        ContentValues values = new ContentValues();
+        values.put("source_cleanup_status", "not_attempted");
+        getWritableDatabase().update(TABLE_CHAPTERS, values,
+            "album_id=? AND chapter_id=?", new String[]{albumId, chapterId});
     }
 
     /** 返回指定导出文件关联的保留下载章节。 */

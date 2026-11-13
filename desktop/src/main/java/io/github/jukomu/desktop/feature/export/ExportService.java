@@ -220,7 +220,8 @@ public final class ExportService implements AutoCloseable {
         if (!ExportStore.isTerminal(task.status())) {
             throw ApiException.conflict("活动导出任务不能删除");
         }
-        if (task.retainDownloadEntry()) {
+        if (task.retainDownloadEntry() && "completed".equals(task.status())
+            && store.hasRetainedExportForTask(task.exportId())) {
             throw ApiException.conflict("导出任务仍关联下载列表，请先删除对应文件");
         }
         for (ExportStore.Volume volume : store.volumes(exportId)) {
@@ -282,17 +283,13 @@ public final class ExportService implements AutoCloseable {
                     volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
                     null, null, false, null);
             }
+            boolean cleanupComplete = deleteSourceDownloads(plan);
             ExportTaskResponse completed = store.updateProgress(
                 plan.exportId(), "completed", "completed", plan.images().size(),
                 plan.images().size(), plan.volumes().size(), plan.volumes().size(),
-                null, null);
+                cleanupComplete ? null : "SOURCE_CLEANUP_FAILED",
+                cleanupComplete ? null : "导出已完成，但部分原下载文件未能删除");
             publish(completed);
-            if (!deleteSourceDownloads(plan)) {
-                publish(store.updateProgress(plan.exportId(), "completed", "completed",
-                    plan.images().size(), plan.images().size(), plan.volumes().size(),
-                    plan.volumes().size(), "SOURCE_CLEANUP_FAILED",
-                    "导出已完成，但部分原下载文件未能删除"));
-            }
             logEvent("completed", plan, "completed", "completed", elapsed(startedNanos),
                 plan.images().size(), plan.images().size(), plan.volumes().size(), null, null, false, null);
         } catch (CancelledException | InterruptedException exception) {
@@ -318,12 +315,17 @@ public final class ExportService implements AutoCloseable {
         boolean complete = true;
         for (RequestedChapter chapter : task.chapters()) {
             var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
-            if (download == null) continue;
+            if (download == null) {
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
+                continue;
+            }
             try {
                 downloadFiles.cleanup(download.relativeDirectory());
                 if (!task.retainDownloadEntry()) downloads.deleteTask(download.taskId());
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
             } catch (RuntimeException exception) {
                 complete = false;
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "failed");
                 LOGGER.warn("导出已完成，但原下载文件清理失败: albumId={} chapterId={} errorClass={}",
                     chapter.albumId(), chapter.chapterId(), exception.getClass().getSimpleName(), exception);
             }

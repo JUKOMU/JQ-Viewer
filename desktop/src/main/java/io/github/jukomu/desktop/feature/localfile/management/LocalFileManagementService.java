@@ -328,7 +328,8 @@ public final class LocalFileManagementService {
         for (var chapter : retainedChapters) {
             if (!store.hasRetainedExportForChapter(chapter.albumId(), chapter.chapterId())) {
                 var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
-                if (download != null) {
+                if (download != null && !Set.of("queued", "downloading", "paused", "verifying")
+                    .contains(download.status())) {
                     downloadFiles.cleanup(download.relativeDirectory());
                     downloads.deleteTask(download.taskId());
                 }

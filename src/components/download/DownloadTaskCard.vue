@@ -228,7 +228,7 @@ const sourceDownloadTask = computed(() => {
   return props.task
 })
 
-const retainedExport = computed(() => sourceDownloadTask.value?.retainedExport)
+const retainedExport = computed(() => sourceDownloadTask.value?.retainedExports?.[0])
 
 const displayAuthor = computed(() => sourceDownloadTask.value?.author ?? '')
 const displayTags = computed(() => sourceDownloadTask.value?.tags ?? [])

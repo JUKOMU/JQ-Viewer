@@ -116,8 +116,8 @@ public final class ExportStore {
         }
     }
 
-    /** 查找章节当前使用的最近可用保留导出文件。 */
-    public synchronized RetainedExport findRetainedExportForChapter(String albumId, String chapterId) {
+    /** 查找章节当前使用的最近可用保留导出分卷。 */
+    public synchronized List<RetainedExport> findRetainedExportsForChapter(String albumId, String chapterId) {
         String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
             + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
@@ -125,23 +125,38 @@ public final class ExportStore {
             + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
             + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
-            + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index LIMIT 1";
+            + "AND ec.album_id=? AND ec.chapter_id=? "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, albumId);
             statement.setString(2, chapterId);
             try (ResultSet rows = statement.executeQuery()) {
-                return rows.next() ? new RetainedExport(rows.getString("export_id"),
-                    rows.getString("format"), rows.getLong("file_id"), rows.getString("file_ref"),
-                    rows.getInt("start_page"), rows.getInt("page_count")) : null;
+                List<RetainedExport> result = new ArrayList<>();
+                String exportId = null;
+                while (rows.next()) {
+                    if (exportId == null) exportId = rows.getString("export_id");
+                    if (!exportId.equals(rows.getString("export_id"))) break;
+                    result.add(new RetainedExport(rows.getString("export_id"),
+                        rows.getString("format"), rows.getLong("file_id"), rows.getString("file_ref"),
+                        rows.getInt("start_page"), rows.getInt("page_count")));
+                }
+                return List.copyOf(result);
             }
         } catch (SQLException exception) {
             throw failure("读取保留导出文件失败", exception);
         }
     }
 
+    /** 查找章节当前使用的第一个可用保留导出分卷。 */
+    public synchronized RetainedExport findRetainedExportForChapter(String albumId, String chapterId) {
+        List<RetainedExport> exports = findRetainedExportsForChapter(albumId, chapterId);
+        return exports.isEmpty() ? null : exports.get(0);
+    }
+
     /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
     public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
-        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code "
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code,"
+            + "ec.source_cleanup_status "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
             + "AND t.retain_download_entry=1 "
@@ -153,10 +168,56 @@ public final class ExportStore {
                 return rows.next() && rows.getInt("delete_source_after_export") == 1
                     && rows.getInt("retain_download_entry") == 1
                     && "completed".equals(rows.getString("status"))
-                    && rows.getString("error_code") == null;
+                    && rows.getString("error_code") == null
+                    && "deleted".equals(rows.getString("source_cleanup_status"));
             }
         } catch (SQLException exception) {
             throw failure("读取原下载文件清理状态失败", exception);
+        }
+    }
+
+    /** 判断导出任务是否仍关联可用的保留下载文件。 */
+    public synchronized boolean hasRetainedExportForTask(String exportId) {
+        String sql = "SELECT 1 FROM export_tasks t JOIN export_task_volumes v ON v.export_id=t.export_id "
+            + "JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "WHERE t.export_id=? AND t.status='completed' AND t.retain_download_entry=1 "
+            + "AND v.status='completed' AND f.availability='available' LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, exportId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next();
+            }
+        } catch (SQLException exception) {
+            throw failure("查询导出任务保留文件失败", exception);
+        }
+    }
+
+    /** 更新导出章节对应原下载目录的清理结果。 */
+    public synchronized void updateSourceCleanup(String exportId, String albumId, String chapterId,
+                                                  String status) {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE export_task_chapters SET source_cleanup_status=? "
+                + "WHERE export_id=? AND album_id=? AND chapter_id=?")) {
+            statement.setString(1, status);
+            statement.setString(2, exportId);
+            statement.setString(3, albumId);
+            statement.setString(4, chapterId);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw failure("更新章节原下载文件清理状态失败", exception);
+        }
+    }
+
+    /** 下载重新建立后清除该章节之前的原文件清理状态。 */
+    public synchronized void invalidateSourceCleanup(String albumId, String chapterId) {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE export_task_chapters SET source_cleanup_status='not_attempted' "
+                + "WHERE album_id=? AND chapter_id=?")) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw failure("重置章节原下载文件清理状态失败", exception);
         }
     }
 

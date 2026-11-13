@@ -99,7 +99,7 @@ class PathsDatabaseTest {
                     .createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(14, result.getInt(1));
+                assertEquals(15, result.getInt(1));
             }
             try (ResultSet result = database.connection().getMetaData()
                     .getTables(null, null, "browse_history", null)) {
@@ -162,6 +162,38 @@ class PathsDatabaseTest {
                             + "status,phase,created_at,updated_at,delete_source_after_export,retain_download_entry) "
                             + "VALUES ('invalid-retain','batch','pdf','chapter','album','title','folder',"
                             + "'file.pdf',1,1,'queued','queued',1,1,0,1)"));
+
+            try (var statement = database.connection().createStatement()) {
+                statement.executeUpdate("INSERT INTO export_tasks(export_id,batch_id,format,mode,album_id,"
+                        + "display_title,target_folder_ref,target_name,use_original,compression_ratio,status,phase,"
+                        + "created_at,updated_at,delete_source_after_export,retain_download_entry) "
+                        + "VALUES ('old-retained','batch','pdf','chapter','album','title','folder','file.pdf',"
+                        + "1,1,'completed','completed',1,1,1,1)");
+                statement.executeUpdate("INSERT INTO export_task_chapters(export_id,sequence,album_id,chapter_id) "
+                        + "VALUES ('old-retained',0,'album','chapter')");
+                statement.executeUpdate("ALTER TABLE export_task_chapters DROP COLUMN source_cleanup_status");
+                statement.executeUpdate("UPDATE desktop_schema_version SET version=14");
+            }
+            Database.migrate(database.connection());
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT version FROM desktop_schema_version")) {
+                assertTrue(result.next());
+                assertEquals(15, result.getInt(1));
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("PRAGMA table_info(export_task_chapters)")) {
+                boolean columnFound = false;
+                while (result.next()) {
+                    if ("source_cleanup_status".equals(result.getString("name"))) columnFound = true;
+                }
+                assertTrue(columnFound);
+            }
+            try (ResultSet result = database.connection().createStatement()
+                    .executeQuery("SELECT source_cleanup_status FROM export_task_chapters "
+                            + "WHERE export_id='old-retained'")) {
+                assertTrue(result.next());
+                assertEquals("not_attempted", result.getString(1));
+            }
             assertTrue(database.isOpen());
         }
 
@@ -210,7 +242,7 @@ class PathsDatabaseTest {
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT version FROM desktop_schema_version")) {
                 assertTrue(result.next());
-                assertEquals(14, result.getInt(1));
+                assertEquals(15, result.getInt(1));
             }
             try (ResultSet result = database.connection().createStatement()
                     .executeQuery("SELECT format,chapter_link_status FROM local_files "

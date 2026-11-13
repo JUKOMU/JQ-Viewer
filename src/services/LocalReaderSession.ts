@@ -7,8 +7,15 @@ export interface LocalReaderSession {
   chapter?: LocalFileChapter
   totalPages: number
   initialPage(routePage: unknown): number
+  fileRefForPage(page: number): string
   physicalPage(page: number): number
   recordPage(page: number): void
+}
+
+interface RetainedVolume {
+  fileRef: string
+  startPage: number
+  pageCount: number
 }
 
 function positiveInteger(value: unknown): number {
@@ -25,11 +32,14 @@ export function createLocalReaderSession(
   const chapterId = String(query.chapterId ?? query.albumId ?? '')
   const explicitChapterStartPage = positiveInteger(query.chapterStartPage)
   const explicitChapterPageCount = positiveInteger(query.chapterPageCount)
+  const retainedVolumes = JSON.parse(String(query.retainedVolumes ?? '[]')) as RetainedVolume[]
   const legacyChapterRoute = !query.readingContext && Boolean(albumId && chapterId)
   const chapterStartPage = explicitChapterStartPage || (legacyChapterRoute ? 1 : 0)
   const requestedChapterPages =
     explicitChapterPageCount || (legacyChapterRoute ? fileTotalPages : 0)
-  const availableChapterPages = Math.max(0, fileTotalPages - chapterStartPage + 1)
+  const availableChapterPages = retainedVolumes.length
+    ? retainedVolumes.reduce((count, volume) => count + volume.pageCount, 0)
+    : Math.max(0, fileTotalPages - chapterStartPage + 1)
   const chapterPageCount = Math.min(requestedChapterPages, availableChapterPages)
   const hasChapter = Boolean(albumId && chapterId && chapterStartPage && chapterPageCount)
   const chapter: LocalFileChapter | undefined = hasChapter
@@ -68,7 +78,27 @@ export function createLocalReaderSession(
         chapter,
       })
     },
+    fileRefForPage(page: number) {
+      if (!retainedVolumes.length) return String(query.fileRef ?? '')
+      // 分卷的起始页各自属于对应文件，按章节逻辑页定位文件后再换算卷内页码。
+      let volumeStart = 1
+      for (const volume of retainedVolumes) {
+        if (page < volumeStart + volume.pageCount) return volume.fileRef
+        volumeStart += volume.pageCount
+      }
+      return retainedVolumes[retainedVolumes.length - 1].fileRef
+    },
     physicalPage(page: number) {
+      if (retainedVolumes.length && scope === 'chapter') {
+        let volumeStart = 1
+        for (const volume of retainedVolumes) {
+          if (page < volumeStart + volume.pageCount) {
+            return volume.startPage + page - volumeStart
+          }
+          volumeStart += volume.pageCount
+        }
+        return page
+      }
       return scope === 'chapter' ? ReadingProgressService.chapterToFilePage(chapter!, page) : page
     },
     recordPage(page: number) {

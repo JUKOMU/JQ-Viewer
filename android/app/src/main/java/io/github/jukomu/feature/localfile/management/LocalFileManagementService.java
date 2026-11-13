@@ -274,9 +274,14 @@ public final class LocalFileManagementService {
                 String chapterId = chapter.getString("chapterId");
                 if (store.findRetainedExportForChapter(albumId, chapterId) == null) {
                     String taskId = albumId + "_" + chapterId;
-                    FileStore.getInstance().deleteChapter(albumId, chapterId);
-                    downloadStore.deleteImages(taskId);
-                    downloadStore.deleteTask(taskId);
+                    JSONObject downloadTask = downloadStore.getTask(taskId);
+                    String status = downloadTask == null ? "" : downloadTask.optString("status");
+                    if (!"queued".equals(status) && !"downloading".equals(status)
+                        && !"paused".equals(status) && !"verifying".equals(status)) {
+                        FileStore.getInstance().deleteChapter(albumId, chapterId);
+                        downloadStore.deleteImages(taskId);
+                        downloadStore.deleteTask(taskId);
+                    }
                 }
             }
             JSONObject output = outcome(result == DeleteOutcome.DELETED ? "deleted" : "already_missing",

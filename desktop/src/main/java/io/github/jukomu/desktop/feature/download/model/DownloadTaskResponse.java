@@ -29,6 +29,6 @@ public record DownloadTaskResponse(
     String error,
     long downloadedBytes,
     long totalSize,
-    RetainedDownloadExport retainedExport
+    List<RetainedDownloadExport> retainedExports
 ) {
 }

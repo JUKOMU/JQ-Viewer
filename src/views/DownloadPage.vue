@@ -640,6 +640,9 @@ const showExportSheet = ref(false)
 const chaptersForExport = ref<DownloadTask[]>([])
 const downloadBatchExport = ref(false)
 
+const retainedExportsOf = (task: DownloadTask) => task.retainedExports ?? []
+const hasRetainedExport = (task: DownloadTask) => retainedExportsOf(task).length > 0
+
 const popoverTitle = computed(() => {
   if (selectedGroup.value?.type === 'multi') {
     return selectedGroup.value.albumTitle
@@ -660,8 +663,8 @@ const actionMenuActions = computed(() => {
   if (selectedStatus.value === 'completed') {
     const retained =
       selectedGroup.value?.type === 'multi'
-        ? selectedGroup.value.chapters.every((chapter) => chapter.retainedExport)
-        : Boolean((selectedTask.value as DownloadTask | null)?.retainedExport)
+        ? selectedGroup.value.chapters.every(hasRetainedExport)
+        : Boolean((selectedTask.value as DownloadTask | null) && hasRetainedExport(selectedTask.value as DownloadTask))
     actions.push({
       id: 'export',
       label: '导出',
@@ -758,7 +761,7 @@ const popoverAction = (action: string) => {
       onCancel(t as DownloadTask)
       break
     case 'export':
-      if (selectedGroup.value?.type !== 'multi' && 'retainedExport' in t && t.retainedExport) break
+      if (selectedGroup.value?.type !== 'multi' && !('source' in t) && hasRetainedExport(t)) break
       onOpenExportSheet()
       break
     case 'delete':
@@ -792,7 +795,7 @@ const deleteAlertMessage = computed(() => {
   }
   const t = selectedTask.value
   if (!t) return ''
-  if (!('source' in t) && t.retainedExport) {
+  if (!('source' in t) && hasRetainedExport(t)) {
     return `将删除「${t.chapterTitle}」对应的导出文件和下载卡片，此操作不可恢复。`
   }
   return `将删除「${t.chapterTitle}」的下载文件和记录，此操作不可恢复。`
@@ -897,7 +900,7 @@ const downloadSelectionActions = computed(() => {
   if (tasks.some((task) => task.status === 'failed')) actions.push({ id: 'retry', label: '重试' })
   if (tasks.some((task) => task.status === 'completed' || task.status === 'failed'))
     actions.push({ id: 'delete', label: '删除' })
-  if (tasks.some((task) => task.status === 'completed' && !task.retainedExport))
+  if (tasks.some((task) => task.status === 'completed' && !hasRetainedExport(task)))
     actions.push({ id: 'export', label: '导出' })
   return actions
 })
@@ -1008,12 +1011,13 @@ async function executeDownloadSelection(action: string) {
   )
   if (action === 'export') {
     openBatchExportSheet(
-      tasks.filter((task) => task.status === 'completed' && !task.retainedExport),
+      tasks.filter((task) => task.status === 'completed' && !hasRetainedExport(task)),
     )
     return
   }
   if (!eligible.length) return
   if (action === 'delete') {
+    if (!(await confirmRetainedFileImpact(eligible))) return
     const alert = await createAppAlert({
       header: '确认删除',
       message: `确定删除选中的 ${eligible.length} 个章节文件吗？此操作不可恢复。`,
@@ -1077,8 +1081,10 @@ async function runDownloadBatch(action: string, tasks: DownloadTask[]) {
             createdAt: Date.now(),
           })
         } else {
-          if (task.retainedExport) {
-            await JmcomicService.deleteLocalFile(task.retainedExport.fileId)
+          if (hasRetainedExport(task)) {
+            for (const fileId of new Set(retainedExportsOf(task).map((file) => file.fileId))) {
+              await JmcomicService.deleteLocalFile(fileId)
+            }
           } else {
             await JmcomicService.deleteDownloaded(task.albumId, task.chapterId)
             OfflineDownloadService.removeTask(task.taskId)
@@ -1667,11 +1673,11 @@ const onOpenExportSheet = () => {
   downloadBatchExport.value = false
   const g = selectedGroup.value
   if (g?.type === 'multi') {
-    chaptersForExport.value = g.chapters.filter((chapter) => !chapter.retainedExport)
+    chaptersForExport.value = g.chapters.filter((chapter) => !hasRetainedExport(chapter))
   } else if (selectedTask.value) {
     const t = selectedTask.value
     const chapter = 'source' in t ? t.downloadTask! : t
-    if (chapter.retainedExport) return
+    if (hasRetainedExport(chapter)) return
     chaptersForExport.value = [chapter]
   }
   if (!chaptersForExport.value.length) return
@@ -1932,12 +1938,14 @@ const onRetry = async (task: DownloadTask) => {
 const onRead = (entry: CompletedEntry | DownloadTask) => {
   const dt =
     'downloadTask' in entry && entry.downloadTask ? entry.downloadTask : (entry as DownloadTask)
-  if (dt.retainedExport) {
+  const retainedExports = retainedExportsOf(dt)
+  const retained = retainedExports[0]
+  if (retained) {
     void router.push({
-      path: dt.retainedExport.format === 'cbz' ? '/cbz-reader' : '/pdf-reader',
+      path: retained.format === 'cbz' ? '/cbz-reader' : '/pdf-reader',
       query: {
-        fileRef: String(dt.retainedExport.fileRef),
-        fileId: String(dt.retainedExport.fileId),
+        fileRef: String(retained.fileRef),
+        fileId: String(retained.fileId),
         readingContext: 'chapter',
         title: dt.chapterTitle || dt.albumTitle,
         albumId: dt.albumId,
@@ -1946,8 +1954,11 @@ const onRead = (entry: CompletedEntry | DownloadTask) => {
         coverUrl: dt.coverUrl,
         chapterId: dt.chapterId,
         chapterTitle: dt.chapterTitle,
-        chapterStartPage: String(dt.retainedExport.startPage),
-        chapterPageCount: String(dt.retainedExport.pageCount),
+        chapterStartPage: String(retained.startPage),
+        chapterPageCount: String(
+          retainedExports.reduce((total, volume) => total + volume.pageCount, 0),
+        ),
+        retainedVolumes: JSON.stringify(retainedExports),
       },
     })
     return
@@ -1976,8 +1987,11 @@ const onGoToAlbumDetail = (entry: CompletedEntry | DownloadTask) => {
 
 const onDelete = async (task: DownloadTask) => {
   try {
-    if (task.retainedExport) {
-      await JmcomicService.deleteLocalFile(task.retainedExport.fileId)
+    if (hasRetainedExport(task)) {
+      if (!(await confirmRetainedFileImpact([task]))) return
+      for (const fileId of new Set(retainedExportsOf(task).map((file) => file.fileId))) {
+        await JmcomicService.deleteLocalFile(fileId)
+      }
       await syncDownloadState()
       return
     }
@@ -1988,6 +2002,30 @@ const onDelete = async (task: DownloadTask) => {
   } catch (e: any) {
     await showToast(sanitizeError(e, '删除失败'), 'danger')
   }
+}
+
+const confirmRetainedFileImpact = async (tasks: DownloadTask[]) => {
+  const selectedKeys = new Set(tasks.map((task) => `${task.albumId}|${task.chapterId}`))
+  const impacted = new Set<string>()
+  const fileIds = new Set(tasks.flatMap((task) => retainedExportsOf(task).map((file) => file.fileId)))
+  for (const fileId of fileIds) {
+    const file = await JmcomicService.inspectLocalFileForDeletion(fileId)
+    for (const chapter of file.chapters) {
+      const key = `${chapter.albumId}|${chapter.chapterId}`
+      if (!selectedKeys.has(key)) impacted.add(chapter.chapterTitle || chapter.chapterId)
+    }
+  }
+  if (!impacted.size) return true
+  return new Promise<boolean>((resolve) => {
+    void createAppAlert({
+      header: '合并文件包含其他章节',
+      message: `所选导出文件还包含：${[...impacted].join('、')}。删除文件会同时删除这些章节的下载入口，是否继续？`,
+      buttons: [
+        { text: '取消', role: 'cancel', handler: () => resolve(false) },
+        { text: '同时删除', role: 'destructive', handler: () => resolve(true) },
+      ],
+    }).then((alert) => alert.present())
+  })
 }
 
 const onDeleteSheetConfirm = async (chapters: CompletedEntry[]) => {
@@ -2002,25 +2040,33 @@ const onDeleteSheetConfirm = async (chapters: CompletedEntry[]) => {
 const deleteChapters = async (chapters: CompletedEntry[]) => {
   try {
     const downloadChapters = chapters.filter((ch) => ch.source === 'download')
+    const downloadTasks = downloadChapters
+      .map((chapter) => chapter.downloadTask)
+      .filter((task): task is DownloadTask => Boolean(task))
+    if (!(await confirmRetainedFileImpact(downloadTasks))) return
     const retainedFileDeletes = new Map<number, Promise<unknown>>()
 
     const downloadResults = await Promise.all(
       downloadChapters.map(async (ch) => {
         try {
-          const fileId = ch.downloadTask?.retainedExport?.fileId
-          if (fileId) {
-            let deletion = retainedFileDeletes.get(fileId)
-            if (!deletion) {
-              deletion = JmcomicService.deleteLocalFile(fileId)
-              retainedFileDeletes.set(fileId, deletion)
+          const fileIds = ch.downloadTask
+            ? [...new Set(retainedExportsOf(ch.downloadTask).map((file) => file.fileId))]
+            : []
+          if (fileIds.length) {
+            for (const fileId of fileIds) {
+              let deletion = retainedFileDeletes.get(fileId)
+              if (!deletion) {
+                deletion = JmcomicService.deleteLocalFile(fileId)
+                retainedFileDeletes.set(fileId, deletion)
+              }
+              await deletion
             }
-            await deletion
             return { ch, ok: true, retained: true }
           }
           const result = await JmcomicService.deleteDownloaded(ch.albumId, ch.chapterId)
           return { ch, ok: result.success !== false, retained: false }
         } catch {
-          return { ch, ok: false, retained: Boolean(ch.downloadTask?.retainedExport) }
+          return { ch, ok: false, retained: Boolean(ch.downloadTask && hasRetainedExport(ch.downloadTask)) }
         }
       }),
     )
@@ -2103,7 +2149,7 @@ const clearCompleted = async () => {
     for (const item of page.items) {
       const chapters = 'chapters' in item ? item.chapters : [item]
       for (const chapter of chapters) {
-        if (chapter.retainedExport) retainedFileIds.add(chapter.retainedExport.fileId)
+        for (const file of chapter.retainedExports ?? []) retainedFileIds.add(file.fileId)
       }
     }
     cursor = page.nextCursor ?? undefined

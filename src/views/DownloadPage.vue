@@ -658,9 +658,10 @@ const actionMenuActions = computed(() => {
   }
   actions.push({ id: 'detail', label: '进入详情页', icon: informationCircleOutline })
   if (selectedStatus.value === 'completed') {
-    const retained = selectedGroup.value?.type === 'multi'
-      ? selectedGroup.value.chapters.every((chapter) => chapter.retainedExport)
-      : Boolean((selectedTask.value as DownloadTask | null)?.retainedExport)
+    const retained =
+      selectedGroup.value?.type === 'multi'
+        ? selectedGroup.value.chapters.every((chapter) => chapter.retainedExport)
+        : Boolean((selectedTask.value as DownloadTask | null)?.retainedExport)
     actions.push({
       id: 'export',
       label: '导出',
@@ -757,11 +758,7 @@ const popoverAction = (action: string) => {
       onCancel(t as DownloadTask)
       break
     case 'export':
-      if (
-        selectedGroup.value?.type !== 'multi' &&
-        'retainedExport' in t &&
-        t.retainedExport
-      ) break
+      if (selectedGroup.value?.type !== 'multi' && 'retainedExport' in t && t.retainedExport) break
       onOpenExportSheet()
       break
     case 'delete':
@@ -2122,10 +2119,7 @@ const clearCompleted = async () => {
   }
   if (retainedDeleteFailures > 0) {
     await refreshGroupFirstPage('completed')
-    await showToast(
-      `${retainedDeleteFailures} 个导出文件未能删除，已完成下载尚未清空`,
-      'danger',
-    )
+    await showToast(`${retainedDeleteFailures} 个导出文件未能删除，已完成下载尚未清空`, 'danger')
     return
   }
 

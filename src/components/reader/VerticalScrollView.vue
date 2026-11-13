@@ -439,23 +439,25 @@ function queueScrollUpdate(): ScrollUpdate {
     insideStart,
     geometryChanged: false,
     // 锚点在改高度前捕获；下一微任务再等待 Vue，确保更新队列已经建立。
-    settled: Promise.resolve().then(() => nextTick()).then(() => {
-      if (pendingScroll !== update) return
-      const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
-      const target = Math.max(
-        0,
-        Math.min(maxTop, getPageTop(update.index) + update.offset + update.distance),
-      )
-      el.scrollTop = target
-      lastWrittenScrollTop = el.scrollTop
-      // 自身 scroll 回读不清除量化余量；真实边界外的距离已由 target 裁掉。
-      scrollRemainder = target - lastWrittenScrollTop
-      pendingScroll = null
-      updateVisibleRange(lastWrittenScrollTop)
-      emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
-      updateBottomState()
-      if (update.geometryChanged) emit('geometry-change')
-    }),
+    settled: Promise.resolve()
+      .then(() => nextTick())
+      .then(() => {
+        if (pendingScroll !== update) return
+        const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
+        const target = Math.max(
+          0,
+          Math.min(maxTop, getPageTop(update.index) + update.offset + update.distance),
+        )
+        el.scrollTop = target
+        lastWrittenScrollTop = el.scrollTop
+        // 自身 scroll 回读不清除量化余量；真实边界外的距离已由 target 裁掉。
+        scrollRemainder = target - lastWrittenScrollTop
+        pendingScroll = null
+        updateVisibleRange(lastWrittenScrollTop)
+        emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
+        updateBottomState()
+        if (update.geometryChanged) emit('geometry-change')
+      }),
   }
   scrollRemainder = 0
   pendingScroll = update

@@ -126,7 +126,12 @@ export function useReaderAutoPlay(options: {
   }
 
   function resumeAfterGeometryChange() {
-    if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+    if (
+      isPlaying.value &&
+      options.isVertical.value &&
+      !interactionActive &&
+      animationFrame === null
+    ) {
       schedule()
     }
   }
@@ -193,7 +198,12 @@ export function useReaderAutoPlay(options: {
   watch(
     () => options.totalCount.value,
     () => {
-      if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+      if (
+        isPlaying.value &&
+        options.isVertical.value &&
+        !interactionActive &&
+        animationFrame === null
+      ) {
         schedule()
       }
     },

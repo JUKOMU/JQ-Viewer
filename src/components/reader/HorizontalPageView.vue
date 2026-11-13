@@ -416,7 +416,10 @@ function onTouchStart(ev: TouchEvent) {
   if (animationTimer) {
     const target = Math.max(
       0,
-      Math.min(props.totalCount - 1, displayIndex.value - Math.round(offsetX.value / slotWidth.value)),
+      Math.min(
+        props.totalCount - 1,
+        displayIndex.value - Math.round(offsetX.value / slotWidth.value),
+      ),
     )
     clearAnimationTimer()
     isAnimating.value = false

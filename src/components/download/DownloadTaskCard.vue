@@ -70,8 +70,8 @@
 
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
-        <span v-if="(task as DownloadTask).retainedExport" class="tag export-format-tag">
-          {{ (task as DownloadTask).retainedExport?.format.toUpperCase() }}
+        <span v-if="retainedExport" class="tag export-format-tag">
+          {{ retainedExport.format.toUpperCase() }}
         </span>
         <span v-if="!isLocalFileEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
         <span v-if="isLocalFileEntry && displayLocalFilePageCount > 0" class="tag completed"
@@ -82,7 +82,7 @@
           :icon="documentOutline"
           class="tag-icon local-file-tag-icon"
         />
-        <span v-if="sizeText && !(task as DownloadTask).retainedExport" class="size-text">
+        <span v-if="sizeText && !retainedExport" class="size-text">
           {{ sizeText }}
         </span>
       </div>
@@ -227,6 +227,8 @@ const sourceDownloadTask = computed(() => {
   if ('source' in props.task) return props.task.downloadTask
   return props.task
 })
+
+const retainedExport = computed(() => sourceDownloadTask.value?.retainedExport)
 
 const displayAuthor = computed(() => sourceDownloadTask.value?.author ?? '')
 const displayTags = computed(() => sourceDownloadTask.value?.tags ?? [])

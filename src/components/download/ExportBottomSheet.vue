@@ -174,6 +174,31 @@
             </div>
           </div>
 
+          <div v-if="supportsSourceCleanup" class="section">
+            <div class="section-header">
+              <div class="setting-copy">
+                <span class="section-label">导出完成后删除原下载文件</span>
+                <span class="setting-hint">仅在导出全部成功后删除原下载图片</span>
+              </div>
+              <IonToggle
+                :checked="deleteSourceAfterExport"
+                color="warning"
+                @ion-change="onDeleteSourceChange"
+              />
+            </div>
+            <div v-if="deleteSourceAfterExport" class="section-header nested-setting">
+              <div class="setting-copy">
+                <span class="section-label">保留在下载列表</span>
+                <span class="setting-hint">否则只能从导出中查看</span>
+              </div>
+              <IonToggle
+                :checked="retainDownloadEntry"
+                color="warning"
+                @ion-change="retainDownloadEntry = $event.detail.checked"
+              />
+            </div>
+          </div>
+
           <!-- 图片质量 -->
           <div v-if="selectedFormat === 'pdf'" class="section">
             <span class="section-label">图片质量</span>
@@ -259,6 +284,8 @@ const emit = defineEmits<{
       compressionRatio: number
       editedPath: string
       splitPages: number
+      deleteSourceAfterExport: boolean
+      retainDownloadEntry: boolean
     },
   ]
 }>()
@@ -317,6 +344,9 @@ const compressionRatio = ref(0.5)
 const editedPath = ref('')
 const splitEnabled = ref(false)
 const splitPages = ref(100)
+const deleteSourceAfterExport = ref(false)
+const retainDownloadEntry = ref(false)
+const supportsSourceCleanup = computed(() => selectedFormat.value !== 'zip')
 
 // ---- 根据模板 + 当前设置生成路径 ----
 const templatePath = computed(() => {
@@ -371,6 +401,8 @@ watch(
       compressionRatio.value = 0.5
       splitEnabled.value = false
       splitPages.value = 100
+      deleteSourceAfterExport.value = false
+      retainDownloadEntry.value = false
       showSettings.value = false
       exportPath.value = ExportService.getExportPath()
       dirTemplate.value = ExportService.getDirTemplate()
@@ -390,6 +422,10 @@ async function selectFormat(format: ExportFormat) {
   if (selectedFormat.value === format) return
   const previous = selectedFormat.value
   selectedFormat.value = format
+  if (format === 'zip') {
+    deleteSourceAfterExport.value = false
+    retainDownloadEntry.value = false
+  }
   if (format !== 'pdf') {
     useOriginal.value = true
     compressionRatio.value = 1
@@ -445,6 +481,11 @@ async function onBrowseFolder() {
 // ---- 路径编辑 ----
 function onPathInput(e: Event) {
   editedPath.value = (e.target as HTMLTextAreaElement).value
+}
+
+function onDeleteSourceChange(e: CustomEvent) {
+  deleteSourceAfterExport.value = e.detail.checked
+  if (!deleteSourceAfterExport.value) retainDownloadEntry.value = false
 }
 
 async function copyTag(tag: string) {
@@ -518,6 +559,9 @@ async function onConfirm() {
     compressionRatio: compressionRatio.value,
     editedPath: editedPath.value,
     splitPages: splitEnabled.value ? splitPages.value : 0,
+    deleteSourceAfterExport: supportsSourceCleanup.value && deleteSourceAfterExport.value,
+    retainDownloadEntry:
+      supportsSourceCleanup.value && deleteSourceAfterExport.value && retainDownloadEntry.value,
   })
 }
 </script>
@@ -899,6 +943,23 @@ async function onConfirm() {
 .split-hint {
   font-size: 13px;
   color: #8a6048;
+}
+
+.setting-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setting-hint {
+  color: #9a7865;
+  font-size: 11px;
+}
+
+.nested-setting {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eadbd2;
 }
 
 .num-input-sm {

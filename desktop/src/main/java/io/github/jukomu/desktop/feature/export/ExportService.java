@@ -220,6 +220,10 @@ public final class ExportService implements AutoCloseable {
         if (!ExportStore.isTerminal(task.status())) {
             throw ApiException.conflict("活动导出任务不能删除");
         }
+        if (task.retainDownloadEntry() && "completed".equals(task.status())
+            && store.hasRetainedExportForTask(task.exportId())) {
+            throw ApiException.conflict("导出任务仍关联下载列表，请先删除对应文件");
+        }
         for (ExportStore.Volume volume : store.volumes(exportId)) {
             deleteQuietly(Path.of(volume.tempPath()));
         }
@@ -279,10 +283,13 @@ public final class ExportService implements AutoCloseable {
                     volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
                     null, null, false, null);
             }
-            publish(store.updateProgress(
+            boolean cleanupComplete = deleteSourceDownloads(plan);
+            ExportTaskResponse completed = store.updateProgress(
                 plan.exportId(), "completed", "completed", plan.images().size(),
                 plan.images().size(), plan.volumes().size(), plan.volumes().size(),
-                null, null));
+                cleanupComplete ? null : "SOURCE_CLEANUP_FAILED",
+                cleanupComplete ? null : "导出已完成，但部分原下载文件未能删除");
+            publish(completed);
             logEvent("completed", plan, "completed", "completed", elapsed(startedNanos),
                 plan.images().size(), plan.images().size(), plan.volumes().size(), null, null, false, null);
         } catch (CancelledException | InterruptedException exception) {
@@ -300,6 +307,30 @@ public final class ExportService implements AutoCloseable {
             logEvent("failed", plan, "failed", status, elapsed(startedNanos),
                 0, plan.images().size(), plan.volumes().size(), failure.code(), failure.message(), false, exception);
         }
+    }
+
+    private boolean deleteSourceDownloads(Plan plan) {
+        NormalizedTask task = plan.task();
+        if (!task.deleteSourceAfterExport() || "zip".equals(task.format())) return true;
+        boolean complete = true;
+        for (RequestedChapter chapter : task.chapters()) {
+            var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
+            if (download == null) {
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
+                continue;
+            }
+            try {
+                downloadFiles.cleanup(download.relativeDirectory());
+                if (!task.retainDownloadEntry()) downloads.deleteTask(download.taskId());
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
+            } catch (RuntimeException exception) {
+                complete = false;
+                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "failed");
+                LOGGER.warn("导出已完成，但原下载文件清理失败: albumId={} chapterId={} errorClass={}",
+                    chapter.albumId(), chapter.chapterId(), exception.getClass().getSimpleName(), exception);
+            }
+        }
+        return complete;
     }
 
     private VolumeReport writeTemporary(Plan plan, VolumePlan volume) throws Exception {
@@ -435,7 +466,7 @@ public final class ExportService implements AutoCloseable {
             chapters.stream().map(c -> new RequestedChapter(c.albumId(), c.chapterId(),
                 c.chapterTitle(), c.sortOrder())).toList(), task.folderRef(), task.targetName(),
             task.displayPath(), task.useOriginal(), task.compressionRatio(), task.splitPages(),
-            allowOverwrite);
+            allowOverwrite, task.deleteSourceAfterExport(), task.retainDownloadEntry());
         // 元数据补全后再构造目标卷，确保后续目标布局使用已固定的任务快照。
         List<VolumePlan> volumes = buildVolumes(
             exportId, resolved, images.size(), allowOverwrite);
@@ -497,7 +528,8 @@ public final class ExportService implements AutoCloseable {
                 "merged".equals(task.mode()) ? null : task.chapters().get(0).chapterId(),
                 task.displayTitle(), task.folderRef(), task.targetName(), task.displayPath(),
                 task.allowOverwrite(), task.useOriginal(), task.compressionRatio(),
-                task.splitPages(), status, phase, plan.images().size(), code, message, now),
+                task.splitPages(), task.deleteSourceAfterExport(), task.retainDownloadEntry(),
+                status, phase, plan.images().size(), code, message, now),
             plan.chapters(), plan.volumes().stream().map(VolumePlan::record).toList());
     }
 
@@ -554,12 +586,16 @@ public final class ExportService implements AutoCloseable {
         double compressionRatio = request.compressionRatio() == null ? 1D
             : Math.max(0.1D, Math.min(1D, request.compressionRatio()));
         int splitPages = Math.max(0, request.splitPages() == null ? 0 : request.splitPages());
+        boolean deleteSource = "zip".equals(format) ? false
+            : Boolean.TRUE.equals(request.deleteSourceAfterExport());
+        boolean retainEntry = deleteSource && Boolean.TRUE.equals(request.retainDownloadEntry());
         return new NormalizedTask(
             format, mode, albumId, "", "", "", null, albumId,
             List.copyOf(chapters), folderRef, targetName, value(request.displayPath()),
             !"pdf".equals(format) || request.useOriginal() == null || request.useOriginal(),
             compressionRatio,
-            splitPages, request.allowOverwrite() != null && request.allowOverwrite());
+            splitPages, request.allowOverwrite() != null && request.allowOverwrite(),
+            deleteSource, retainEntry);
     }
 
     private static NormalizedTask taskFromPersisted(
@@ -576,7 +612,8 @@ public final class ExportService implements AutoCloseable {
             task.format(), task.mode(), task.albumId(), task.albumTitle(), task.coverUrl(), task.authors(),
             task.isSingleEpisode(), task.displayTitle(), requested, task.targetFolderRef(),
             task.targetName(), displayPath, task.useOriginal(), task.compressionRatio(),
-            task.splitPages(), task.allowOverwrite());
+            task.splitPages(), task.allowOverwrite(), task.deleteSourceAfterExport(),
+            task.retainDownloadEntry());
     }
 
     private static void ensureRetryLayoutUnchanged(
@@ -828,12 +865,14 @@ public final class ExportService implements AutoCloseable {
         boolean useOriginal,
         double compressionRatio,
         int splitPages,
-        boolean allowOverwrite
+        boolean allowOverwrite,
+        boolean deleteSourceAfterExport,
+        boolean retainDownloadEntry
     ) {
         NormalizedTask withAllowOverwrite(boolean value) {
             return new NormalizedTask(format, mode, albumId, albumTitle, coverUrl, authors, singleEpisode,
                 displayTitle, chapters, folderRef, targetName, displayPath, useOriginal,
-                compressionRatio, splitPages, value);
+                compressionRatio, splitPages, value, deleteSourceAfterExport, retainDownloadEntry);
         }
     }
 

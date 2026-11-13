@@ -11,7 +11,7 @@ import java.util.List;
  * 管理本地 SQLite 连接，并提供版本化 schema 迁移入口。
  */
 public final class Database implements AutoCloseable {
-    private static final int SCHEMA_VERSION = 13;
+    private static final int SCHEMA_VERSION = 15;
     private static final int BUSY_TIMEOUT_MILLIS = 5_000;
 
     private final Path databasePath;
@@ -186,6 +186,8 @@ public final class Database implements AutoCloseable {
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
                 migrateV12ToV13(connection);
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
             });
             return;
         }
@@ -195,6 +197,8 @@ public final class Database implements AutoCloseable {
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
                 migrateV12ToV13(connection);
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
             });
             return;
         }
@@ -203,6 +207,8 @@ public final class Database implements AutoCloseable {
                 migrateV10ToV11(connection);
                 migrateV11ToV12(connection);
                 migrateV12ToV13(connection);
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
             });
             return;
         }
@@ -210,11 +216,28 @@ public final class Database implements AutoCloseable {
             transaction(connection, () -> {
                 migrateV11ToV12(connection);
                 migrateV12ToV13(connection);
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
             });
             return;
         }
         if (currentVersion == 12) {
-            transaction(connection, () -> migrateV12ToV13(connection));
+            transaction(connection, () -> {
+                migrateV12ToV13(connection);
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
+            });
+            return;
+        }
+        if (currentVersion == 13) {
+            transaction(connection, () -> {
+                migrateV13ToV14(connection);
+                migrateV14ToV15(connection);
+            });
+            return;
+        }
+        if (currentVersion == 14) {
+            transaction(connection, () -> migrateV14ToV15(connection));
             return;
         }
         if (currentVersion != SCHEMA_VERSION) {
@@ -298,6 +321,10 @@ public final class Database implements AutoCloseable {
                 + "use_original INTEGER NOT NULL CHECK(use_original IN (0,1)),"
                 + "compression_ratio REAL NOT NULL,"
                 + "split_pages INTEGER NOT NULL DEFAULT 0,"
+                + "delete_source_after_export INTEGER NOT NULL DEFAULT 0 CHECK(delete_source_after_export IN (0,1)),"
+                + "retain_download_entry INTEGER NOT NULL DEFAULT 0 "
+                + "CHECK(retain_download_entry IN (0,1) AND "
+                + "(retain_download_entry=0 OR delete_source_after_export=1)),"
                 + "status TEXT NOT NULL,"
                 + "phase TEXT NOT NULL,"
                 + "current_page INTEGER NOT NULL DEFAULT 0,"
@@ -314,6 +341,8 @@ public final class Database implements AutoCloseable {
                 + "completed_at INTEGER)");
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_export_tasks_format_status_updated "
                 + "ON export_tasks(format, status, updated_at DESC, export_id)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_export_tasks_retained_status_updated "
+                + "ON export_tasks(retain_download_entry, status, updated_at DESC, export_id)");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS export_task_chapters ("
                 + "export_id TEXT NOT NULL,"
                 + "sequence INTEGER NOT NULL,"
@@ -322,8 +351,12 @@ public final class Database implements AutoCloseable {
                 + "chapter_title TEXT NOT NULL DEFAULT '',"
                 + "sort_order INTEGER NOT NULL DEFAULT 0,"
                 + "expected_page_count INTEGER NOT NULL DEFAULT 0,"
+                + "source_cleanup_status TEXT NOT NULL DEFAULT 'not_attempted' "
+                + "CHECK(source_cleanup_status IN ('not_attempted','deleted','failed')) ,"
                 + "PRIMARY KEY(export_id, sequence),"
                 + "FOREIGN KEY(export_id) REFERENCES export_tasks(export_id) ON DELETE CASCADE)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_export_task_chapters_chapter "
+                + "ON export_task_chapters(album_id, chapter_id, export_id, sequence)");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS export_task_volumes ("
                 + "export_id TEXT NOT NULL,"
                 + "volume_index INTEGER NOT NULL,"
@@ -363,12 +396,20 @@ public final class Database implements AutoCloseable {
                 + "chapter_title,sort_order,start_page,end_page,page_count) "
                 + "SELECT id,0,album_id,chapter_id,chapter_title,chapter_sort_order,1,page_count,page_count "
                 + "FROM pdf_files WHERE chapter_id IS NOT NULL AND TRIM(chapter_id)<>''");
-            statement.executeUpdate("INSERT INTO export_tasks SELECT export_id,batch_id,'pdf',mode,album_id,"
+            statement.executeUpdate("INSERT INTO export_tasks(export_id,batch_id,format,mode,album_id,"
+                + "album_title,cover_url,authors,is_single_episode,chapter_id,display_title,target_folder_ref,"
+                + "target_name,display_path,allow_overwrite,use_original,compression_ratio,split_pages,status,"
+                + "phase,current_page,total_pages,current_volume,total_volumes,snapshot_revision,cancel_requested,"
+                + "error_code,error_message,created_at,started_at,updated_at,completed_at) "
+                + "SELECT export_id,batch_id,'pdf',mode,album_id,"
                 + "album_title,cover_url,authors,is_single_episode,chapter_id,display_title,target_folder_ref,"
                 + "target_name,display_path,allow_overwrite,use_original,compression_ratio,split_pages,status,"
                 + "phase,current_page,total_pages,current_volume,total_volumes,snapshot_revision,cancel_requested,"
                 + "error_code,error_message,created_at,started_at,updated_at,completed_at FROM pdf_export_tasks");
-            statement.executeUpdate("INSERT INTO export_task_chapters SELECT * FROM pdf_export_chapters");
+            statement.executeUpdate("INSERT INTO export_task_chapters(export_id,sequence,album_id,chapter_id,"
+                + "chapter_title,sort_order,expected_page_count) "
+                + "SELECT export_id,sequence,album_id,chapter_id,chapter_title,sort_order,expected_page_count "
+                + "FROM pdf_export_chapters");
             statement.executeUpdate("INSERT INTO export_task_volumes SELECT * FROM pdf_export_volumes");
         }
         rebuildExportedFileChapters(connection);
@@ -419,6 +460,35 @@ public final class Database implements AutoCloseable {
     private static void migrateV12ToV13(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("UPDATE desktop_schema_version SET version=13");
+        }
+    }
+
+    private static void migrateV13ToV14(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            if (!hasColumn(connection, "export_tasks", "delete_source_after_export")) {
+                statement.executeUpdate("ALTER TABLE export_tasks ADD COLUMN delete_source_after_export INTEGER NOT NULL DEFAULT 0");
+            }
+            if (!hasColumn(connection, "export_tasks", "retain_download_entry")) {
+                statement.executeUpdate("ALTER TABLE export_tasks ADD COLUMN retain_download_entry "
+                    + "INTEGER NOT NULL DEFAULT 0 CHECK(retain_download_entry IN (0,1) AND "
+                    + "(retain_download_entry=0 OR delete_source_after_export=1))");
+            }
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_export_tasks_retained_status_updated "
+                + "ON export_tasks(retain_download_entry, status, updated_at DESC, export_id)");
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_export_task_chapters_chapter "
+                + "ON export_task_chapters(album_id, chapter_id, export_id, sequence)");
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=14");
+        }
+    }
+
+    private static void migrateV14ToV15(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            if (!hasColumn(connection, "export_task_chapters", "source_cleanup_status")) {
+                statement.executeUpdate("ALTER TABLE export_task_chapters ADD COLUMN source_cleanup_status "
+                    + "TEXT NOT NULL DEFAULT 'not_attempted' CHECK(source_cleanup_status IN "
+                    + "('not_attempted','deleted','failed'))");
+            }
+            statement.executeUpdate("UPDATE desktop_schema_version SET version=15");
         }
     }
 

@@ -11,6 +11,8 @@ import io.github.jukomu.feature.localfile.LocalFileOperationException;
 import io.github.jukomu.feature.localfile.data.LocalFileRef;
 import io.github.jukomu.feature.localfile.data.LocalFileRefResolver;
 import io.github.jukomu.feature.localfile.data.LocalFileStore;
+import io.github.jukomu.feature.download.data.DownloadStore;
+import io.github.jukomu.feature.download.storage.FileStore;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -257,11 +259,30 @@ public final class LocalFileManagementService {
     public JSONObject deleteFile(long id, String operationId) throws Exception {
         long startedAt = System.nanoTime();
         JSONObject record = requireFile(id);
+        JSONArray retainedChapters = "exported".equals(record.optString("sourceType"))
+            ? store.getRetainedChaptersForFile(id) : new JSONArray();
         String fileRef = record.getString("fileRef");
         try {
             DeleteOutcome result = deleteFileRef(fileRef);
             if (!store.removeFileFromLibrary(id)) {
                 throw new IOException("文件已处理，但文件库记录移除失败");
+            }
+            DownloadStore downloadStore = DownloadStore.getInstance(context);
+            for (int index = 0; index < retainedChapters.length(); index++) {
+                JSONObject chapter = retainedChapters.getJSONObject(index);
+                String albumId = chapter.getString("albumId");
+                String chapterId = chapter.getString("chapterId");
+                if (store.findRetainedExportForChapter(albumId, chapterId) == null) {
+                    String taskId = albumId + "_" + chapterId;
+                    JSONObject downloadTask = downloadStore.getTask(taskId);
+                    String status = downloadTask == null ? "" : downloadTask.optString("status");
+                    if (!"queued".equals(status) && !"downloading".equals(status)
+                        && !"paused".equals(status) && !"verifying".equals(status)) {
+                        FileStore.getInstance().deleteChapter(albumId, chapterId);
+                        downloadStore.deleteImages(taskId);
+                        downloadStore.deleteTask(taskId);
+                    }
+                }
             }
             JSONObject output = outcome(result == DeleteOutcome.DELETED ? "deleted" : "already_missing",
                 record, null);

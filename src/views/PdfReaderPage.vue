@@ -200,6 +200,7 @@ let lastToolbarTapY = 0
 let volumeKeyListenerHandle: ListenerHandle | null = null
 let readerRuntimeActive = false
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+const pdfDocsByRef = new Map<string, pdfjsLib.PDFDocumentProxy>()
 let nativePdfMode = false
 const renderedPages = new Map<number, string>()
 const renderedPageGenerations = new Map<number, number>()
@@ -468,6 +469,7 @@ const calcBaseScale = (
 
 // ---- PDF 页面渲染 ----
 const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
+  const pageFileRef = asFileRef(readerSession?.fileRefForPage(pageNum) || fileRef)
   const physicalPage = readerSession?.physicalPage(pageNum) ?? pageNum
   if (nativePdfMode) {
     const renderer = getRuntime().resources.renderPdfPage
@@ -475,13 +477,14 @@ const renderPageToBlob = async (pageNum: number): Promise<string | null> => {
       throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
     const targetWidth = getRenderTargetWidth(isVertical.value, true)
-    return await renderer.api.getUrl({ file: fileRef, page: physicalPage, targetWidth })
+    return await renderer.api.getUrl({ file: pageFileRef, page: physicalPage, targetWidth })
   }
 
-  if (!pdfDoc) return null
+  const pageDocument = pdfDocsByRef.get(String(pageFileRef))
+  if (!pageDocument) return null
   let page: pdfjsLib.PDFPageProxy | null = null
   try {
-    page = await pdfDoc.getPage(physicalPage)
+    page = await pageDocument.getPage(physicalPage)
     const scale = calcBaseScale(page.getViewport({ scale: 1 }), getReaderContentWidth())
     const viewport = page.getViewport({ scale })
 
@@ -1029,6 +1032,8 @@ const autoPlay = useReaderAutoPlay({
   isVertical,
   currentIndex,
   totalCount,
+  advanceScroll: (distance) => verticalViewRef.value!.advanceScroll(distance),
+  cancelScroll: () => verticalViewRef.value?.cancelAutoScroll(),
   getScrollContainer: () => {
     const view = verticalViewRef.value as { containerRef?: HTMLElement | null } | null
     return view?.containerRef ?? null
@@ -1120,24 +1125,35 @@ const recordBrowseHistory = () => {
 
 const loadPdfDocument = async () => {
   clearNativeImageFailures()
-  const arrayBuffer = await fetchPdfArrayBuffer(fileRef)
+  const retainedVolumes = JSON.parse(String(route.query.retainedVolumes ?? '[]')) as {
+    fileRef: string
+  }[]
+  const volumeRefs = retainedVolumes.length
+    ? retainedVolumes.map((volume) => asFileRef(volume.fileRef))
+    : [fileRef]
   try {
-    pdfDoc = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
+    for (const volumeRef of volumeRefs) {
+      const arrayBuffer = await fetchPdfArrayBuffer(volumeRef)
+      const document = await pdfjsLib.getDocument(buildPdfDocumentParams(arrayBuffer)).promise
+      pdfDocsByRef.set(String(volumeRef), document)
+    }
+    pdfDoc = pdfDocsByRef.get(String(fileRef)) ?? pdfDocsByRef.values().next().value ?? null
     nativePdfMode = false
-    return pdfDoc.numPages
+    return [...pdfDocsByRef.values()].reduce((total, document) => total + document.numPages, 0)
   } catch (e) {
     console.warn('[PdfReaderPage] pdf.js failed, using native renderer fallback', e)
-    if (pdfDoc) {
-      pdfDoc.destroy()
-      pdfDoc = null
-    }
+    for (const document of pdfDocsByRef.values()) document.destroy()
+    pdfDocsByRef.clear()
+    pdfDoc = null
     const renderer = getRuntime().resources.renderPdfPage
     if (!renderer.available) {
       throw new RuntimeError('unavailable', '当前平台不支持原生 PDF 页面渲染')
     }
-    const info = await JmcomicService.getPdfInfo(fileRef)
+    const pageCounts = await Promise.all(
+      volumeRefs.map((volumeRef) => JmcomicService.getPdfInfo(volumeRef)),
+    )
     nativePdfMode = true
-    return info.pageCount
+    return pageCounts.reduce((total, info) => total + info.pageCount, 0)
   }
 }
 
@@ -1244,10 +1260,9 @@ onUnmounted(() => {
   }
   renderedPages.clear()
 
-  if (pdfDoc) {
-    pdfDoc.destroy()
-    pdfDoc = null
-  }
+  for (const document of pdfDocsByRef.values()) document.destroy()
+  pdfDocsByRef.clear()
+  pdfDoc = null
 })
 </script>
 

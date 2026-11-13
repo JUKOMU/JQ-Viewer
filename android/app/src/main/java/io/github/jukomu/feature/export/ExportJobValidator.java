@@ -40,6 +40,11 @@ public final class ExportJobValidator {
             job.useOriginal = true;
             job.compressionRatio = 1F;
         }
+        if ("zip".equals(job.format)) {
+            job.deleteSourceAfterExport = false;
+            job.retainDownloadEntry = false;
+        }
+        if (!job.deleteSourceAfterExport) job.retainDownloadEntry = false;
 
         if ("chapter".equals(job.mode)) {
             requireResourceId(job.chapterId, "chapterId");

@@ -285,7 +285,12 @@
             <div class="row-left">
               <div class="row-title-line">
                 <span class="row-title">自动播放速度</span>
-                <button type="button" class="setting-help-btn" aria-label="自动播放使用帮助" @click="showAutoPlayHelp">
+                <button
+                  type="button"
+                  class="setting-help-btn"
+                  aria-label="自动播放使用帮助"
+                  @click="showAutoPlayHelp"
+                >
                   <IonIcon :icon="helpCircleOutline" />
                 </button>
               </div>

@@ -45,11 +45,11 @@ public class LocalFileStoreInstrumentedTest {
     }
 
     @Test
-    public void newDatabaseCreatesVersionElevenGenericSchemaWithoutResetNotice() throws Exception {
+    public void newDatabaseCreatesVersionThirteenGenericSchemaWithoutResetNotice() throws Exception {
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase database = store.getWritableDatabase();
 
-        assertEquals(11, database.getVersion());
+        assertEquals(13, database.getVersion());
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILES));
         assertTrue(tableExists(database, LocalFileStore.TABLE_FILE_CHAPTERS));
         assertTrue(tableExists(database, LocalFileStore.TABLE_TASKS));
@@ -57,8 +57,115 @@ public class LocalFileStoreInstrumentedTest {
         assertTrue(tableExists(database, LocalFileStore.TABLE_VOLUMES));
         assertTrue(tableExists(database, LocalFileStore.TABLE_META));
         assertEquals(1L, scalarLong(database, "PRAGMA foreign_keys"));
+        assertEquals(0L, scalarLong(database,
+            "SELECT COUNT(*) FROM " + LocalFileStore.TABLE_TASKS
+                + " WHERE delete_source_after_export<>0 OR retain_download_entry<>0"));
+        assertThrows(SQLiteException.class, () -> database.execSQL(
+            "INSERT INTO " + LocalFileStore.TABLE_TASKS
+                + "(export_id,batch_id,format,mode,album_id,display_title,target_folder_ref,target_name,"
+                + "use_original,compression_ratio,status,phase,created_at,updated_at,"
+                + "delete_source_after_export,retain_download_entry) "
+                + "VALUES ('invalid-retain','batch','pdf','chapter','album','title','folder','file.pdf',"
+                + "1,1,'queued','queued',1,1,0,1)"));
         assertFalse(store.getManagementState().getJSONObject("databaseResetInfo")
             .optBoolean("pending"));
+    }
+
+    @Test
+    public void sourceCleanupStateUsesRetainedExportOptionsAndFailureCode() throws Exception {
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        JSONObject task = new JSONObject()
+            .put("exportId", "cleanup-state")
+            .put("batchId", "batch-cleanup-state")
+            .put("format", "pdf")
+            .put("mode", "chapter")
+            .put("albumId", "album-1")
+            .put("chapterId", "chapter-1")
+            .put("displayTitle", "Chapter 1")
+            .put("targetFolderRef", LocalFileRef.createPathFolderRef(
+                context.getCacheDir().getCanonicalPath()))
+            .put("targetName", "chapter-1.pdf")
+            .put("displayPath", new File(context.getCacheDir(), "chapter-1.pdf").getCanonicalPath())
+            .put("deleteSourceAfterExport", true)
+            .put("retainDownloadEntry", true)
+            .put("status", "completed")
+            .put("phase", "completed")
+            .put("createdAt", 1L);
+        JSONArray chapters = new JSONArray().put(new JSONObject()
+            .put("albumId", "album-1")
+            .put("chapterId", "chapter-1")
+            .put("chapterTitle", "Chapter 1"));
+
+        store.reserveExport(task, chapters, new JSONArray());
+        store.updateSourceCleanup("cleanup-state", "album-1", "chapter-1", "deleted");
+
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        store.updateExportProgress("cleanup-state", "completed", "completed",
+            0, 0, 0, 0, "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+    }
+
+    @Test
+    public void retainedExportLookupSkipsLatestExportWithUnavailableVolume() throws Exception {
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        for (String exportId : List.of("a-complete", "z-incomplete")) {
+            JSONObject task = new JSONObject()
+                .put("exportId", exportId)
+                .put("batchId", "batch-" + exportId)
+                .put("format", "pdf")
+                .put("mode", "chapter")
+                .put("albumId", "album-1")
+                .put("chapterId", "chapter-1")
+                .put("displayTitle", exportId)
+                .put("targetFolderRef", LocalFileRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()))
+                .put("targetName", exportId + ".pdf")
+                .put("deleteSourceAfterExport", true)
+                .put("retainDownloadEntry", true)
+                .put("status", "completed")
+                .put("phase", "completed");
+            JSONArray chapters = new JSONArray().put(new JSONObject()
+                .put("albumId", "album-1")
+                .put("chapterId", "chapter-1")
+                .put("expectedPageCount", 2));
+            JSONArray volumes = new JSONArray();
+            for (int index = 1; index <= 2; index++) {
+                String filePath = new File(context.getCacheDir(), exportId + "-" + index + ".pdf")
+                    .getCanonicalPath();
+                JSONObject volume = new JSONObject()
+                    .put("volumeIndex", index)
+                    .put("startPage", index - 1)
+                    .put("endPage", index)
+                    .put("expectedPageCount", 1)
+                    .put("targetName", new File(filePath).getName())
+                    .put("displayPath", filePath)
+                    .put("tempPath", filePath + ".tmp")
+                    .put("workDir", filePath + ".work");
+                volumes.put(volume);
+            }
+            store.reserveExport(task, chapters, volumes);
+            int completedVolumes = "a-complete".equals(exportId) ? 2 : 1;
+            for (int index = 1; index <= completedVolumes; index++) {
+                JSONObject volume = store.getExportVolume(exportId, index);
+                String filePath = volume.getString("displayPath");
+                File file = new File(filePath);
+                createdFiles.add(file);
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(index);
+                }
+                store.completeVolumeAndRegisterFile(exportId, index,
+                    LocalFileRef.createPathFileRef(file.getCanonicalPath()), file.getCanonicalPath(),
+                    file.getName(), file.length(), 1, "chapter", "album-1", "漫画", "", "",
+                    "chapter-1", "第一话", 1, -1);
+            }
+        }
+        store.updateExportProgress("a-complete", "completed", "completed", 2, 2, 2, 2, null, null);
+        store.updateExportProgress("z-incomplete", "completed", "completed", 1, 2, 1, 2, null, null);
+
+        JSONArray retained = store.findRetainedExportsForChapter("album-1", "chapter-1");
+
+        assertEquals(2, retained.length());
+        assertEquals("a-complete", retained.getJSONObject(0).getString("exportId"));
+        assertEquals("a-complete", retained.getJSONObject(1).getString("exportId"));
     }
 
     @Test
@@ -110,7 +217,7 @@ public class LocalFileStoreInstrumentedTest {
 
         LocalFileStore store = LocalFileStore.getInstance(context);
         SQLiteDatabase upgraded = store.getWritableDatabase();
-        assertEquals(11, upgraded.getVersion());
+        assertEquals(13, upgraded.getVersion());
         assertEquals(2L, store.countFiles());
         JSONArray importedFiles = store.getAllFiles(null, LocalFileStore.SOURCE_IMPORTED);
         assertEquals(1, importedFiles.length());
@@ -164,7 +271,7 @@ public class LocalFileStoreInstrumentedTest {
         }
 
         LocalFileStore store = LocalFileStore.getInstance(context);
-        assertEquals(11, store.getWritableDatabase().getVersion());
+        assertEquals(13, store.getWritableDatabase().getVersion());
         assertEquals(5, store.countFiles());
         JSONObject file = store.getFileByRef("file:path:" + physicalFile.getAbsolutePath());
         assertEquals("pdf", file.getString("format"));
@@ -251,7 +358,7 @@ public class LocalFileStoreInstrumentedTest {
             }
             LocalFileStore store = LocalFileStore.getInstance(context);
             SQLiteDatabase upgraded = store.getWritableDatabase();
-            assertEquals(11, upgraded.getVersion());
+            assertEquals(13, upgraded.getVersion());
             assertEquals(0, store.countFiles());
             assertEquals(0, store.getAllExportTasks().length());
             for (String table : oldTables) assertFalse(table, tableExists(upgraded, table));

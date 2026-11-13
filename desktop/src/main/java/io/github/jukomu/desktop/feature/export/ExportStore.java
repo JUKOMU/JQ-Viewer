@@ -30,9 +30,9 @@ public final class ExportStore {
                 "INSERT INTO export_tasks(export_id,batch_id,format,mode,album_id,album_title,"
                     + "cover_url,authors,is_single_episode,chapter_id,display_title,"
                     + "target_folder_ref,target_name,display_path,allow_overwrite,use_original,"
-                    + "compression_ratio,split_pages,status,phase,total_pages,total_volumes,"
+                    + "compression_ratio,split_pages,delete_source_after_export,retain_download_entry,status,phase,total_pages,total_volumes,"
                     + "snapshot_revision,cancel_requested,error_code,error_message,created_at,"
-                    + "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,?,?,?,?)")) {
+                    + "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?,1,0,?,?,?,?)")) {
                 int index = 1;
                 statement.setString(index++, task.exportId());
                 statement.setString(index++, task.batchId());
@@ -53,6 +53,8 @@ public final class ExportStore {
                 statement.setInt(index++, task.useOriginal() ? 1 : 0);
                 statement.setDouble(index++, task.compressionRatio());
                 statement.setInt(index++, task.splitPages());
+                statement.setInt(index++, task.deleteSourceAfterExport() ? 1 : 0);
+                statement.setInt(index++, task.retainDownloadEntry() ? 1 : 0);
                 statement.setString(index++, task.status());
                 statement.setString(index++, task.phase());
                 statement.setInt(index++, task.totalPages());
@@ -111,6 +113,115 @@ public final class ExportStore {
             }
         } catch (SQLException exception) {
             throw failure("读取导出任务失败", exception);
+        }
+    }
+
+    /** 查找章节最近一次完整且可用的保留导出分卷。 */
+    public synchronized List<RetainedExport> findRetainedExportsForChapter(String albumId, String chapterId) {
+        String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
+            + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
+            + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
+            + "JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
+            + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
+            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND ec.expected_page_count=(SELECT COALESCE(SUM(c2.page_count),0) "
+            + "FROM export_task_volumes v2 JOIN local_files f2 ON f2.file_ref=v2.output_file_ref "
+            + "JOIN local_file_chapters c2 ON c2.file_id=f2.id WHERE v2.export_id=t.export_id "
+            + "AND v2.status='completed' AND f2.availability='available' "
+            + "AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
+            + "AND ec.album_id=? AND ec.chapter_id=? "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                List<RetainedExport> result = new ArrayList<>();
+                String exportId = null;
+                while (rows.next()) {
+                    if (exportId == null) exportId = rows.getString("export_id");
+                    if (!exportId.equals(rows.getString("export_id"))) break;
+                    result.add(new RetainedExport(rows.getString("export_id"),
+                        rows.getString("format"), rows.getLong("file_id"), rows.getString("file_ref"),
+                        rows.getInt("start_page"), rows.getInt("page_count")));
+                }
+                return List.copyOf(result);
+            }
+        } catch (SQLException exception) {
+            throw failure("读取保留导出文件失败", exception);
+        }
+    }
+
+    /** 查找章节当前使用的第一个可用保留导出分卷。 */
+    public synchronized RetainedExport findRetainedExportForChapter(String albumId, String chapterId) {
+        List<RetainedExport> exports = findRetainedExportsForChapter(albumId, chapterId);
+        return exports.isEmpty() ? null : exports.get(0);
+    }
+
+    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
+            + "ec.source_cleanup_status "
+            + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
+            + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
+            + "AND t.retain_download_entry=1 "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next() && rows.getInt("delete_source_after_export") == 1
+                    && rows.getInt("retain_download_entry") == 1
+                    && "completed".equals(rows.getString("status"))
+                    && "deleted".equals(rows.getString("source_cleanup_status"));
+            }
+        } catch (SQLException exception) {
+            throw failure("读取原下载文件清理状态失败", exception);
+        }
+    }
+
+    /** 判断导出任务是否仍关联可用的保留下载文件。 */
+    public synchronized boolean hasRetainedExportForTask(String exportId) {
+        String sql = "SELECT 1 FROM export_tasks t JOIN export_task_volumes v ON v.export_id=t.export_id "
+            + "JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "WHERE t.export_id=? AND t.status='completed' AND t.retain_download_entry=1 "
+            + "AND v.status='completed' AND f.availability='available' LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, exportId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next();
+            }
+        } catch (SQLException exception) {
+            throw failure("查询导出任务保留文件失败", exception);
+        }
+    }
+
+    /** 更新导出章节对应原下载目录的清理结果。 */
+    public synchronized void updateSourceCleanup(String exportId, String albumId, String chapterId,
+                                                  String status) {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE export_task_chapters SET source_cleanup_status=? "
+                + "WHERE export_id=? AND album_id=? AND chapter_id=?")) {
+            statement.setString(1, status);
+            statement.setString(2, exportId);
+            statement.setString(3, albumId);
+            statement.setString(4, chapterId);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw failure("更新章节原下载文件清理状态失败", exception);
+        }
+    }
+
+    /** 下载重新建立后清除该章节之前的原文件清理状态。 */
+    public synchronized void invalidateSourceCleanup(String albumId, String chapterId) {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE export_task_chapters SET source_cleanup_status='not_attempted' "
+                + "WHERE album_id=? AND chapter_id=?")) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw failure("重置章节原下载文件清理状态失败", exception);
         }
     }
 
@@ -605,7 +716,8 @@ public final class ExportStore {
             rows.getString("target_name"), rows.getString("output_file_ref"),
             rows.getString("response_display_path"), rows.getInt("allow_overwrite") == 1,
             rows.getInt("use_original") == 1, rows.getDouble("compression_ratio"),
-            rows.getInt("split_pages"), rows.getString("status"), rows.getString("phase"),
+            rows.getInt("split_pages"), rows.getInt("delete_source_after_export") == 1,
+            rows.getInt("retain_download_entry") == 1, rows.getString("status"), rows.getString("phase"),
             rows.getInt("current_page"), rows.getInt("total_pages"),
             rows.getInt("current_volume"), rows.getInt("total_volumes"),
             rows.getLong("snapshot_revision"), rows.getInt("cancel_requested") == 1,
@@ -690,6 +802,8 @@ public final class ExportStore {
         boolean useOriginal,
         double compressionRatio,
         int splitPages,
+        boolean deleteSourceAfterExport,
+        boolean retainDownloadEntry,
         String status,
         String phase,
         int totalPages,
@@ -697,6 +811,18 @@ public final class ExportStore {
         String errorMessage,
         long createdAt
     ) {
+        public ReserveTask(String exportId, String batchId, String format, String mode,
+                           String albumId, String albumTitle, String coverUrl, String authors,
+                           Boolean singleEpisode, String chapterId, String displayTitle,
+                           String targetFolderRef, String targetName, String displayPath,
+                           boolean allowOverwrite, boolean useOriginal, double compressionRatio,
+                           int splitPages, String status, String phase, int totalPages,
+                           String errorCode, String errorMessage, long createdAt) {
+            this(exportId, batchId, format, mode, albumId, albumTitle, coverUrl, authors,
+                singleEpisode, chapterId, displayTitle, targetFolderRef, targetName, displayPath,
+                allowOverwrite, useOriginal, compressionRatio, splitPages, false, false,
+                status, phase, totalPages, errorCode, errorMessage, createdAt);
+        }
     }
 
     public record Chapter(
@@ -730,6 +856,10 @@ public final class ExportStore {
     }
 
     public record Page(List<ExportTaskResponse> tasks, String nextCursor) {
+    }
+
+    public record RetainedExport(String exportId, String format, long fileId, String fileRef,
+                                 int startPage, int pageCount) {
     }
 
     public record DiagnosticSnapshot(

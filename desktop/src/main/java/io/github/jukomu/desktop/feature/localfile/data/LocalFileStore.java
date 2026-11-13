@@ -282,6 +282,50 @@ public final class LocalFileStore {
         }
     }
 
+    /** 判断章节是否仍关联可用的保留导出文件。 */
+    public synchronized boolean hasRetainedExportForChapter(String albumId, String chapterId) {
+        String sql = "SELECT 1 FROM export_tasks t JOIN export_task_chapters ec "
+            + "ON ec.export_id=t.export_id JOIN export_task_volumes v ON v.export_id=t.export_id "
+            + "AND v.status='completed' JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
+            + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
+            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND ec.album_id=? AND ec.chapter_id=? LIMIT 1";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next();
+            }
+        } catch (SQLException exception) {
+            throw failure("查询章节的保留导出失败", exception);
+        }
+    }
+
+    /** 返回指定文件仍保留在下载列表中的章节。 */
+    public synchronized List<StoredLocalFileChapter> retainedChapters(long fileId) {
+        String sql = "SELECT DISTINCT c.album_id,c.chapter_id,c.chapter_title,c.sort_order,"
+            + "c.start_page,c.end_page,c.page_count FROM local_file_chapters c "
+            + "JOIN local_files f ON f.id=c.file_id JOIN export_task_volumes v "
+            + "ON v.output_file_ref=f.file_ref JOIN export_tasks t ON t.export_id=v.export_id "
+            + "JOIN export_task_chapters ec ON ec.export_id=t.export_id AND ec.album_id=c.album_id "
+            + "AND ec.chapter_id=c.chapter_id WHERE f.id=? AND t.retain_download_entry=1 "
+            + "AND t.status='completed' AND v.status='completed'";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, fileId);
+            try (ResultSet rows = statement.executeQuery()) {
+                List<StoredLocalFileChapter> chapters = new ArrayList<>();
+                while (rows.next()) chapters.add(new StoredLocalFileChapter(0, rows.getString("album_id"),
+                    rows.getString("chapter_id"), rows.getString("chapter_title"),
+                    rows.getInt("sort_order"), rows.getInt("start_page"),
+                    rows.getInt("end_page"), rows.getInt("page_count")));
+                return chapters;
+            }
+        } catch (SQLException exception) {
+            throw failure("读取文件关联的下载章节失败", exception);
+        }
+    }
+
     public synchronized int updateAlbumEpisodeType(String albumId, boolean singleEpisode) {
         try (PreparedStatement statement = connection.prepareStatement(
             "UPDATE local_files SET is_single_episode=?, updated_at=? WHERE album_id=?")) {

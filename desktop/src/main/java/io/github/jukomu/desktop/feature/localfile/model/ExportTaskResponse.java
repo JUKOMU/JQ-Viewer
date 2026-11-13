@@ -27,6 +27,8 @@ public record ExportTaskResponse(
     boolean useOriginal,
     double compressionRatio,
     int splitPages,
+    boolean deleteSourceAfterExport,
+    boolean retainDownloadEntry,
     String status,
     String phase,
     int currentPage,
@@ -47,7 +49,7 @@ public record ExportTaskResponse(
             value, exportId, batchId, format, mode, albumId, albumTitle, coverUrl, authors,
             isSingleEpisode, chapterId, displayTitle, targetFolderRef, targetName,
             outputFileRef, displayPath, allowOverwrite, useOriginal, compressionRatio,
-            splitPages, status, phase, currentPage, totalPages, currentVolume,
+            splitPages, deleteSourceAfterExport, retainDownloadEntry, status, phase, currentPage, totalPages, currentVolume,
             totalVolumes, snapshotRevision, cancelRequested, errorCode, errorMessage,
             createdAt, startedAt, updatedAt, completedAt
         );
@@ -61,8 +63,8 @@ public record ExportTaskResponse(
     ) {
         return new ExportTaskResponse(
             false, null, null, format, null, null, null, null, null, null, null, null,
-            null, null, null, displayPath, false, true, 1D, 0, null, null,
-            0, 0, 0, 0, 0, false, code, message, 0, null, 0, null
+            null, null, null, displayPath, false, true, 1D, 0, false, false,
+            null, null, 0, 0, 0, 0, 0, false, code, message, 0, null, 0, null
         );
     }
 }

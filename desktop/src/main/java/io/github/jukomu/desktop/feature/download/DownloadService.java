@@ -8,6 +8,7 @@ import io.github.jukomu.desktop.feature.download.data.DownloadStore;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadPage;
 import io.github.jukomu.desktop.feature.download.data.StoredDownloadTask;
 import io.github.jukomu.desktop.feature.download.model.*;
+import io.github.jukomu.desktop.feature.export.ExportStore;
 import io.github.jukomu.desktop.feature.download.validation.ChapterManifestValidator;
 import io.github.jukomu.desktop.util.JsonUtils;
 import io.github.jukomu.jmcomic.api.client.JmClient;
@@ -47,10 +48,12 @@ public final class DownloadService implements AutoCloseable {
 
     private final DownloadStore store;
     private final DownloadFiles files;
+    private final ExportStore exports;
     private final Supplier<JmClient> clientSupplier;
     private final Supplier<JmDownloadClient> downloadClientSupplier;
     private final Executor prepareExecutor;
     private final EventHub events;
+    private java.util.function.BiFunction<String, String, ExportStore.RetainedExport> retainedExportResolver;
     private final Object submitLock = new Object();
     private final ConcurrentHashMap<String, RuntimeTask> runtimes = new ConcurrentHashMap<>();
     private final Set<String> cancelledTaskIds = ConcurrentHashMap.newKeySet();
@@ -59,17 +62,19 @@ public final class DownloadService implements AutoCloseable {
     public DownloadService(
         DownloadStore store,
         DownloadFiles files,
+        ExportStore exports,
         JmClient client,
         JmDownloadClient downloadClient,
         Executor prepareExecutor,
         EventHub events
     ) {
-        this(store, files, () -> client, () -> downloadClient, prepareExecutor, events);
+        this(store, files, exports, () -> client, () -> downloadClient, prepareExecutor, events);
     }
 
     public DownloadService(
         DownloadStore store,
         DownloadFiles files,
+        ExportStore exports,
         Supplier<JmClient> clientSupplier,
         Supplier<JmDownloadClient> downloadClientSupplier,
         Executor prepareExecutor,
@@ -77,6 +82,7 @@ public final class DownloadService implements AutoCloseable {
     ) {
         this.store = Objects.requireNonNull(store, "store");
         this.files = Objects.requireNonNull(files, "files");
+        this.exports = Objects.requireNonNull(exports, "exports");
         this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
         this.downloadClientSupplier = Objects.requireNonNull(
             downloadClientSupplier, "downloadClientSupplier");
@@ -133,6 +139,7 @@ public final class DownloadService implements AutoCloseable {
                     relativeDirectory,
                     System.currentTimeMillis()
                 );
+                exports.invalidateSourceCleanup(albumId, chapterId);
                 runtimes.put(taskId, runtime);
                 logInfo("submit", taskId, albumId, chapterId, "submit", null, null, 0,
                     null, "queued", null, 0);
@@ -187,7 +194,16 @@ public final class DownloadService implements AutoCloseable {
     public List<String> getDownloadedResourceKeys(List<DownloadResourceKeysRequest.Item> items) {
         List<String> albums = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::albumId).toList();
         List<String> chapters = items == null ? List.of() : items.stream().map(DownloadResourceKeysRequest.Item::chapterId).toList();
-        return store.completedResourceKeys(albums, chapters);
+        Set<String> completed = new HashSet<>(store.completedResourceKeys(albums, chapters));
+        List<String> result = new ArrayList<>();
+        for (int index = 0; index < albums.size(); index++) {
+            String key = albums.get(index) + "|" + chapters.get(index);
+            if (completed.contains(key)
+                && !exports.isSourceDeletedAfterExport(albums.get(index), chapters.get(index))) {
+                result.add(key);
+            }
+        }
+        return List.copyOf(result);
     }
 
     public Map<String, Integer> clearDownloadTasks(String status) {
@@ -658,8 +674,16 @@ public final class DownloadService implements AutoCloseable {
             JsonUtils.parseJsonStringListOrEmpty(task.tagsJson()),
             task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
             task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
-            task.error(), task.downloadedBytes(), task.totalSize()
+            task.error(), task.downloadedBytes(), task.totalSize(),
+            retainedExportResponses(task.albumId(), task.chapterId())
         );
+    }
+
+    private List<RetainedDownloadExport> retainedExportResponses(String albumId, String chapterId) {
+        return exports.findRetainedExportsForChapter(albumId, chapterId).stream()
+            .map(retained -> new RetainedDownloadExport(retained.exportId(), retained.format(), retained.fileId(),
+                retained.fileRef(), retained.startPage(), retained.pageCount()))
+            .toList();
     }
 
     private CompletedDownloadGroupResponse completedResponse(DownloadStore.CompletedAlbum album) {

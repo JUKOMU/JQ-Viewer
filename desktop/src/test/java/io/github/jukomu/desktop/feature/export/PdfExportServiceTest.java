@@ -163,8 +163,9 @@ class ExportServiceTest {
         BlockingSecondVolumeWriter writer = new BlockingSecondVolumeWriter();
         try (Fixture fixture = fixture(writer)) {
             fixture.addDownload("album-1", "chapter-1", 2);
+            Path sourceImage = fixture.files.chapterDirectory("album-1/chapter-1").resolve("001.png");
             ExportTaskResponse queued = fixture.service.submit(List.of(
-                    fixture.task("chapter-1", "cancel.pdf", 1, false))).tasks().get(0);
+                    fixture.task("chapter-1", "cancel.pdf", 1, false, true, false))).tasks().get(0);
 
             assertTrue(writer.secondVolume.await(5, TimeUnit.SECONDS));
             ExportTaskResponse cancelling = fixture.service.cancel(queued.exportId());
@@ -175,6 +176,7 @@ class ExportServiceTest {
             assertEquals("CANCELLED", terminal.errorCode());
             assertTrue(Files.isRegularFile(fixture.output.resolve("cancel_001-001.pdf")));
             assertFalse(Files.exists(fixture.output.resolve("cancel_002-002.pdf")));
+            assertTrue(Files.isRegularFile(sourceImage));
             assertTrue(fixture.store.volumes(queued.exportId()).stream()
                     .map(ExportStore.Volume::tempPath)
                     .noneMatch(path -> Files.exists(Path.of(path))));
@@ -247,6 +249,62 @@ class ExportServiceTest {
     }
 
     @Test
+    void successfulExportDeletesSourceFilesAndRetainsTheDownloadEntryWhenRequested() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            Path sourceImage = fixture.files.chapterDirectory("album-1/chapter-1").resolve("001.png");
+            ExportTaskResponse queued = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "retained.pdf", 0, false, true, true))).tasks().get(0);
+
+            ExportTaskResponse completed = fixture.awaitTerminal(queued.exportId());
+
+            assertEquals("completed", completed.status());
+            assertTrue(completed.deleteSourceAfterExport());
+            assertTrue(completed.retainDownloadEntry());
+            long cleanupDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (Files.exists(sourceImage) && System.nanoTime() < cleanupDeadline) {
+                Thread.sleep(10);
+            }
+            assertFalse(Files.exists(sourceImage));
+            assertNotNull(fixture.downloads.findTask("album-1", "chapter-1"));
+            assertNotNull(fixture.store.findRetainedExportForChapter("album-1", "chapter-1"));
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+            fixture.store.updateProgress(queued.exportId(), "completed", "completed",
+                    completed.currentPage(), completed.totalPages(), completed.currentVolume(),
+                    completed.totalVolumes(), "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        }
+    }
+
+    @Test
+    void retainedExportLookupFallsBackWhenLatestExportIsMissingAVolume() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 2);
+            ExportTaskResponse earlier = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "earlier.pdf", 1, false, true, true)))
+                    .tasks().get(0);
+            assertEquals("completed", fixture.awaitTerminal(earlier.exportId()).status());
+
+            fixture.addDownload("album-1", "chapter-1", 2);
+            ExportTaskResponse latest = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "latest.pdf", 1, false, true, true)))
+                    .tasks().get(0);
+            assertEquals("completed", fixture.awaitTerminal(latest.exportId()).status());
+            String missingVolumeRef = fixture.store.volumes(latest.exportId()).get(1).outputFileRef();
+            try (var statement = fixture.database.connection().prepareStatement(
+                    "UPDATE local_files SET availability='missing' WHERE file_ref=?")) {
+                statement.setString(1, missingVolumeRef);
+                assertEquals(1, statement.executeUpdate());
+            }
+
+            var retained = fixture.store.findRetainedExportsForChapter("album-1", "chapter-1");
+
+            assertEquals(2, retained.size());
+            assertTrue(retained.stream().allMatch(volume -> earlier.exportId().equals(volume.exportId())));
+        }
+    }
+
+    @Test
     void exportsAndRegistersCbzAndMergedZipWithoutChangingImageBytes() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter())) {
             fixture.addDownload("album-1", "chapter-1", 2);
@@ -258,9 +316,13 @@ class ExportServiceTest {
                     fixture.task("cbz", "chapter-1", "first.cbz", 1, false))).tasks().get(0);
             assertEquals("completed", fixture.awaitTerminal(cbzTask.exportId()).status());
             ExportTaskResponse zipTask = fixture.service.submit(List.of(
-                    fixture.mergedTask("zip", "merged.zip"))).tasks().get(0);
+                    fixture.mergedTask("zip", "merged.zip", true, true))).tasks().get(0);
 
             assertEquals("completed", fixture.awaitTerminal(zipTask.exportId()).status());
+            assertTrue(Files.isRegularFile(fixture.files.chapterDirectory("album-1/chapter-1")
+                    .resolve("001.png")));
+            assertTrue(Files.isRegularFile(fixture.files.chapterDirectory("album-1/chapter-2")
+                    .resolve("001.png")));
             try (ZipFile firstVolume = new ZipFile(
                     fixture.output.resolve("first_001-001.cbz").toFile())) {
                 ZipEntry image = firstVolume.getEntry("0001.png");
@@ -508,7 +570,19 @@ class ExportServiceTest {
                 int splitPages,
                 boolean allowOverwrite
         ) {
-            return task("pdf", chapterId, targetName, splitPages, allowOverwrite);
+            return task("pdf", chapterId, targetName, splitPages, allowOverwrite, false, false);
+        }
+
+        ExportTaskRequest task(
+                String chapterId,
+                String targetName,
+                int splitPages,
+                boolean allowOverwrite,
+                boolean deleteSourceAfterExport,
+                boolean retainDownloadEntry
+        ) {
+            return task("pdf", chapterId, targetName, splitPages, allowOverwrite,
+                    deleteSourceAfterExport, retainDownloadEntry);
         }
 
         ExportTaskRequest task(
@@ -518,11 +592,24 @@ class ExportServiceTest {
                 int splitPages,
                 boolean allowOverwrite
         ) {
+            return task(format, chapterId, targetName, splitPages, allowOverwrite, false, false);
+        }
+
+        ExportTaskRequest task(
+                String format,
+                String chapterId,
+                String targetName,
+                int splitPages,
+                boolean allowOverwrite,
+                boolean deleteSourceAfterExport,
+                boolean retainDownloadEntry
+        ) {
             return new ExportTaskRequest(
                     format, "chapter", "album-1", "Album", "", "Alice", false,
                     chapterId, "Chapter", null,
                     new ExportTargetRequest(FileReferences.folderRef(output), targetName),
-                    output.resolve(targetName).toString(), true, 1D, splitPages, allowOverwrite);
+                    output.resolve(targetName).toString(), true, 1D, splitPages, allowOverwrite,
+                    deleteSourceAfterExport, retainDownloadEntry);
         }
 
         ExportTaskRequest mergedTask(String targetName) {
@@ -530,6 +617,11 @@ class ExportServiceTest {
         }
 
         ExportTaskRequest mergedTask(String format, String targetName) {
+            return mergedTask(format, targetName, false, false);
+        }
+
+        ExportTaskRequest mergedTask(String format, String targetName,
+                                     boolean deleteSourceAfterExport, boolean retainDownloadEntry) {
             return new ExportTaskRequest(
                     format, "merged", "album-1", "Album", "", "Alice", false,
                     null, "Album", List.of(
@@ -538,7 +630,8 @@ class ExportServiceTest {
                     new io.github.jukomu.desktop.feature.localfile.model.ExportTaskChapterRequest(
                             "album-1", "chapter-2", "Chapter 2", 2)),
                     new ExportTargetRequest(FileReferences.folderRef(output), targetName),
-                    output.resolve(targetName).toString(), true, 1D, 0, false);
+                    output.resolve(targetName).toString(), true, 1D, 0, false,
+                    deleteSourceAfterExport, retainDownloadEntry);
         }
 
         ExportTaskResponse awaitTerminal(String exportId) throws Exception {

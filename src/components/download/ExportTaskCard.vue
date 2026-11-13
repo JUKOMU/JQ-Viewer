@@ -278,6 +278,10 @@ const statusLabel = computed(() => {
 .actions button:first-child {
   color: #b53d36;
 }
+.actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
 .actions button:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 1px;

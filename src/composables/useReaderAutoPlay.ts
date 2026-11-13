@@ -9,6 +9,10 @@ export function useReaderAutoPlay(options: {
   currentIndex: Ref<number>
   totalCount: Ref<number>
   getScrollContainer: () => HTMLElement | null
+  /** 位移由纵向视图在布局提交后落地，返回该方向能否继续推进。 */
+  advanceScroll: (distance: number) => Promise<boolean>
+  /** 撤销尚未落地的播放位移，保留视图自己的图片布局补偿。 */
+  cancelScroll: () => void
   goToIndex: (index: number) => void
 }) {
   const isPlaying = ref(false)
@@ -21,8 +25,12 @@ export function useReaderAutoPlay(options: {
   let timerStartedAt = 0
   let remainingMs = 0
   let lastFrameAt = 0
+  // 暂停、调速或离页后，旧提交的完成回调不能重新启动播放帧。
+  let scrollVersion = 0
 
   function clearScheduledWork() {
+    scrollVersion++
+    options.cancelScroll()
     if (timer) clearTimeout(timer)
     timer = null
     if (animationFrame !== null) cancelAnimationFrame(animationFrame)
@@ -45,29 +53,26 @@ export function useReaderAutoPlay(options: {
     syncNativeVolumeInterception(false)
   }
 
-  function scrollFrame(now: number) {
-    animationFrame = null
-    if (!isPlaying.value || interactionActive || !options.isVertical.value) return
+  async function scrollFrame(now: number) {
+    if (!isPlaying.value || interactionActive || !options.isVertical.value) {
+      animationFrame = null
+      return
+    }
     const container = options.getScrollContainer()
-    if (!container) return
+    if (!container) {
+      animationFrame = null
+      return
+    }
     const direction = Math.sign(intervalSeconds.value)
     const elapsed = lastFrameAt === 0 ? 0 : now - lastFrameAt
     lastFrameAt = now
     const distance = (container.clientHeight * elapsed) / (Math.abs(intervalSeconds.value) * 1000)
-    const currentScrollTop = container.scrollTop
-    const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
-    const nextScrollTop = Math.max(
-      0,
-      Math.min(maxScrollTop, currentScrollTop + distance * direction),
-    )
-    container.scrollTop = nextScrollTop
-    if (
-      nextScrollTop === currentScrollTop &&
-      ((direction > 0 && nextScrollTop === maxScrollTop) || (direction < 0 && nextScrollTop === 0))
-    ) {
-      return
-    }
-    animationFrame = requestAnimationFrame(scrollFrame)
+    const version = scrollVersion
+    // 提交期间保留帧句柄，geometry-change 不会再开启第二条播放循环。
+    const canContinue = await options.advanceScroll(distance * direction)
+    if (version !== scrollVersion) return
+    animationFrame = null
+    if (canContinue) animationFrame = requestAnimationFrame(scrollFrame)
   }
 
   function schedule() {
@@ -109,12 +114,9 @@ export function useReaderAutoPlay(options: {
     if (interactionActive) return
     interactionActive = true
     if (timer) {
-      clearTimeout(timer)
-      timer = null
       remainingMs = Math.max(0, remainingMs - (performance.now() - timerStartedAt))
     }
-    if (animationFrame !== null) cancelAnimationFrame(animationFrame)
-    animationFrame = null
+    clearScheduledWork()
     lastFrameAt = 0
   }
 
@@ -124,7 +126,12 @@ export function useReaderAutoPlay(options: {
   }
 
   function resumeAfterGeometryChange() {
-    if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+    if (
+      isPlaying.value &&
+      options.isVertical.value &&
+      !interactionActive &&
+      animationFrame === null
+    ) {
       schedule()
     }
   }
@@ -191,7 +198,12 @@ export function useReaderAutoPlay(options: {
   watch(
     () => options.totalCount.value,
     () => {
-      if (isPlaying.value && options.isVertical.value && !interactionActive && animationFrame === null) {
+      if (
+        isPlaying.value &&
+        options.isVertical.value &&
+        !interactionActive &&
+        animationFrame === null
+      ) {
         schedule()
       }
     },

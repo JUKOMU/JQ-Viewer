@@ -116,7 +116,7 @@ public final class ExportStore {
         }
     }
 
-    /** 查找章节当前使用的最近可用保留导出分卷。 */
+    /** 查找章节最近一次完整且可用的保留导出分卷。 */
     public synchronized List<RetainedExport> findRetainedExportsForChapter(String albumId, String chapterId) {
         String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
@@ -125,6 +125,11 @@ public final class ExportStore {
             + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
             + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND ec.expected_page_count=(SELECT COALESCE(SUM(c2.page_count),0) "
+            + "FROM export_task_volumes v2 JOIN local_files f2 ON f2.file_ref=v2.output_file_ref "
+            + "JOIN local_file_chapters c2 ON c2.file_id=f2.id WHERE v2.export_id=t.export_id "
+            + "AND v2.status='completed' AND f2.availability='available' "
+            + "AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
             + "AND ec.album_id=? AND ec.chapter_id=? "
             + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -155,7 +160,7 @@ public final class ExportStore {
 
     /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
     public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
-        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,t.error_code,"
+        String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
             + "ec.source_cleanup_status "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
@@ -168,7 +173,6 @@ public final class ExportStore {
                 return rows.next() && rows.getInt("delete_source_after_export") == 1
                     && rows.getInt("retain_download_entry") == 1
                     && "completed".equals(rows.getString("status"))
-                    && rows.getString("error_code") == null
                     && "deleted".equals(rows.getString("source_cleanup_status"));
             }
         } catch (SQLException exception) {

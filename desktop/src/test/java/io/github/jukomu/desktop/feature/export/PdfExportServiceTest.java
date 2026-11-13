@@ -272,7 +272,35 @@ class ExportServiceTest {
             fixture.store.updateProgress(queued.exportId(), "completed", "completed",
                     completed.currentPage(), completed.totalPages(), completed.currentVolume(),
                     completed.totalVolumes(), "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
-            assertFalse(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        }
+    }
+
+    @Test
+    void retainedExportLookupFallsBackWhenLatestExportIsMissingAVolume() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 2);
+            ExportTaskResponse earlier = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "earlier.pdf", 1, false, true, true)))
+                    .tasks().get(0);
+            assertEquals("completed", fixture.awaitTerminal(earlier.exportId()).status());
+
+            fixture.addDownload("album-1", "chapter-1", 2);
+            ExportTaskResponse latest = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "latest.pdf", 1, false, true, true)))
+                    .tasks().get(0);
+            assertEquals("completed", fixture.awaitTerminal(latest.exportId()).status());
+            String missingVolumeRef = fixture.store.volumes(latest.exportId()).get(1).outputFileRef();
+            try (var statement = fixture.database.connection().prepareStatement(
+                    "UPDATE local_files SET availability='missing' WHERE file_ref=?")) {
+                statement.setString(1, missingVolumeRef);
+                assertEquals(1, statement.executeUpdate());
+            }
+
+            var retained = fixture.store.findRetainedExportsForChapter("album-1", "chapter-1");
+
+            assertEquals(2, retained.size());
+            assertTrue(retained.stream().allMatch(volume -> earlier.exportId().equals(volume.exportId())));
         }
     }
 

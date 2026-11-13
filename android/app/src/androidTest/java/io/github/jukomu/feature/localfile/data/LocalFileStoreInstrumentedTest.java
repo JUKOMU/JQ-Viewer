@@ -102,7 +102,70 @@ public class LocalFileStoreInstrumentedTest {
         assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
         store.updateExportProgress("cleanup-state", "completed", "completed",
             0, 0, 0, 0, "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
-        assertFalse(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+    }
+
+    @Test
+    public void retainedExportLookupSkipsLatestExportWithUnavailableVolume() throws Exception {
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        for (String exportId : List.of("a-complete", "z-incomplete")) {
+            JSONObject task = new JSONObject()
+                .put("exportId", exportId)
+                .put("batchId", "batch-" + exportId)
+                .put("format", "pdf")
+                .put("mode", "chapter")
+                .put("albumId", "album-1")
+                .put("chapterId", "chapter-1")
+                .put("displayTitle", exportId)
+                .put("targetFolderRef", LocalFileRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()))
+                .put("targetName", exportId + ".pdf")
+                .put("deleteSourceAfterExport", true)
+                .put("retainDownloadEntry", true)
+                .put("status", "completed")
+                .put("phase", "completed");
+            JSONArray chapters = new JSONArray().put(new JSONObject()
+                .put("albumId", "album-1")
+                .put("chapterId", "chapter-1")
+                .put("expectedPageCount", 2));
+            JSONArray volumes = new JSONArray();
+            for (int index = 1; index <= 2; index++) {
+                String filePath = new File(context.getCacheDir(), exportId + "-" + index + ".pdf")
+                    .getCanonicalPath();
+                JSONObject volume = new JSONObject()
+                    .put("volumeIndex", index)
+                    .put("startPage", index - 1)
+                    .put("endPage", index)
+                    .put("expectedPageCount", 1)
+                    .put("targetName", new File(filePath).getName())
+                    .put("displayPath", filePath)
+                    .put("tempPath", filePath + ".tmp")
+                    .put("workDir", filePath + ".work");
+                volumes.put(volume);
+            }
+            store.reserveExport(task, chapters, volumes);
+            int completedVolumes = "a-complete".equals(exportId) ? 2 : 1;
+            for (int index = 1; index <= completedVolumes; index++) {
+                JSONObject volume = store.getExportVolume(exportId, index);
+                String filePath = volume.getString("displayPath");
+                File file = new File(filePath);
+                createdFiles.add(file);
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(index);
+                }
+                store.completeVolumeAndRegisterFile(exportId, index,
+                    LocalFileRef.createPathFileRef(file.getCanonicalPath()), file.getCanonicalPath(),
+                    file.getName(), file.length(), 1, "chapter", "album-1", "漫画", "", "",
+                    "chapter-1", "第一话", 1, -1);
+            }
+        }
+        store.updateExportProgress("a-complete", "completed", "completed", 2, 2, 2, 2, null, null);
+        store.updateExportProgress("z-incomplete", "completed", "completed", 1, 2, 1, 2, null, null);
+
+        JSONArray retained = store.findRetainedExportsForChapter("album-1", "chapter-1");
+
+        assertEquals(2, retained.length());
+        assertEquals("a-complete", retained.getJSONObject(0).getString("exportId"));
+        assertEquals("a-complete", retained.getJSONObject(1).getString("exportId"));
     }
 
     @Test

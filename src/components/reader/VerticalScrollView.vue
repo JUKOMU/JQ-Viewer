@@ -426,6 +426,20 @@ let pendingScroll: ScrollUpdate | null = null
 let scrollRemainder = 0
 let lastWrittenScrollTop = 0
 
+/** 统一提交实际位置和量化余量，并同步阅读状态；目标必须使用当前已生效的布局。 */
+function commitScrollPosition(position: number) {
+  const el = containerRef.value!
+  const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  const target = Math.max(0, Math.min(maxTop, position))
+  el.scrollTop = target
+  lastWrittenScrollTop = el.scrollTop
+  // 只保留浏览器取整造成的余量，真实边界外的距离不再累计。
+  scrollRemainder = target - lastWrittenScrollTop
+  updateVisibleRange(lastWrittenScrollTop)
+  emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
+  updateBottomState()
+}
+
 /** 同批测高保持同一个锚点，播放距离独立累计，待新布局生效后统一提交。 */
 function queueScrollUpdate(): ScrollUpdate {
   if (pendingScroll) return pendingScroll
@@ -443,19 +457,8 @@ function queueScrollUpdate(): ScrollUpdate {
       .then(() => nextTick())
       .then(() => {
         if (pendingScroll !== update) return
-        const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
-        const target = Math.max(
-          0,
-          Math.min(maxTop, getPageTop(update.index) + update.offset + update.distance),
-        )
-        el.scrollTop = target
-        lastWrittenScrollTop = el.scrollTop
-        // 自身 scroll 回读不清除量化余量；真实边界外的距离已由 target 裁掉。
-        scrollRemainder = target - lastWrittenScrollTop
         pendingScroll = null
-        updateVisibleRange(lastWrittenScrollTop)
-        emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
-        updateBottomState()
+        commitScrollPosition(getPageTop(update.index) + update.offset + update.distance)
         if (update.geometryChanged) emit('geometry-change')
       }),
   }
@@ -467,9 +470,15 @@ function queueScrollUpdate(): ScrollUpdate {
 /** 推进带方向的 CSS 像素增量，提交后返回该方向是否仍有可滚动空间。 */
 async function advanceScroll(distance: number) {
   const el = containerRef.value!
-  const update = queueScrollUpdate()
-  update.distance += distance
-  await update.settled
+  if (pendingScroll) {
+    // 布局正在变化时才等待 DOM，播放量与该批锚点补偿一起提交。
+    const update = pendingScroll
+    update.distance += distance
+    await update.settled
+  } else {
+    // 布局稳定时直接在播放 rAF 内推进，不为每帧创建异步锚点事务。
+    commitScrollPosition(el.scrollTop + scrollRemainder + distance)
+  }
   const position = el.scrollTop + scrollRemainder
   return distance < 0
     ? position > 0
@@ -511,11 +520,11 @@ function updateBottomState() {
 function onScroll() {
   if (touchSettleTimer) finishTouchInteraction()
   const el = containerRef.value
-  if (el && el.scrollTop !== lastWrittenScrollTop) {
-    resetScrollPosition()
-    lastWrittenScrollTop = el.scrollTop
-  }
-  if (!containerRef.value || isAdjusting || zoomScale.value > 1) return
+  // 组件自身写入已同步范围和页码，回读只确认落点，避免再排一条刷新帧。
+  if (!el || el.scrollTop === lastWrittenScrollTop) return
+  resetScrollPosition()
+  lastWrittenScrollTop = el.scrollTop
+  if (isAdjusting || zoomScale.value > 1) return
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = null
@@ -871,8 +880,8 @@ function onMousePointerMove(ev: PointerEvent) {
   if (!el) return
   if (zoomScale.value <= 1) {
     resetScrollPosition()
+    // 拖拽产生的新位置交由 onScroll 接管基准并刷新阅读状态。
     el.scrollTop = mouseStartScrollTop - dy
-    lastWrittenScrollTop = el.scrollTop
     onScroll()
     return
   }

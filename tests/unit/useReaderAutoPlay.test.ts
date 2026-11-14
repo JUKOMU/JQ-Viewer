@@ -34,7 +34,7 @@ const horizontalScrollActions = {
   cancelScroll: () => {},
 }
 
-async function mountVerticalReader(round: (value: number) => number) {
+async function mountVerticalReader(round: (value: number) => number, totalCount = 6) {
   const frames = new Map<number, FrameRequestCallback>()
   let frameId = 0
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -54,7 +54,7 @@ async function mountVerticalReader(round: (value: number) => number) {
       autoPlay = useReaderAutoPlay({
         isVertical: ref(true),
         currentIndex,
-        totalCount: ref(6),
+        totalCount: ref(totalCount),
         getScrollContainer: () => view.value?.containerRef ?? null,
         advanceScroll: (distance) => view.value!.advanceScroll(distance),
         cancelScroll: () => view.value?.cancelAutoScroll(),
@@ -62,8 +62,8 @@ async function mountVerticalReader(round: (value: number) => number) {
       })
       return () => h(VerticalScrollView, {
         ref: view,
-        imageMap: new Map(Array.from({ length: 6 }, (_, i) => [i + 1, `image-${i}`])),
-        totalCount: 6,
+        imageMap: new Map(Array.from({ length: totalCount }, (_, i) => [i + 1, `image-${i}`])),
+        totalCount,
         currentIndex: currentIndex.value,
         'onUpdate:currentIndex': (index: number) => { currentIndex.value = index },
         onGeometryChange: autoPlay.resumeAfterGeometryChange,
@@ -73,6 +73,7 @@ async function mountVerticalReader(round: (value: number) => number) {
   const container = wrapper.get('.vertical-container').element as HTMLElement
   const inner = wrapper.get('.virtual-inner').element as HTMLElement
   let top = 0
+  const positions: number[] = []
   const contentHeight = () => Number.parseFloat(inner.style.height)
   Object.defineProperties(container, {
     clientWidth: { configurable: true, value: 600 },
@@ -81,7 +82,10 @@ async function mountVerticalReader(round: (value: number) => number) {
     scrollTop: {
       configurable: true,
       get: () => Math.min(top, Math.max(0, contentHeight() - 600)),
-      set: (value: number) => { top = Math.max(0, Math.min(contentHeight() - 600, round(value))) },
+      set: (value: number) => {
+        top = Math.max(0, Math.min(contentHeight() - 600, round(value)))
+        positions.push(top)
+      },
     },
   })
   function fireFrame(now: number) {
@@ -113,7 +117,7 @@ async function mountVerticalReader(round: (value: number) => number) {
   await nextTick()
   await frame(300)
   await frame(400)
-  return { wrapper, view, autoPlay, container, frames, fireFrame, frame, flush, loadImage }
+  return { wrapper, view, autoPlay, container, positions, frames, fireFrame, frame, flush, loadImage }
 }
 
 afterEach(() => {
@@ -123,6 +127,37 @@ afterEach(() => {
 })
 
 describe('useReaderAutoPlay', () => {
+  test.each([
+    ['小数', (value: number) => value],
+    ['取整', Math.trunc],
+  ] as const)('%s scrollTop 下布局稳定时逐帧推进，回读不产生重复刷新', async (_label, round) => {
+    for (const interval of [0.1, -0.1, 30, -30]) {
+      const reader = await mountVerticalReader(round, 30)
+      reader.view.value!.scrollToIndex(15)
+      await nextTick()
+      await reader.frame(500)
+      await reader.frame(600)
+      const start = reader.container.scrollTop
+      reader.autoPlay.toggle()
+      reader.autoPlay.updateInterval(interval)
+      await reader.frame(1000)
+      for (let i = 1; i <= 60; i++) {
+        const writes = reader.positions.length
+        reader.fireFrame(1000 + i * 1000 / 60)
+        const expected = start + Math.sign(interval) * i * 10 / Math.abs(interval)
+        // 检查每帧调用返回时的位置，不能只检查所有微任务结束后的累计值。
+        expect(Math.abs(reader.container.scrollTop - expected)).toBeLessThan(1.000001)
+        expect(reader.positions).toHaveLength(writes + 1)
+        await reader.flush()
+        reader.container.dispatchEvent(new Event('scroll'))
+        await reader.flush()
+        expect(reader.positions).toHaveLength(writes + 1)
+        expect(reader.frames.size).toBe(1)
+      }
+      reader.wrapper.unmount()
+    }
+  })
+
   test.each([
     ['小数', (value: number) => value],
     ['取整', Math.trunc],
@@ -175,8 +210,8 @@ describe('useReaderAutoPlay', () => {
     reader.autoPlay.toggle()
     reader.autoPlay.updateInterval(30)
     await reader.frame(1000)
-    reader.fireFrame(1500)
     reader.loadImage(0, 1200)
+    reader.fireFrame(1500)
     reader.autoPlay.pauseForInteraction()
     await reader.flush()
     expect(reader.container.scrollTop).toBe(start + 400)
@@ -201,13 +236,14 @@ describe('useReaderAutoPlay', () => {
 
   test('跳页和卸载使已排队的位置提交失效', async () => {
     const reader = await mountVerticalReader((value) => value)
-    const pending = reader.view.value!.advanceScroll(10)
     reader.loadImage(0, 1200)
+    const pending = reader.view.value!.advanceScroll(10)
     reader.view.value!.scrollToIndex(2)
     await pending
     await reader.frame(1000)
     expect(reader.container.scrollTop).toBe(2120)
     const position = reader.container.scrollTop
+    reader.loadImage(0, 1600)
     const beforeUnmount = reader.view.value!.advanceScroll(100)
     reader.wrapper.unmount()
     await beforeUnmount

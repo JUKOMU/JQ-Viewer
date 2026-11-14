@@ -11,57 +11,58 @@
     @wheel="onWheel"
     @click="onMouseClick"
   >
-    <div class="virtual-inner" :style="{ height: innerHeight + 'px' }">
-      <div ref="wrapperRef" class="zoom-wrapper" :style="wrapperStyle">
-        <div v-if="totalCount > 0" class="edge-indicator">- - - - S T A R T - - - -</div>
-        <div
-          v-for="item in visibleItems"
-          :key="item.index"
-          ref="imageEls"
-          class="image-wrapper"
-          :style="item.style"
-          :data-index="item.index"
-        >
-          <template v-if="failedSortOrders.has(item.index + 1)">
-            <div class="image-error-state">
-              <span>{{ failedMessages.get(item.index + 1) || '图片加载失败' }}</span>
-              <button
-                v-if="allowRetry"
-                type="button"
-                class="image-retry-button"
-                :disabled="retryingSortOrders.size > 0"
-                @click.stop="emit('retry-images')"
-              >
-                <IonIcon
-                  :icon="refreshOutline"
-                  :class="{ spinning: retryingSortOrders.has(item.index + 1) }"
-                  aria-hidden="true"
-                />
-                <span>{{ retryButtonLabel(item.index + 1) }}</span>
-              </button>
-            </div>
-          </template>
-          <template v-else-if="item.dataUrl">
-            <img
-              :src="item.dataUrl"
-              class="reader-image"
-              alt=""
-              draggable="false"
-              @dragstart.prevent
-              @load="onImageLoad(item.index, $event)"
-              @error="emit('image-error', item.index + 1, item.dataUrl)"
-            />
-          </template>
-          <template v-else>
-            <div class="skeleton-image" />
-          </template>
-        </div>
-        <div
-          v-if="totalCount > 0"
-          class="edge-indicator end-indicator"
-          :style="{ transform: `translateY(${contentOffset + totalHeight}px)` }"
-        >
-          - - - - E N D - - - -
+    <div class="virtual-inner" :style="{ height: Math.max(innerHeight, playbackFloor) + 'px' }">
+      <div class="zoom-wrapper" :style="wrapperStyle">
+        <div ref="playbackRef" class="playback-layer">
+          <div v-if="totalCount > 0" class="edge-indicator">- - - - S T A R T - - - -</div>
+          <div
+            v-for="item in visibleItems"
+            :key="item.index"
+            class="image-wrapper"
+            :style="item.style"
+            :data-index="item.index"
+          >
+            <template v-if="failedSortOrders.has(item.index + 1)">
+              <div class="image-error-state">
+                <span>{{ failedMessages.get(item.index + 1) || '图片加载失败' }}</span>
+                <button
+                  v-if="allowRetry"
+                  type="button"
+                  class="image-retry-button"
+                  :disabled="retryingSortOrders.size > 0"
+                  @click.stop="emit('retry-images')"
+                >
+                  <IonIcon
+                    :icon="refreshOutline"
+                    :class="{ spinning: retryingSortOrders.has(item.index + 1) }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ retryButtonLabel(item.index + 1) }}</span>
+                </button>
+              </div>
+            </template>
+            <template v-else-if="item.dataUrl">
+              <img
+                :src="item.dataUrl"
+                class="reader-image"
+                alt=""
+                draggable="false"
+                @dragstart.prevent
+                @load="onImageLoad(item.index, $event)"
+                @error="emit('image-error', item.index + 1, item.dataUrl)"
+              />
+            </template>
+            <template v-else>
+              <div class="skeleton-image" />
+            </template>
+          </div>
+          <div
+            v-if="totalCount > 0"
+            class="edge-indicator end-indicator"
+            :style="{ transform: `translateY(${contentOffset + totalHeight}px)` }"
+          >
+            - - - - E N D - - - -
+          </div>
         </div>
       </div>
     </div>
@@ -135,8 +136,9 @@ const SCROLL_SYNC_RETRY_MAX = 30
 const BOTTOM_TOLERANCE_PX = 2
 
 const containerRef = ref<HTMLElement | null>(null)
-const wrapperRef = ref<HTMLElement | null>(null)
-const imageEls = ref<HTMLElement[]>([])
+const playbackRef = ref<HTMLElement | null>(null)
+// 播放期间原生位置保持不动，内容收缩也不能让浏览器自动钳制它。
+const playbackFloor = ref(0)
 const containerHeight = ref(0)
 const containerWidth = ref(0)
 const heights = ref<number[]>([])
@@ -393,8 +395,7 @@ function updateMeasuredHeight(index: number, nextHeight: number) {
   const prevHeight = heights.value[index] ?? getEstimatedHeight()
   if (Math.abs(prevHeight - nextHeight) < 1) return
 
-  const update = queueScrollUpdate()
-  update.geometryChanged = true
+  queueScrollUpdate()
 
   const nextHeights = heights.value.slice()
   nextHeights[index] = nextHeight
@@ -410,18 +411,12 @@ function onImageLoad(index: number, ev: Event) {
   updateMeasuredHeight(index, (width * img.naturalHeight) / img.naturalWidth)
 }
 
-/** 一次 DOM 更新内共享的布局锚点；像素播放量与宽度缩放分开计算。 */
+/** 同批尺寸变化共用旧布局中的阅读锚点，不冻结动画时间。 */
 interface ScrollUpdate {
   index: number
   offset: number
-  // 包含上次写入未生效的小数位移，宽度变化不缩放播放距离。
-  distance: number
+  position: number
   insideStart: boolean
-  geometryChanged: boolean
-  // 同批调用等待同一次提交，避免播放循环先读取旧布局边界。
-  settled: Promise<void>
-  // 正常提交和取消都须结束等待，卸载后不会再有 DOM 更新来完成它。
-  settle: () => void
 }
 
 let pendingScroll: ScrollUpdate | null = null
@@ -429,38 +424,66 @@ const scrollUpdateVersion = ref(0)
 let scrollRemainder = 0
 let lastWrittenScrollTop = 0
 
+/** 动画时间决定逻辑位置；原生 scrollTop 只在交接时更新。 */
+interface Playback {
+  animation: Animation
+  // 动画时间为零时的逻辑位置；尺寸变化只平移此基准，不重置当前时间。
+  start: number
+  target: number
+  // 带方向的 CSS px/ms，视口变化时按新的每屏距离重算。
+  velocity: number
+  nativeTop: number
+  interval: number
+}
+
+let playback: Playback | null = null
+let playbackRaf: number | null = null
+// 尺寸更新期间允许暂停、调速；DOM 提交后按最新意图交接或启动。
+let requestedInterval: number | null = null
+
+function getMaxScrollTop() {
+  return Math.max(0, innerHeight.value - containerHeight.value)
+}
+
+function getScrollPosition() {
+  if (!playback) return containerRef.value!.scrollTop + scrollRemainder
+  const position = playback.start + Number(playback.animation.currentTime) * playback.velocity
+  // 使用动画所属的边界；尺寸事务提交前，高度模型可能已变而动画仍在旧坐标中。
+  return Math.max(0, playback.velocity > 0
+    ? Math.min(playback.target, position)
+    : Math.max(playback.target, position))
+}
+
+function syncReadingPosition(position: number) {
+  updateVisibleRange(position)
+  emitCurrentIndex(getCurrentIndex(position))
+  updateBottomState()
+}
+
 /** 统一提交实际位置和量化余量，并同步阅读状态；目标必须使用当前已生效的布局。 */
 function commitScrollPosition(position: number) {
   const el = containerRef.value!
-  const maxTop = Math.max(0, el.scrollHeight - el.clientHeight)
+  const maxTop = getMaxScrollTop()
   const target = Math.max(0, Math.min(maxTop, position))
   el.scrollTop = target
   lastWrittenScrollTop = el.scrollTop
   // 只保留浏览器取整造成的余量，真实边界外的距离不再累计。
   scrollRemainder = target - lastWrittenScrollTop
-  updateVisibleRange(lastWrittenScrollTop)
-  emitCurrentIndex(getCurrentIndex(lastWrittenScrollTop))
-  updateBottomState()
+  syncReadingPosition(target)
 }
 
-/** 同批布局变化共享原锚点，播放量独立累计，由 Vue 更新周期统一提交。 */
+/** 在旧高度模型中捕获逻辑位置，后续图片测高不会重复选择锚点。 */
 function queueScrollUpdate(): ScrollUpdate {
   if (pendingScroll) return pendingScroll
-  const el = containerRef.value!
-  const insideStart = el.scrollTop < contentOffset.value
-  const index = insideStart ? 0 : getCurrentIndex(el.scrollTop)
-  let settle!: () => void
-  const settled = new Promise<void>((resolve) => { settle = resolve })
+  const position = getScrollPosition()
+  const insideStart = position < contentOffset.value
+  const index = insideStart ? 0 : getCurrentIndex(position)
   const update: ScrollUpdate = {
     index,
-    offset: el.scrollTop - getPageTop(index),
-    distance: scrollRemainder,
+    offset: position - getPageTop(index),
+    position,
     insideStart,
-    geometryChanged: false,
-    settled,
-    settle,
   }
-  scrollRemainder = 0
   pendingScroll = update
   scrollUpdateVersion.value++
   return update
@@ -471,7 +494,8 @@ watch(scrollUpdateVersion, () => {
   if (!update) return
   // 在 DOM patch 前按新布局准备范围，避免补偿写入后才开始增删虚拟页。
   const maxTop = Math.max(0, innerHeight.value - containerHeight.value)
-  const target = getPageTop(update.index) + update.offset + update.distance
+  const position = playback ? getScrollPosition() : update.position
+  const target = position + getPageTop(update.index) + update.offset - update.position
   updateVisibleRange(Math.max(0, Math.min(maxTop, target)))
 })
 
@@ -479,42 +503,94 @@ watch(scrollUpdateVersion, () => {
   const update = pendingScroll
   if (!update) return
   pendingScroll = null
-  // post 阶段属于同一次 DOM flush，不把高度收缩后的旧位置留到 nextTick 续体。
-  commitScrollPosition(getPageTop(update.index) + update.offset + update.distance)
-  if (update.geometryChanged) emit('geometry-change')
-  update.settle()
+  const correction = getPageTop(update.index) + update.offset - update.position
+  if (playback) {
+    // 页位置与动画基准在同一次渲染提交中反向平移，不再修改原生滚动偏移。
+    const time = Number(playback.animation.currentTime)
+    const position = playback.start + time * playback.velocity + correction
+    playback.velocity = containerHeight.value / (playback.interval * 1000)
+    playback.start = position - time * playback.velocity
+    playback.target = playback.velocity > 0 ? getMaxScrollTop() : 0
+    const effect = playback.animation.effect as KeyframeEffect
+    effect.setKeyframes([
+      { transform: `translateY(${playback.nativeTop - playback.start}px)` },
+      { transform: `translateY(${playback.nativeTop - playback.target}px)` },
+    ])
+    effect.updateTiming({ duration: Math.max(0, (playback.target - playback.start) / playback.velocity) })
+    if (requestedInterval !== playback.interval) releasePlayback()
+    else {
+      if (playback.animation.playState === 'paused') playback.animation.play()
+      syncReadingPosition(getScrollPosition())
+    }
+  } else {
+    commitScrollPosition(update.position + correction)
+  }
+  if (requestedInterval !== null) startAutoScroll(requestedInterval)
+  emit('geometry-change')
 }, { flush: 'post' })
 
-/** 推进带方向的 CSS 像素增量，提交后返回该方向是否仍有可滚动空间。 */
-async function advanceScroll(distance: number) {
-  const el = containerRef.value!
-  if (pendingScroll) {
-    // 布局正在变化时才等待 DOM，播放量与该批锚点补偿一起提交。
-    const update = pendingScroll
-    update.distance += distance
-    await update.settled
-  } else {
-    // 布局稳定时直接在播放 rAF 内推进，不为每帧创建异步锚点事务。
-    commitScrollPosition(el.scrollTop + scrollRemainder + distance)
+/** rAF 只同步虚拟页和阅读状态，连续移动由浏览器动画时钟驱动。 */
+function syncPlaybackFrame() {
+  playbackRaf = null
+  if (!playback) return
+  if (!pendingScroll) {
+    const position = getScrollPosition()
+    syncReadingPosition(position)
+    if (position === playback.target) {
+      releasePlayback()
+      return
+    }
   }
-  const position = el.scrollTop + scrollRemainder
-  return distance < 0
-    ? position > 0
-    : distance === 0 || position < Math.max(0, el.scrollHeight - el.clientHeight)
+  playbackRaf = requestAnimationFrame(syncPlaybackFrame)
 }
 
-/** 交互或播放状态变化只撤销播放量，同批图片尺寸补偿仍须提交。 */
+/** 按每屏秒数创建线性动画；同速布局通知不会重置动画时钟。 */
+function startAutoScroll(seconds: number) {
+  requestedInterval = seconds
+  if (pendingScroll || playback?.interval === seconds) return
+  if (playback) releasePlayback()
+  const start = getScrollPosition()
+  const target = seconds > 0 ? getMaxScrollTop() : 0
+  if (start === target) return
+  const nativeTop = containerRef.value!.scrollTop
+  const velocity = containerHeight.value / (seconds * 1000)
+  playbackFloor.value = nativeTop + containerHeight.value
+  const animation = playbackRef.value!.animate([
+    { transform: `translateY(${nativeTop - start}px)` },
+    { transform: `translateY(${nativeTop - target}px)` },
+  ], { duration: (target - start) / velocity, easing: 'linear', fill: 'both' })
+  playback = { animation, start, target, velocity, nativeTop, interval: seconds }
+  playbackRaf = requestAnimationFrame(syncPlaybackFrame)
+}
+
+/** 把动画的完整小数位置交回原生容器，交接期间不重新选择阅读锚点。 */
+function releasePlayback() {
+  const position = getScrollPosition()
+  playback!.animation.cancel()
+  playback = null
+  if (playbackRaf !== null) cancelAnimationFrame(playbackRaf)
+  playbackRaf = null
+  commitScrollPosition(position)
+  playbackFloor.value = 0
+}
+
 function cancelAutoScroll() {
-  scrollRemainder = 0
-  if (pendingScroll) pendingScroll.distance = 0
+  requestedInterval = null
+  if (!playback) return
+  // DOM 尚未反映新高度时先冻结动画，补偿提交后再交回原生位置。
+  if (pendingScroll) playback.animation.pause()
+  else releasePlayback()
 }
 
 /** 显式跳页或外部滚动接管位置，旧锚点不能再写回。 */
 function resetScrollPosition() {
-  const update = pendingScroll
   pendingScroll = null
+  playback?.animation.cancel()
+  playback = null
+  if (playbackRaf !== null) cancelAnimationFrame(playbackRaf)
+  playbackRaf = null
+  playbackFloor.value = 0
   scrollRemainder = 0
-  update?.settle()
 }
 
 let scrollRafId: number | null = null
@@ -526,7 +602,10 @@ let wasAtBottom = false
 function isAtBottom() {
   const el = containerRef.value
   if (!el) return false
-  return el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_TOLERANCE_PX
+  // 动画及交接阶段的占位高度不是内容边界，手动滚动仍使用原生范围。
+  return playback || playbackFloor.value > 0
+    ? getMaxScrollTop() - getScrollPosition() <= BOTTOM_TOLERANCE_PX
+    : el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_TOLERANCE_PX
 }
 
 function updateBottomState() {
@@ -555,6 +634,7 @@ function onScroll() {
     updateVisibleRange(st)
     emitCurrentIndex(getCurrentIndex(st))
     updateBottomState()
+    if (requestedInterval !== null) startAutoScroll(requestedInterval)
   })
 }
 
@@ -571,6 +651,7 @@ function applyScrollToIndex(index: number) {
   lastWrittenScrollTop = actualTop
   updateVisibleRange(actualTop)
   emitCurrentIndex(next)
+  if (requestedInterval !== null) startAutoScroll(requestedInterval)
   window.requestAnimationFrame(() => {
     isAdjusting = false
   })
@@ -606,7 +687,6 @@ function refreshAfterResize() {
     return
   }
   const update = queueScrollUpdate()
-  update.geometryChanged = true
   if (oldWidth === containerWidth.value) {
     updateVisibleRange(containerRef.value?.scrollTop ?? 0)
     return
@@ -975,9 +1055,10 @@ onMounted(() => {
   resizeObserver.observe(el)
 })
 
-onDeactivated(resetScrollPosition)
+onDeactivated(cancelAutoScroll)
 
 onUnmounted(() => {
+  requestedInterval = null
   resetScrollPosition()
   if (wheelInteractionTimer) clearTimeout(wheelInteractionTimer)
   if (touchSettleTimer) clearTimeout(touchSettleTimer)
@@ -1006,7 +1087,7 @@ defineExpose({
   zoomIn,
   zoomOut,
   resetZoom,
-  advanceScroll,
+  startAutoScroll,
   cancelAutoScroll,
 })
 </script>
@@ -1027,6 +1108,14 @@ defineExpose({
 .virtual-inner {
   position: relative;
   width: 100%;
+  /* 动画层的平移不参与原生滚动范围，范围只由图片高度模型决定。 */
+  overflow: hidden;
+}
+
+.playback-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
 }
 
 .zoom-wrapper {

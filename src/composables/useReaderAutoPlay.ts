@@ -8,10 +8,9 @@ export function useReaderAutoPlay(options: {
   isVertical: Ref<boolean>
   currentIndex: Ref<number>
   totalCount: Ref<number>
-  getScrollContainer: () => HTMLElement | null
-  /** 位移由纵向视图在布局提交后落地，返回该方向能否继续推进。 */
-  advanceScroll: (distance: number) => Promise<boolean>
-  /** 撤销尚未落地的播放位移，保留视图自己的图片布局补偿。 */
+  /** 纵向视图持有动画和布局，按带方向的每屏秒数启动连续播放。 */
+  startScroll: (seconds: number) => void
+  /** 将动画当前位置交回原生滚动，保留图片布局补偿。 */
   cancelScroll: () => void
   goToIndex: (index: number) => void
 }) {
@@ -21,20 +20,13 @@ export function useReaderAutoPlay(options: {
   const volumeKeys = getRuntime().services.reader.volumeKeys
   let interactionActive = false
   let timer: ReturnType<typeof setTimeout> | null = null
-  let animationFrame: number | null = null
   let timerStartedAt = 0
   let remainingMs = 0
-  let lastFrameAt = 0
-  // 暂停、调速或离页后，旧提交的完成回调不能重新启动播放帧。
-  let scrollVersion = 0
 
   function clearScheduledWork() {
-    scrollVersion++
     options.cancelScroll()
     if (timer) clearTimeout(timer)
     timer = null
-    if (animationFrame !== null) cancelAnimationFrame(animationFrame)
-    animationFrame = null
   }
 
   function syncNativeVolumeInterception(enabled: boolean) {
@@ -53,33 +45,10 @@ export function useReaderAutoPlay(options: {
     syncNativeVolumeInterception(false)
   }
 
-  async function scrollFrame(now: number) {
-    if (!isPlaying.value || interactionActive || !options.isVertical.value) {
-      animationFrame = null
-      return
-    }
-    const container = options.getScrollContainer()
-    if (!container) {
-      animationFrame = null
-      return
-    }
-    const direction = Math.sign(intervalSeconds.value)
-    const elapsed = lastFrameAt === 0 ? 0 : now - lastFrameAt
-    lastFrameAt = now
-    const distance = (container.clientHeight * elapsed) / (Math.abs(intervalSeconds.value) * 1000)
-    const version = scrollVersion
-    // 提交期间保留帧句柄，geometry-change 不会再开启第二条播放循环。
-    const canContinue = await options.advanceScroll(distance * direction)
-    if (version !== scrollVersion) return
-    animationFrame = null
-    if (canContinue) animationFrame = requestAnimationFrame(scrollFrame)
-  }
-
   function schedule() {
     if (!isPlaying.value || interactionActive || options.totalCount.value === 0) return
     if (options.isVertical.value) {
-      lastFrameAt = 0
-      animationFrame = requestAnimationFrame(scrollFrame)
+      options.startScroll(intervalSeconds.value)
       return
     }
     if (remainingMs <= 0) remainingMs = Math.abs(intervalSeconds.value) * 1000
@@ -117,20 +86,18 @@ export function useReaderAutoPlay(options: {
       remainingMs = Math.max(0, remainingMs - (performance.now() - timerStartedAt))
     }
     clearScheduledWork()
-    lastFrameAt = 0
   }
 
   function resumeAfterInteraction() {
     if (interactionActive) interactionActive = false
-    if (isPlaying.value && animationFrame === null && timer === null) schedule()
+    if (isPlaying.value && timer === null) schedule()
   }
 
   function resumeAfterGeometryChange() {
     if (
       isPlaying.value &&
       options.isVertical.value &&
-      !interactionActive &&
-      animationFrame === null
+      !interactionActive
     ) {
       schedule()
     }
@@ -201,8 +168,7 @@ export function useReaderAutoPlay(options: {
       if (
         isPlaying.value &&
         options.isVertical.value &&
-        !interactionActive &&
-        animationFrame === null
+        !interactionActive
       ) {
         schedule()
       }

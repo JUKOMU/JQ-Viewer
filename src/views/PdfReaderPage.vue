@@ -1032,12 +1032,8 @@ const autoPlay = useReaderAutoPlay({
   isVertical,
   currentIndex,
   totalCount,
-  advanceScroll: (distance) => verticalViewRef.value!.advanceScroll(distance),
+  startScroll: (seconds) => verticalViewRef.value!.startAutoScroll(seconds),
   cancelScroll: () => verticalViewRef.value?.cancelAutoScroll(),
-  getScrollContainer: () => {
-    const view = verticalViewRef.value as { containerRef?: HTMLElement | null } | null
-    return view?.containerRef ?? null
-  },
   goToIndex: (index) => goToIndex(index, 'volume'),
 })
 

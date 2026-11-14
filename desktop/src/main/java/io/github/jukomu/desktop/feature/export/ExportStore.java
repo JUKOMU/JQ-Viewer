@@ -631,6 +631,21 @@ public final class ExportStore {
         }, "准备导出重试失败");
     }
 
+    /** 成品已登记的清理中断任务可在不重读原图的情况下恢复。 */
+    public synchronized List<ExportTaskResponse> sourceCleanupCandidates() {
+        List<ExportTaskResponse> tasks = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(taskSelect()
+            + " WHERE t.status IN ('running','interrupted') AND t.delete_source_after_export=1 "
+            + "AND t.cancel_requested=0 AND t.format IN ('pdf','cbz')")) {
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) tasks.add(task(rows));
+            }
+        } catch (SQLException exception) {
+            throw failure("读取待恢复的原图清理任务失败", exception);
+        }
+        return List.copyOf(tasks);
+    }
+
     public synchronized List<String> markActiveInterrupted() {
         List<String> tempPaths = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(

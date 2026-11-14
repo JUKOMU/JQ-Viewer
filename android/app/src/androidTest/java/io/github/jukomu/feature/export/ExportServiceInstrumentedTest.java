@@ -480,6 +480,104 @@ public class ExportServiceInstrumentedTest {
         assertFalse(PdfBoxExportWriter.getWorkDirectory(output).exists());
     }
 
+    @Test
+    public void cleanupOptionsPreserveEntriesAndProtectTheirOnlySource() throws Exception {
+        int chapterNumber = 900000100;
+        for (String format : Arrays.asList("pdf", "cbz", "zip")) {
+            for (boolean retain : new boolean[]{false, true}) {
+                String chapterId = String.valueOf(chapterNumber++);
+                File source = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+                createImage(source, "page-0001.jpg", 20, 30, Color.RED);
+                registerChapter(chapterId, 1);
+                ExportService.ExportJob job = cleanupJob(chapterId, format);
+                job.retainDownloadEntry = retain;
+                JSONObject accepted = ExportService.getInstance(context)
+                    .submitExport(Arrays.asList(job)).getJSONArray("tasks").getJSONObject(0);
+                assertTrue(accepted.optBoolean("accepted"));
+                JSONObject completed = waitForTaskTerminal(accepted.getString("exportId"), EXPORT_TIMEOUT_MS);
+                assertEquals("completed", completed.optString("status"));
+                assertEquals("zip".equals(format), source.exists());
+                assertEquals(retain || "zip".equals(format),
+                    downloadStore.getTask(ALBUM_ID + "_" + chapterId) != null);
+                if (retain && !"zip".equals(format)) {
+                    LocalFileStore store = LocalFileStore.getInstance(context);
+                    long fileId = store.findRetainedExportForChapter(ALBUM_ID, chapterId).getLong("fileId");
+                    var management = io.github.jukomu.feature.localfile.management.LocalFileManagementService.getInstance(context);
+                    try {
+                        management.removeFromLibrary(fileId);
+                        fail("唯一保留来源不可移出文件库");
+                    } catch (io.github.jukomu.feature.localfile.LocalFileOperationException error) {
+                        assertEquals("conflict", error.code);
+                    }
+                    assertNotNull(store.getFile(fileId));
+                    assertTrue(new File(outputDirectory, job.targetName).isFile());
+                }
+            }
+        }
+    }
+
+    @Test
+    public void cleanupRejectsAnOutputInsideTheSourceDirectory() throws Exception {
+        String chapterId = "900000120";
+        File source = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+        createImage(source, "page-0001.jpg", 20, 30, Color.RED);
+        registerChapter(chapterId, 1);
+        ExportService.ExportJob job = cleanupJob(chapterId, "pdf");
+        job.targetFolderRef = LocalFileRef.createPathFolderRef(source.getCanonicalPath());
+        job.displayPath = new File(source, job.targetName).getAbsolutePath();
+
+        JSONObject rejected = ExportService.getInstance(context)
+            .submitExport(Arrays.asList(job)).getJSONArray("tasks").getJSONObject(0);
+
+        assertFalse(rejected.optBoolean("accepted"));
+        assertTrue(rejected.optString("errorMessage").contains("原图目录"));
+        assertTrue(new File(source, "page-0001.jpg").isFile());
+        assertFalse(new File(source, job.targetName).exists());
+    }
+
+    @Test
+    public void startupRecoversCleanupWithoutReadingDeletedImages() throws Exception {
+        String chapterId = "900000121";
+        File source = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+        createImage(source, "page-0001.jpg", 20, 30, Color.RED);
+        registerChapter(chapterId, 1);
+        ExportService.ExportJob job = cleanupJob(chapterId, "pdf");
+        JSONObject accepted = ExportService.getInstance(context)
+            .submitExport(Arrays.asList(job)).getJSONArray("tasks").getJSONObject(0);
+        String exportId = accepted.getString("exportId");
+        assertEquals("completed", waitForTaskTerminal(exportId, EXPORT_TIMEOUT_MS).optString("status"));
+        LocalFileStore store = LocalFileStore.getInstance(context);
+        store.getWritableDatabase().execSQL(
+            "UPDATE export_tasks SET status='running',phase='writing' WHERE export_id=?",
+            new Object[]{exportId});
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            ExportService recovered = new ExportService(context, executor, (ctx, snapshot) -> {}, null);
+            recovered.reconcileOnStartup();
+            assertEquals("completed", store.getExportTask(exportId).optString("status"));
+            assertNotNull(store.findRetainedExportForChapter(ALBUM_ID, chapterId));
+            assertFalse(source.exists());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private ExportService.ExportJob cleanupJob(String chapterId, String format) throws IOException {
+        ExportService.ExportJob job = new ExportService.ExportJob();
+        job.format = format;
+        job.mode = "chapter";
+        job.albumId = ALBUM_ID;
+        job.chapterId = chapterId;
+        job.targetFolderRef = LocalFileRef.createPathFolderRef(outputDirectory.getCanonicalPath());
+        job.targetName = chapterId + "." + format;
+        job.displayPath = new File(outputDirectory, job.targetName).getAbsolutePath();
+        job.useOriginal = true;
+        job.compressionRatio = 1F;
+        job.deleteSourceAfterExport = true;
+        job.retainDownloadEntry = true;
+        return job;
+    }
+
     private ExportService.ExportChapter chapter(String chapterId, String title, int sortOrder) {
         ExportService.ExportChapter chapter = new ExportService.ExportChapter();
         chapter.albumId = ALBUM_ID;

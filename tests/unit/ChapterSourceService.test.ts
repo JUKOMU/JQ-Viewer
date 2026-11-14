@@ -191,6 +191,43 @@ describe('ChapterSourceService', () => {
     })
   })
 
+  test('保留入口从章节来源解析携带整章分卷，并拒绝缺失分卷', async () => {
+    const first = file(20, 'pdf', 20)
+    const second = file(21, 'pdf', 21)
+    const retainedExports = [first, second].map((volume) => ({
+      exportId: 'retained-1',
+      format: 'pdf' as const,
+      fileId: volume.id,
+      fileRef: volume.fileRef,
+      startPage: 6,
+      pageCount: 5,
+    }))
+    mocks.getCompletedDownloadChapters.mockResolvedValue({
+      tasks: [{ taskId: 'download-1', albumId: 'album-1', chapterId: 'chapter-1',
+        status: 'completed', createdAt: 1, retainedExports }],
+    })
+    mocks.getLocalFiles.mockResolvedValue({ files: [second, first] })
+    mocks.verifyLocalFile.mockImplementation(async (id: number) => id === first.id ? first : second)
+
+    for (const requested of ['preferred', 'download', 'pdf'] as const) {
+      const source = await ChapterSourceService.resolve('album-1', 'chapter-1', requested)
+      expect(source).toMatchObject({ kind: 'pdf', file: { id: 20 }, retainedExports })
+      const location = ChapterSourceService.readerLocation(source!, {
+        albumId: 'album-1', albumTitle: 'Album', chapterId: 'chapter-1',
+        chapterTitle: 'Chapter', authors: '', coverUrl: '',
+      })
+      expect(location).toMatchObject({ query: {
+        chapterPageCount: '10', retainedVolumes: JSON.stringify(retainedExports),
+      } })
+    }
+
+    mocks.verifyLocalFile.mockImplementation(async (id: number) => {
+      if (id === second.id) throw new Error('missing volume')
+      return first
+    })
+    await expect(ChapterSourceService.resolve('album-1', 'chapter-1', 'download')).resolves.toBeNull()
+  })
+
   test('direct file resolution never falls back to another file', async () => {
     const target = file(9, 'pdf', 1)
     mocks.getLocalFiles.mockResolvedValue({ files: [target] })

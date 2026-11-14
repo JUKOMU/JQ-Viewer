@@ -935,21 +935,27 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     /** 查找章节最近一次完整且可用的保留导出分卷。 */
     public JSONArray findRetainedExportsForChapter(String albumId, String chapterId) {
+        return findRetainedExportsForChapter(albumId, chapterId, -1L);
+    }
+
+    /** 排除待移除文件后，仍须满足整章分卷完整性。 */
+    public JSONArray findRetainedExportsForChapter(String albumId, String chapterId, long excludedFileId) {
         String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "JOIN " + TABLE_VOLUMES + " v ON v.export_id=t.export_id AND v.status='completed' "
             + "JOIN " + TABLE_FILES + " f ON f.file_ref=v.output_file_ref "
             + "JOIN " + TABLE_FILE_CHAPTERS + " c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
-            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' AND f.id<>? "
             + "AND ec.expected_page_count=(SELECT COALESCE(SUM(c2.page_count),0) FROM "
             + TABLE_VOLUMES + " v2 JOIN " + TABLE_FILES + " f2 ON f2.file_ref=v2.output_file_ref "
             + "JOIN " + TABLE_FILE_CHAPTERS + " c2 ON c2.file_id=f2.id "
             + "WHERE v2.export_id=t.export_id AND v2.status='completed' "
-            + "AND f2.availability='available' AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
+            + "AND f2.availability='available' AND f2.id<>? AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
             + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
         JSONArray result = new JSONArray();
-        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{
+            String.valueOf(excludedFileId), String.valueOf(excludedFileId), albumId, chapterId})) {
             String exportId = null;
             while (cursor.moveToNext()) {
                 String currentExportId = getString(cursor, "export_id");

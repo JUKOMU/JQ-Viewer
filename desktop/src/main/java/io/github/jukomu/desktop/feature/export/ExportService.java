@@ -85,10 +85,36 @@ public final class ExportService implements AutoCloseable {
     }
 
     /**
-     * 将上次进程遗留的活动任务标为 interrupted，并清理已知临时文件。
+     * 恢复成品已登记的原图清理，其余活动任务标为 interrupted 并清理临时文件。
      */
     public void reconcileOnStartup() {
         if (!startupReconciled.compareAndSet(false, true)) return;
+        // 所有成品完整落库后，恢复清理不再依赖可能已被删除的原图。
+        for (ExportTaskResponse task : store.sourceCleanupCandidates()) {
+            var volumes = store.volumes(task.exportId());
+            if (volumes.isEmpty() || volumes.size() != task.totalVolumes()
+                || volumes.stream().anyMatch(volume -> !"completed".equals(volume.status()))) continue;
+            try {
+                NormalizedTask normalized = taskFromPersisted(task, store.chapters(task.exportId()));
+                for (var volume : volumes) {
+                    Path output = FileReferences.parseFile(volume.outputFileRef());
+                    ensureCleanupTargetOutsideSources(normalized, output);
+                    if ("pdf".equals(task.format())) {
+                        PdfFileValidator.validate(volume.outputFileRef(), volume.expectedPageCount());
+                    } else {
+                        new io.github.jukomu.desktop.feature.cbz.CbzDocumentService()
+                            .validate(volume.outputFileRef(), volume.expectedPageCount());
+                    }
+                }
+                boolean complete = deleteSourceDownloads(task.exportId(), normalized, true);
+                store.updateProgress(task.exportId(), "completed", "completed",
+                    task.totalPages(), task.totalPages(), task.totalVolumes(), task.totalVolumes(),
+                    complete ? null : "SOURCE_CLEANUP_FAILED",
+                    complete ? null : "导出已完成，但部分原下载文件未能删除");
+            } catch (Exception error) {
+                LOGGER.warn("无法恢复导出清理，保留剩余原图: exportId={}", task.exportId(), error);
+            }
+        }
         for (String tempPath : store.markActiveInterrupted()) deleteQuietly(Path.of(tempPath));
     }
 
@@ -283,7 +309,7 @@ public final class ExportService implements AutoCloseable {
                     volume.record().endPage(), plan.images().size(), volume.record().volumeIndex(),
                     null, null, false, null);
             }
-            boolean cleanupComplete = deleteSourceDownloads(plan);
+            boolean cleanupComplete = deleteSourceDownloads(plan.exportId(), plan.task(), false);
             ExportTaskResponse completed = store.updateProgress(
                 plan.exportId(), "completed", "completed", plan.images().size(),
                 plan.images().size(), plan.volumes().size(), plan.volumes().size(),
@@ -309,28 +335,50 @@ public final class ExportService implements AutoCloseable {
         }
     }
 
-    private boolean deleteSourceDownloads(Plan plan) {
-        NormalizedTask task = plan.task();
+    private boolean deleteSourceDownloads(String exportId, NormalizedTask task, boolean recovering) {
         if (!task.deleteSourceAfterExport() || "zip".equals(task.format())) return true;
         boolean complete = true;
         for (RequestedChapter chapter : task.chapters()) {
             var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
             if (download == null) {
-                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
+                store.updateSourceCleanup(exportId, chapter.albumId(), chapter.chapterId(), "deleted");
+                continue;
+            }
+            // 恢复旧导出时不能清理后来建立的下载任务。
+            if (!"completed".equals(download.status())
+                || (recovering && download.createdAt() > store.find(exportId).createdAt())) {
+                complete = false;
+                store.updateSourceCleanup(exportId, chapter.albumId(), chapter.chapterId(), "failed");
                 continue;
             }
             try {
                 downloadFiles.cleanup(download.relativeDirectory());
                 if (!task.retainDownloadEntry()) downloads.deleteTask(download.taskId());
-                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "deleted");
+                store.updateSourceCleanup(exportId, chapter.albumId(), chapter.chapterId(), "deleted");
             } catch (RuntimeException exception) {
                 complete = false;
-                store.updateSourceCleanup(plan.exportId(), chapter.albumId(), chapter.chapterId(), "failed");
+                store.updateSourceCleanup(exportId, chapter.albumId(), chapter.chapterId(), "failed");
                 LOGGER.warn("导出已完成，但原下载文件清理失败: albumId={} chapterId={} errorClass={}",
                     chapter.albumId(), chapter.chapterId(), exception.getClass().getSimpleName(), exception);
             }
         }
         return complete;
+    }
+
+    /** 输出文件不能位于本次原图清理会递归删除的目录中。 */
+    private void ensureCleanupTargetOutsideSources(NormalizedTask task, Path output)
+        throws IOException, ExportException {
+        if (!task.deleteSourceAfterExport()) return;
+        Path canonicalOutput = output.toFile().getCanonicalFile().toPath();
+        for (RequestedChapter chapter : task.chapters()) {
+            Path source = downloadFiles.chapterDirectory(
+                downloadFiles.relativeDirectory(chapter.albumId(), chapter.chapterId()))
+                .toFile().getCanonicalFile().toPath();
+            if (canonicalOutput.startsWith(source)) {
+                throw new ExportException(code(task.format(), "TARGET_INVALID"),
+                    "导出位置位于待清理的原图目录内，请更换导出位置");
+            }
+        }
     }
 
     private VolumeReport writeTemporary(Plan plan, VolumePlan volume) throws Exception {
@@ -491,6 +539,7 @@ public final class ExportService implements AutoCloseable {
             Path output;
             try {
                 output = ExportTargetResolver.resolve(task.folderRef(), targetName);
+                ensureCleanupTargetOutsideSources(task, output);
                 Files.createDirectories(output.getParent());
             } catch (RuntimeException | IOException exception) {
                 throw new ExportException(code(task.format(), "TARGET_INVALID"),

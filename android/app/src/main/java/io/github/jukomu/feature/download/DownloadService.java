@@ -561,8 +561,18 @@ public class DownloadService {
         String status = task.optString("status");
         if (!STATUS_COMPLETED.equals(status))
             throw new IllegalStateException("Task is not completed");
+        if (LocalFileStore.getInstance(context).isSourceDeletedAfterExport(albumId, chapterId)) {
+            throw new IllegalStateException("原下载图片已清理，请使用保留的导出文件");
+        }
 
         List<JSONObject> images = downloadDb.getImages(taskId);
+        if (images.isEmpty() || images.size() != task.optInt("totalPages")
+            || images.stream().anyMatch(image -> {
+                File file = fileStore.getExpectedImageFile(albumId, chapterId, image.optString("filename"));
+                return file == null || !file.isFile();
+            })) {
+            throw new IllegalStateException("已下载章节文件不完整");
+        }
         JSONObject ret = new JSONObject();
         try {
             ret.put("id", chapterId);

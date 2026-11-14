@@ -252,11 +252,43 @@ public final class LocalFileManagementService {
         return store.updateFileMetadata(id, metadata);
     }
 
+    /** 移出文件库不能切断仍依赖该文件的保留下载入口。 */
+    public synchronized boolean removeFromLibrary(long id) throws LocalFileOperationException {
+        JSONArray chapters = store.getRetainedChaptersForFile(id);
+        for (int index = 0; index < chapters.length(); index++) {
+            JSONObject chapter = chapters.optJSONObject(index);
+            String albumId = chapter.optString("albumId");
+            String chapterId = chapter.optString("chapterId");
+            if (DownloadStore.getInstance(context).getTask(albumId + "_" + chapterId) != null
+                && !hasCompleteDownload(albumId, chapterId)
+                && store.findRetainedExportsForChapter(albumId, chapterId, id).length() == 0) {
+                throw LocalFileOperationException.conflict(
+                    "该文件仍是保留下载入口的唯一可用来源，无法移出文件库");
+            }
+        }
+        return store.removeFileFromLibrary(id);
+    }
+
+    /** 下载记录仍存在不代表图片仍在；文件操作按完整图片清单保护原图。 */
+    private boolean hasCompleteDownload(String albumId, String chapterId) {
+        DownloadStore downloads = DownloadStore.getInstance(context);
+        String taskId = albumId + "_" + chapterId;
+        JSONObject task = downloads.getTask(taskId);
+        if (task == null || !"completed".equals(task.optString("status"))) return false;
+        List<JSONObject> images = downloads.getImages(taskId);
+        return !images.isEmpty() && images.size() == task.optInt("totalPages")
+            && images.stream().allMatch(image -> {
+                java.io.File file = FileStore.getInstance()
+                    .getExpectedImageFile(albumId, chapterId, image.optString("filename"));
+                return file != null && file.isFile();
+            });
+    }
+
     public JSONObject deleteFile(long id) throws Exception {
         return deleteFile(id, newOperationId());
     }
 
-    public JSONObject deleteFile(long id, String operationId) throws Exception {
+    public synchronized JSONObject deleteFile(long id, String operationId) throws Exception {
         long startedAt = System.nanoTime();
         JSONObject record = requireFile(id);
         JSONArray retainedChapters = "exported".equals(record.optString("sourceType"))
@@ -276,7 +308,8 @@ public final class LocalFileManagementService {
                     String taskId = albumId + "_" + chapterId;
                     JSONObject downloadTask = downloadStore.getTask(taskId);
                     String status = downloadTask == null ? "" : downloadTask.optString("status");
-                    if (!"queued".equals(status) && !"downloading".equals(status)
+                    if (!hasCompleteDownload(albumId, chapterId)
+                        && !"queued".equals(status) && !"downloading".equals(status)
                         && !"paused".equals(status) && !"verifying".equals(status)) {
                         FileStore.getInstance().deleteChapter(albumId, chapterId);
                         downloadStore.deleteImages(taskId);

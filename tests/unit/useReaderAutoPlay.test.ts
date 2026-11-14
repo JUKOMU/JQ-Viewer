@@ -47,6 +47,7 @@ async function mountVerticalReader(round: (value: number) => number, totalCount 
     disconnect() {}
   })
   const view = ref<InstanceType<typeof VerticalScrollView> | null>(null)
+  const updatedPositions: number[] = []
   let autoPlay!: ReturnType<typeof useReaderAutoPlay>
   const wrapper = mount(defineComponent({
     setup() {
@@ -67,6 +68,7 @@ async function mountVerticalReader(round: (value: number) => number, totalCount 
         currentIndex: currentIndex.value,
         'onUpdate:currentIndex': (index: number) => { currentIndex.value = index },
         onGeometryChange: autoPlay.resumeAfterGeometryChange,
+        onVnodeUpdated: () => { updatedPositions.push(view.value!.containerRef!.scrollTop) },
       })
     },
   }))
@@ -117,7 +119,10 @@ async function mountVerticalReader(round: (value: number) => number, totalCount 
   await nextTick()
   await frame(300)
   await frame(400)
-  return { wrapper, view, autoPlay, container, positions, frames, fireFrame, frame, flush, loadImage }
+  return {
+    wrapper, view, autoPlay, container, positions, updatedPositions,
+    frames, fireFrame, frame, flush, loadImage,
+  }
 }
 
 afterEach(() => {
@@ -127,6 +132,30 @@ afterEach(() => {
 })
 
 describe('useReaderAutoPlay', () => {
+  test.each([0.1, -0.1, 30, -30])(
+    '间隔 %s 时，图片缩短后的 DOM 更新回调已读到补偿与播放的合并位置', async (interval) => {
+      const reader = await mountVerticalReader((value) => value, 30)
+      reader.view.value!.scrollToIndex(15)
+      await nextTick()
+      await reader.frame(500)
+      await reader.frame(600)
+      reader.autoPlay.toggle()
+      reader.autoPlay.updateInterval(interval)
+      await reader.frame(1000)
+      const start = reader.container.scrollTop
+      reader.updatedPositions.length = 0
+      reader.loadImage(12, 400)
+      reader.fireFrame(1000 + 1000 / 60)
+      await reader.flush()
+      const expected = start - 400 + Math.sign(interval) * 10 / Math.abs(interval)
+      expect(reader.updatedPositions.length).toBeGreaterThan(0)
+      for (const position of reader.updatedPositions) expect(position).toBeCloseTo(expected)
+      expect(reader.container.scrollTop).toBeCloseTo(expected)
+      expect(reader.frames.size).toBe(1)
+      reader.wrapper.unmount()
+    },
+  )
+
   test.each([
     ['小数', (value: number) => value],
     ['取整', Math.trunc],
@@ -223,16 +252,18 @@ describe('useReaderAutoPlay', () => {
     reader.wrapper.unmount()
   })
 
-  test('图片补偿在新内容高度提交后写入，不被旧滚动边界裁剪', async () => {
+  test.each([[1200, 4800], [400, 4000]])(
+    '图片高度变为 %s 后，补偿按新内容边界提交到 %s', async (height, position) => {
     const reader = await mountVerticalReader((value) => value)
     reader.container.scrollTop = 4400
     reader.container.dispatchEvent(new Event('scroll'))
     await reader.frame(1000)
-    reader.loadImage(3, 1200)
+    reader.loadImage(3, height)
     await reader.flush()
-    expect(reader.container.scrollTop).toBe(4800)
+    expect(reader.container.scrollTop).toBe(position)
     reader.wrapper.unmount()
-  })
+    },
+  )
 
   test('跳页和卸载使已排队的位置提交失效', async () => {
     const reader = await mountVerticalReader((value) => value)

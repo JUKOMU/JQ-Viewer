@@ -420,9 +420,12 @@ interface ScrollUpdate {
   geometryChanged: boolean
   // 同批调用等待同一次提交，避免播放循环先读取旧布局边界。
   settled: Promise<void>
+  // 正常提交和取消都须结束等待，卸载后不会再有 DOM 更新来完成它。
+  settle: () => void
 }
 
 let pendingScroll: ScrollUpdate | null = null
+const scrollUpdateVersion = ref(0)
 let scrollRemainder = 0
 let lastWrittenScrollTop = 0
 
@@ -440,32 +443,47 @@ function commitScrollPosition(position: number) {
   updateBottomState()
 }
 
-/** 同批测高保持同一个锚点，播放距离独立累计，待新布局生效后统一提交。 */
+/** 同批布局变化共享原锚点，播放量独立累计，由 Vue 更新周期统一提交。 */
 function queueScrollUpdate(): ScrollUpdate {
   if (pendingScroll) return pendingScroll
   const el = containerRef.value!
   const insideStart = el.scrollTop < contentOffset.value
   const index = insideStart ? 0 : getCurrentIndex(el.scrollTop)
+  let settle!: () => void
+  const settled = new Promise<void>((resolve) => { settle = resolve })
   const update: ScrollUpdate = {
     index,
     offset: el.scrollTop - getPageTop(index),
     distance: scrollRemainder,
     insideStart,
     geometryChanged: false,
-    // 锚点在改高度前捕获；下一微任务再等待 Vue，确保更新队列已经建立。
-    settled: Promise.resolve()
-      .then(() => nextTick())
-      .then(() => {
-        if (pendingScroll !== update) return
-        pendingScroll = null
-        commitScrollPosition(getPageTop(update.index) + update.offset + update.distance)
-        if (update.geometryChanged) emit('geometry-change')
-      }),
+    settled,
+    settle,
   }
   scrollRemainder = 0
   pendingScroll = update
+  scrollUpdateVersion.value++
   return update
 }
+
+watch(scrollUpdateVersion, () => {
+  const update = pendingScroll
+  if (!update) return
+  // 在 DOM patch 前按新布局准备范围，避免补偿写入后才开始增删虚拟页。
+  const maxTop = Math.max(0, innerHeight.value - containerHeight.value)
+  const target = getPageTop(update.index) + update.offset + update.distance
+  updateVisibleRange(Math.max(0, Math.min(maxTop, target)))
+})
+
+watch(scrollUpdateVersion, () => {
+  const update = pendingScroll
+  if (!update) return
+  pendingScroll = null
+  // post 阶段属于同一次 DOM flush，不把高度收缩后的旧位置留到 nextTick 续体。
+  commitScrollPosition(getPageTop(update.index) + update.offset + update.distance)
+  if (update.geometryChanged) emit('geometry-change')
+  update.settle()
+}, { flush: 'post' })
 
 /** 推进带方向的 CSS 像素增量，提交后返回该方向是否仍有可滚动空间。 */
 async function advanceScroll(distance: number) {
@@ -493,8 +511,10 @@ function cancelAutoScroll() {
 
 /** 显式跳页或外部滚动接管位置，旧锚点不能再写回。 */
 function resetScrollPosition() {
+  const update = pendingScroll
   pendingScroll = null
   scrollRemainder = 0
+  update?.settle()
 }
 
 let scrollRafId: number | null = null

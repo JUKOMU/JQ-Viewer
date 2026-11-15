@@ -195,13 +195,13 @@ public final class ExportStore {
         return exports.isEmpty() ? null : exports.get(0);
     }
 
-    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    /** 根据最近已完成的保留导出判断原图清理状态，失败和活动任务不覆盖该状态。 */
     public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
         String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
             + "ec.source_cleanup_status "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
-            + "AND t.retain_download_entry=1 "
+            + "AND t.retain_download_entry=1 AND t.status='completed' "
             + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, albumId);

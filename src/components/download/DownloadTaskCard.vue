@@ -106,7 +106,10 @@
           sanitizeError((task as DownloadTask).error, '下载失败')
         }}</span>
       </div>
-      <div v-if="cardStatus === 'completed' && fileStatusText" class="status-tag failed">
+      <div
+        v-if="cardStatus === 'completed' && fileStatusText"
+        :class="fileStatusText === '待校验' ? 'status-tag verifying' : 'tag failed'"
+      >
         {{ fileStatusText }}
       </div>
     </div>

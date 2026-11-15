@@ -1023,13 +1023,13 @@ public class LocalFileStore extends SQLiteOpenHelper {
         return exports.optJSONObject(0);
     }
 
-    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    /** 根据最近已完成的保留导出判断原图清理状态，失败和活动任务不覆盖该状态。 */
     public boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
         String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
             + "ec.source_cleanup_status "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
-            + "AND t.retain_download_entry=1 "
+            + "AND t.retain_download_entry=1 AND t.status='completed' "
             + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
         try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
             if (!cursor.moveToFirst()) return false;

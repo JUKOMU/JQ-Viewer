@@ -279,6 +279,28 @@ class ExportServiceTest {
     }
 
     @Test
+    void failedExportDoesNotHidePreviouslyCleanedUpRetainedDownload() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            var first = fixture.service.submit(List.of(
+                fixture.task("chapter-1", "first.pdf", 0, false, true, true))).tasks().get(0);
+            fixture.awaitTerminal(first.exportId());
+            var failed = fixture.service.submit(List.of(
+                fixture.task("chapter-1", "missing-source.pdf", 0, false, true, true))).tasks().get(0);
+
+            assertEquals("failed", failed.status());
+            try (var statement = fixture.database.connection().prepareStatement(
+                "UPDATE export_tasks SET updated_at=(SELECT updated_at+1 FROM export_tasks WHERE export_id=?) WHERE export_id=?")) {
+                statement.setString(1, first.exportId());
+                statement.setString(2, failed.exportId());
+                assertEquals(1, statement.executeUpdate());
+            }
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+            assertEquals(first.exportId(), fixture.store.findRetainedExportForChapter("album-1", "chapter-1").exportId());
+        }
+    }
+
+    @Test
     void retainedExportLookupFallsBackWhenLatestExportIsMissingAVolume() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter())) {
             fixture.addDownload("album-1", "chapter-1", 2);
@@ -518,6 +540,8 @@ class ExportServiceTest {
             fixture.service.reconcileOnStartup();
 
             assertEquals("completed", fixture.store.find(queued.exportId()).status());
+            assertNull(fixture.store.find(queued.exportId()).errorCode());
+            assertTrue(fixture.store.isSourceDeletedAfterExport("album-1", "chapter-1"));
             assertNotNull(fixture.store.findRetainedExportForChapter("album-1", "chapter-1"));
             assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/chapter-1")));
             assertEquals(completed.totalPages(), pageCount(fixture.output.resolve("recover.pdf")));

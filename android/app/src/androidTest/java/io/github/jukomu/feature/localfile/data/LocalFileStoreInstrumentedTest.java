@@ -103,6 +103,14 @@ public class LocalFileStoreInstrumentedTest {
         store.updateExportProgress("cleanup-state", "completed", "completed",
             0, 0, 0, 0, "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
         assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+
+        // 后续失败或尚未完成的导出不能覆盖已经成功清理原图的事实。
+        task.put("exportId", "z-failed").put("status", "failed").put("phase", "failed");
+        store.reserveExport(task, chapters, new JSONArray());
+        store.getWritableDatabase().execSQL("UPDATE export_tasks SET updated_at=updated_at+1 WHERE export_id='z-failed'");
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        store.updateExportProgress("z-failed", "running", "writing", 0, 0, 0, 0, null, null);
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
     }
 
     @Test

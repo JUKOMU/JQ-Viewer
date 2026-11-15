@@ -796,7 +796,8 @@ const popoverAction = (action: string) => {
     }
   }
 
-  if (action !== 'delete' && action !== 'remove') closeActions()
+  const keepForSheet = action === 'delete' || (action === 'remove' && selectedGroup.value?.type === 'multi')
+  if (!keepForSheet) closeActions()
 }
 
 const closeActions = () => {
@@ -1201,7 +1202,16 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
       limit: 50,
     })
     const pageTasks = result.items.flatMap((item) => 'chapters' in item ? item.chapters : [item])
-    const verified = new Map((await verifyRetainedDownloads(pageTasks)).map((task) => [task.taskId, task]))
+    let verifiedTasks = pageTasks
+    try {
+      verifiedTasks = await verifyRetainedDownloads(pageTasks)
+    } catch (error) {
+      // 校验异常不隐藏下载记录，也不能沿用上次的可用结论。
+      verifiedTasks = pageTasks.map((task) => hasRetainedExport(task)
+        ? { ...task, retainedFileStatus: 'unknown' as const } : task)
+      await showToast(sanitizeError(error, '保留文件校验失败，请重试'), 'danger')
+    }
+    const verified = new Map(verifiedTasks.map((task) => [task.taskId, task]))
     result.items = result.items.map((item) => 'chapters' in item
       ? { ...item, chapters: item.chapters.map((task) => verified.get(task.taskId)!) }
       : verified.get(item.taskId)!)
@@ -2133,19 +2143,24 @@ const requestClear = async (target: 'completed' | 'failed') => {
   clearTarget.value = target
   if (target === 'completed') {
     clearCounts.value = { retained: 0, ordinary: 0 }
-    let cursor: string | undefined
-    do {
-      const page = await JmcomicService.getDownloadTasksPage({
-        status: 'completed', sort: sortMode.value, direction: sortDirection.value, cursor, limit: 100,
-      })
-      for (const item of page.items) {
-        for (const task of 'chapters' in item ? item.chapters : [item]) {
-          if (hasRetainedExport(task)) clearCounts.value.retained++
-          else clearCounts.value.ordinary++
+    try {
+      let cursor: string | undefined
+      do {
+        const page = await JmcomicService.getDownloadTasksPage({
+          status: 'completed', sort: sortMode.value, direction: sortDirection.value, cursor, limit: 100,
+        })
+        for (const item of page.items) {
+          for (const task of 'chapters' in item ? item.chapters : [item]) {
+            if (hasRetainedExport(task)) clearCounts.value.retained++
+            else clearCounts.value.ordinary++
+          }
         }
-      }
-      cursor = page.nextCursor ?? undefined
-    } while (cursor)
+        cursor = page.nextCursor ?? undefined
+      } while (cursor)
+    } catch (error) {
+      await showToast(sanitizeError(error, '读取已完成任务失败，未执行清空'), 'danger')
+      return
+    }
   }
   const alert = await createAppAlert({
     header: '确认清空',

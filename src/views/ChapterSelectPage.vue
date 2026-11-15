@@ -109,7 +109,7 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
+import { getImageUrl, JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { isRetainedDownload, retainedDeletionFiles, retainedFileStatusLabel, verifyRetainedDownloads } from '@/services/RetainedDownloadService'
 import { ChapterSourceService, type ChapterSourceSummary } from '@/services/ChapterSourceService'
 import type { PhotoMeta } from '@/services/JmcomicTypes'
@@ -223,8 +223,16 @@ onMounted(async () => {
   const sources = await ChapterSourceService.getAlbumSources(albumId.value).catch(
     () => new Map<string, ChapterSourceSummary>(),
   )
-  const verified = await verifyRetainedDownloads([...sources.values()].flatMap((summary) =>
-    summary.download ? [summary.download] : []))
+  const downloads = [...sources.values()].flatMap((summary) => summary.download ? [summary.download] : [])
+  let verified = downloads
+  try {
+    verified = await verifyRetainedDownloads(downloads)
+  } catch (error) {
+    // 文件校验失败仍保留章节入口，下一次打开时重新验证来源。
+    verified = downloads.map((task) => isRetainedDownload(task)
+      ? { ...task, retainedFileStatus: 'unknown' as const } : task)
+    await showToast(sanitizeError(error, '保留文件校验失败，请重试'), 'danger')
+  }
   for (const task of verified) sources.get(task.chapterId)!.download = task
   downloadedChapters.value = [...sources.entries()]
     .map(([chapterId, summary]) => {

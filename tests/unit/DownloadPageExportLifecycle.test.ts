@@ -254,8 +254,117 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     expect(mocks.removeRetainedDownload).toHaveBeenCalledWith(retained.albumId, retained.chapterId)
     expect(mocks.deleteDownloaded).not.toHaveBeenCalled()
     mocks.deleteLocalFile.mockClear()
+    mocks.removeRetainedDownload.mockClear()
     await state.runDownloadBatch('remove', [retained])
     expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    expect(mocks.removeRetainedDownload).toHaveBeenCalledOnce()
+    expect(mocks.removeRetainedDownload).toHaveBeenCalledWith(retained.albumId, retained.chapterId)
+    expect(mocks.deleteDownloaded).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test.each(['missing', 'shared'])('文件 %s 时批量移除仍只移除选中记录', async (kind) => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const retained = retainedAt(1)
+    if (kind === 'missing') {
+      retained.retainedExportCandidates[0].availability = 'missing'
+      mocks.getLocalFiles.mockResolvedValue({ files: [] })
+    } else {
+      mocks.inspectLocalFileForDeletion.mockResolvedValue({ chapters: [
+        { albumId: retained.albumId, chapterId: retained.chapterId },
+        { albumId: retained.albumId, chapterId: 'other-chapter' },
+      ] })
+    }
+    await state.runDownloadBatch('remove', [retained])
+    expect(mocks.removeRetainedDownload).toHaveBeenCalledOnce()
+    expect(mocks.removeRetainedDownload).toHaveBeenCalledWith(retained.albumId, retained.chapterId)
+    expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    expect(mocks.deleteDownloaded).not.toHaveBeenCalled()
+    expect(mocks.inspectLocalFileForDeletion).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('删除共享分卷先提示其他章节影响，取消时不删除文件或记录', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const retained = retainedAt(1)
+    mocks.inspectLocalFileForDeletion.mockResolvedValue({ chapters: [
+      { albumId: retained.albumId, chapterId: retained.chapterId },
+      { albumId: retained.albumId, chapterId: 'other', chapterTitle: '第二章' },
+    ] })
+    const deletion = state.onDelete(retained)
+    await flushPromises()
+    const alert = mocks.createAppAlert.mock.calls.at(-1)![0]
+    expect(alert.message).toContain('第二章')
+    expect(alert.message).toContain('下载记录保留')
+    alert.buttons[0].handler()
+    await deletion
+    expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    expect(mocks.removeRetainedDownload).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('单项移除关闭菜单状态，取消后同一按钮可以立即再次打开', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const anchor = document.createElement('button')
+    const event = { currentTarget: anchor }
+    state.openActions(retainedAt(1), event)
+    state.popoverAction('remove')
+    await flushPromises()
+    expect(state.actionMenuAnchor).toBeNull()
+    state.openActions(retainedAt(1), event)
+    expect(state.isActionMenuOpen).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('保留文件校验异常仍加载普通记录和保留记录，状态改为待校验', async () => {
+    const retained = retainedAt(1)
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => status === 'completed'
+      ? { ...emptyPage(), items: [{ ...groupAt(1), chapters: [retained, { ...taskAt(2), status: 'completed' }] }], totalCount: 1 }
+      : emptyPage())
+    mocks.refreshLocalFileAvailability.mockRejectedValue(new Error('bridge failed'))
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const group = state.downloadGroupStates.completed
+    expect(group.error).toBe(false)
+    expect(group.items[0].chapters).toHaveLength(2)
+    expect(group.items[0].chapters[0].retainedFileStatus).toBe('unknown')
+    expect(mocks.showToast).toHaveBeenCalledWith('保留文件校验失败，请重试', 'danger')
+    wrapper.unmount()
+  })
+
+  test('混合多章节移除保留章节面板状态，普通原图章节不进入移除范围', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const retained = retainedAt(1)
+    const group = { ...groupAt(1), type: 'multi',
+      chapters: [retained, { ...taskAt(2), status: 'completed' }] }
+    state.openGroupActions(group, { currentTarget: document.createElement('button') })
+    state.popoverAction('remove')
+    expect(state.showDeleteSheet).toBe(true)
+    expect(state.selectedGroup.albumId).toBe(group.albumId)
+    expect(state.deleteGroupChapters.map((chapter: any) => chapter.chapterId)).toEqual([retained.chapterId])
+    expect(mocks.removeRetainedDownload).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('清空前第二页统计失败时提示并停止，不展示确认或执行清空', async () => {
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    mocks.getDownloadTasksPage.mockResolvedValueOnce({ ...emptyPage(), items: [groupAt(1)], nextCursor: 'next-page' })
+      .mockRejectedValueOnce(new Error('read failed'))
+    await state.requestClear('completed')
+    expect(mocks.showToast).toHaveBeenCalledWith('读取已完成任务失败，未执行清空', 'danger')
+    expect(mocks.createAppAlert).not.toHaveBeenCalled()
+    expect(mocks.clearDownloadTasks).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

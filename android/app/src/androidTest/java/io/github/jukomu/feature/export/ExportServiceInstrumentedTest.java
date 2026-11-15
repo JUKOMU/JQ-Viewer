@@ -571,6 +571,8 @@ public class ExportServiceInstrumentedTest {
             ExportService recovered = new ExportService(context, executor, (ctx, snapshot) -> {}, null);
             recovered.reconcileOnStartup();
             assertEquals("completed", store.getExportTask(exportId).optString("status"));
+            assertTrue(store.getExportTask(exportId).optString("errorCode").isEmpty());
+            assertTrue(store.isSourceDeletedAfterExport(ALBUM_ID, chapterId));
             assertNotNull(store.findRetainedExportForChapter(ALBUM_ID, chapterId));
             assertFalse(source.exists());
         } finally {

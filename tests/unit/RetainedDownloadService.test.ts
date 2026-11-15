@@ -97,6 +97,16 @@ describe('保留下载项的来源和操作', () => {
     expect(native.removeRetainedDownload).not.toHaveBeenCalled()
   })
 
+  test.each(['unknown', 'invalid'] as const)('状态 %s 的卡片使用相应提示样式', (status) => {
+    const item = { ...task([volume(1)]), retainedFileStatus: status }
+    const wrapper = mount(DownloadTaskCard, {
+      props: { task: item }, global: { stubs: { IonIcon: true } },
+    })
+    const label = wrapper.find(status === 'unknown' ? '.status-tag.verifying' : '.tag.failed')
+    expect(label.text()).toBe(status === 'unknown' ? '待校验' : '文件损坏')
+    wrapper.unmount()
+  })
+
   test('多章节卡片汇总非首章异常，并保留导出格式', () => {
     const ordinary = task()
     const broken = selectRetainedExport(task([{ ...volume(1), availability: 'invalid' }], 'b'))

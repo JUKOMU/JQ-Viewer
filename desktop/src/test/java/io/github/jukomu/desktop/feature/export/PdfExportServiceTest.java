@@ -638,6 +638,31 @@ class ExportServiceTest {
         }
     }
 
+    @Test
+    void deletingOrClearingOriginalsKeepsExportsInsideTheDownloadDirectory() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            for (boolean clear : List.of(false, true)) {
+                String chapterId = clear ? "chapter-2" : "chapter-1";
+                fixture.addDownload("album-1", chapterId, 1);
+                Path source = fixture.files.chapterDirectory("album-1/" + chapterId);
+                String name = clear ? "clear.pdf" : "delete.pdf";
+                var request = new ExportTaskRequest("pdf", "chapter", "album-1", "Album", "", "", false,
+                    chapterId, "Chapter", null,
+                    new ExportTargetRequest(FileReferences.folderRef(source), name),
+                    source.resolve(name).toString(), true, 1D, 0, false);
+                var queued = fixture.service.submit(List.of(request)).tasks().get(0);
+                assertEquals("completed", fixture.awaitTerminal(queued.exportId()).status());
+                try (var downloads = fixture.downloadService()) {
+                    if (clear) downloads.clearDownloadTasks("completed");
+                    else downloads.deleteDownloaded("album-1", chapterId);
+                }
+                assertNull(fixture.downloads.findTask("album-1", chapterId));
+                assertFalse(Files.exists(source.resolve("001.png")));
+                assertTrue(Files.isRegularFile(source.resolve(name)));
+            }
+        }
+    }
+
     private static Fixture fixture(PdfVolumeWriter writer) throws Exception {
         return fixture(writer, Executors.newSingleThreadExecutor());
     }

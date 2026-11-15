@@ -517,6 +517,22 @@ public class ExportServiceInstrumentedTest {
     }
 
     @Test
+    public void deletingCompletedImagesKeepsAnExportInTheSameDirectory() throws Exception {
+        String chapterId = "900000199";
+        File source = fileStore.ensureChapterDir(ALBUM_ID, chapterId);
+        createImage(source, "page-0001.jpg", 20, 30, Color.RED);
+        registerChapter(chapterId, 1);
+        File exported = new File(source, "keep.pdf");
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(exported)) {
+            output.write(1);
+        }
+        fileStore.deleteDownloadedImages(ALBUM_ID, chapterId,
+            downloadStore.getImages(ALBUM_ID + "_" + chapterId));
+        assertFalse(new File(source, "page-0001.jpg").exists());
+        assertTrue(exported.isFile());
+    }
+
+    @Test
     public void cleanupRejectsAnOutputInsideTheSourceDirectory() throws Exception {
         String chapterId = "900000120";
         File source = fileStore.ensureChapterDir(ALBUM_ID, chapterId);

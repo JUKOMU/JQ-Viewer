@@ -179,6 +179,15 @@ export const ChapterSourceService = {
     }
 
     if (summary.download && isRetainedDownload(summary.download)) {
+      if (requested === 'pdf' || requested === 'cbz') {
+        // 指定格式时也必须按整套导出选择，不能落回任意单个分卷。
+        summary.download = {
+          ...summary.download,
+          retainedExports: summary.download.retainedExports?.filter((volume) => volume.format === requested),
+          retainedExportCandidates: summary.download.retainedExportCandidates
+            ?.filter((volume) => volume.format === requested),
+        }
+      }
       summary.download = (await verifyRetainedDownloads([summary.download]))[0]
       if (!summary.download.retainedExports?.length) {
         return requested === 'preferred' ? { kind: 'network' } : null

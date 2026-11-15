@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   verifyLocalFile: vi.fn(),
   getCbzInfo: vi.fn(),
   getPdfInfo: vi.fn(),
+  refreshLocalFileAvailability: vi.fn(),
 }))
 
 vi.mock('@/services/JmcomicService', () => ({ JmcomicService: mocks }))
@@ -189,6 +190,36 @@ describe('ChapterSourceService', () => {
         page: '3',
       },
     })
+  })
+
+  test.each([false, true])('指定 PDF 时不混用 CBZ 或残缺分卷，PDF 缺卷：%s', async (missing) => {
+    const pdfA = file(20, 'pdf', 20)
+    const pdfB = file(21, 'pdf', 21)
+    const cbz = file(22, 'cbz', 30)
+    mocks.getCompletedDownloadChapters.mockResolvedValue({ tasks: [{
+      taskId: 'download-1', albumId: 'album-1', chapterId: 'chapter-1',
+      status: 'completed', createdAt: 1, totalPages: 10,
+      retainedExportCandidates: [
+        { exportId: 'new-cbz', format: 'cbz', fileId: 22, fileRef: cbz.fileRef,
+          startPage: 1, pageCount: 10, availability: 'available' },
+        ...[pdfA, pdfB].map((pdf) => ({
+          exportId: 'old-pdf', format: 'pdf', fileId: pdf.id, fileRef: pdf.fileRef,
+          startPage: 6, pageCount: 5, availability: 'available',
+        })),
+      ],
+    }] })
+    mocks.getDownloadedPhoto.mockRejectedValue(new Error('originals removed'))
+    mocks.getLocalFiles.mockResolvedValue({ files: [cbz, pdfB, pdfA] })
+    mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [
+      pdfA, { ...pdfB, availability: missing ? 'missing' : 'available' }, cbz,
+    ] })
+    mocks.verifyLocalFile.mockImplementation(async (id: number) =>
+      [pdfA, pdfB, cbz].find((candidate) => candidate.id === id))
+    const source = await ChapterSourceService.resolve('album-1', 'chapter-1', 'pdf')
+    if (missing) expect(source).toBeNull()
+    else expect(source).toMatchObject({ kind: 'pdf', retainedExports: [
+      expect.objectContaining({ fileId: 20 }), expect.objectContaining({ fileId: 21 }),
+    ] })
   })
 
   test('保留入口从章节来源解析携带整章分卷，并拒绝缺失分卷', async () => {

@@ -216,7 +216,9 @@ public final class DownloadService implements AutoCloseable {
         for (StoredDownloadTask task : tasks) {
             try {
                 if (!exports.isSourceDeletedAfterExport(task.albumId(), task.chapterId())) {
-                    files.cleanup(task.relativeDirectory());
+                    if (STATUS_COMPLETED.equals(task.status())) {
+                        files.cleanupCompleted(task.relativeDirectory(), store.pages(task.taskId()));
+                    } else files.cleanup(task.relativeDirectory());
                 }
                 taskIds.add(task.taskId());
             } catch (RuntimeException error) {
@@ -298,7 +300,9 @@ public final class DownloadService implements AutoCloseable {
             cancelDownload(task.taskId());
             return;
         }
-        files.cleanup(task.relativeDirectory());
+        if (STATUS_COMPLETED.equals(task.status())) {
+            files.cleanupCompleted(task.relativeDirectory(), store.pages(task.taskId()));
+        } else files.cleanup(task.relativeDirectory());
         store.deleteTask(task.taskId());
     }
 

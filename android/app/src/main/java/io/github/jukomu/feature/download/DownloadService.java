@@ -351,7 +351,10 @@ public class DownloadService {
             String chapterId = task.optString("chapterId");
             try {
                 if (!LocalFileStore.getInstance(context).isSourceDeletedAfterExport(albumId, chapterId)) {
-                    fileStore.deleteChapter(albumId, chapterId);
+                    if (STATUS_COMPLETED.equals(task.optString("status"))) {
+                        fileStore.deleteDownloadedImages(albumId, chapterId,
+                            downloadDb.getImages(task.optString("taskId")));
+                    } else fileStore.deleteChapter(albumId, chapterId);
                 }
                 taskIds.add(task.optString("taskId"));
             } catch (RuntimeException error) {
@@ -567,7 +570,10 @@ public class DownloadService {
             }
         }
 
-        fileStore.deleteChapter(albumId, chapterId);
+        JSONObject task = downloadDb.getTask(taskId);
+        if (task != null && STATUS_COMPLETED.equals(task.optString("status"))) {
+            fileStore.deleteDownloadedImages(albumId, chapterId, downloadDb.getImages(taskId));
+        } else fileStore.deleteChapter(albumId, chapterId);
         downloadDb.deleteImages(taskId);
         downloadDb.deleteTask(taskId);
         cleanupTaskMapping(taskId);

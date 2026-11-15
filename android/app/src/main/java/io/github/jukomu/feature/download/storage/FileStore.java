@@ -294,6 +294,26 @@ public class FileStore {
         return dir.listFiles((d, name) -> !name.equals(META_FILE) && !name.endsWith(".tmp"));
     }
 
+    /** 已完成下载只清理图片清单和备份元数据，保留同目录中的导出文件。 */
+    public void deleteDownloadedImages(String albumId, String chapterId, List<JSONObject> images) {
+        for (JSONObject image : images) {
+            File file = getExpectedImageFile(albumId, chapterId, image.optString("filename"));
+            if (file != null && file.exists() && !file.delete()) {
+                throw new IllegalStateException("无法删除下载图片");
+            }
+        }
+        File dir = getChapterDir(albumId, chapterId);
+        File metadata = new File(dir, META_FILE);
+        if (metadata.exists() && !metadata.delete()) {
+            throw new IllegalStateException("无法删除下载元数据");
+        }
+        chapterIdToAlbumId.remove(chapterId);
+        String prefix = albumId + "_" + chapterId + "_";
+        sortOrderToFilename.keySet().removeIf(key -> key.startsWith(prefix));
+        String[] remaining = dir.list();
+        if (remaining != null && remaining.length == 0) deleteChapter(albumId, chapterId);
+    }
+
     public void deleteChapter(String albumId, String chapterId) {
         File dir = getChapterDir(albumId, chapterId);
         deleteRecursive(dir);

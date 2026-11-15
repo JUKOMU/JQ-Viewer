@@ -58,6 +58,32 @@ public class PdfPluginContractInstrumentedTest {
     }
 
     @Test
+    public void exportOptionsCrossThePluginBoundaryAndZipDisablesCleanup() throws Exception {
+        for (String format : new String[]{"pdf", "cbz", "zip"}) {
+            JSObject task = new JSObject();
+            task.put("format", format);
+            task.put("mode", "chapter");
+            task.put("albumId", "990000001");
+            task.put("chapterId", "990000002");
+            task.put("targetFolderRef", LocalFileRef.createPathFolderRef(context.getCacheDir().getCanonicalPath()));
+            task.put("targetName", "plugin-options." + format);
+            task.put("displayPath", new File(context.getCacheDir(), "plugin-options." + format).getAbsolutePath());
+            task.put("deleteSourceAfterExport", true);
+            task.put("retainDownloadEntry", true);
+            RecordingPluginCall submission = call("exportBatch", "tasks", new JSArray().put(task));
+
+            handler.exportBatch(submission);
+
+            assertNull(submission.rejectionMessage);
+            org.json.JSONObject persisted = submission.resolvedData.getJSONArray("tasks").getJSONObject(0);
+            assertEquals(!"zip".equals(format), persisted.getBoolean("deleteSourceAfterExport"));
+            assertEquals(!"zip".equals(format), persisted.getBoolean("retainDownloadEntry"));
+            io.github.jukomu.feature.export.ExportService.getInstance(context)
+                .deleteExportTask(persisted.getString("exportId"));
+        }
+    }
+
+    @Test
     public void scopedPdfFailuresKeepMessagesAndExposeCodes() throws Exception {
         RecordingPluginCall scan = call("scanImportableFiles", "folderRef",
             LocalFileRef.createPathFolderRef(missingPdf.getAbsolutePath()));

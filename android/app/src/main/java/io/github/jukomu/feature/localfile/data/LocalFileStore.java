@@ -935,21 +935,27 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     /** 查找章节最近一次完整且可用的保留导出分卷。 */
     public JSONArray findRetainedExportsForChapter(String albumId, String chapterId) {
+        return findRetainedExportsForChapter(albumId, chapterId, -1L);
+    }
+
+    /** 排除待移除文件后，仍须满足整章分卷完整性。 */
+    public JSONArray findRetainedExportsForChapter(String albumId, String chapterId, long excludedFileId) {
         String sql = "SELECT t.export_id,t.format,f.id AS file_id,f.file_ref,c.start_page,c.page_count "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "JOIN " + TABLE_VOLUMES + " v ON v.export_id=t.export_id AND v.status='completed' "
             + "JOIN " + TABLE_FILES + " f ON f.file_ref=v.output_file_ref "
             + "JOIN " + TABLE_FILE_CHAPTERS + " c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
-            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' AND f.id<>? "
             + "AND ec.expected_page_count=(SELECT COALESCE(SUM(c2.page_count),0) FROM "
             + TABLE_VOLUMES + " v2 JOIN " + TABLE_FILES + " f2 ON f2.file_ref=v2.output_file_ref "
             + "JOIN " + TABLE_FILE_CHAPTERS + " c2 ON c2.file_id=f2.id "
             + "WHERE v2.export_id=t.export_id AND v2.status='completed' "
-            + "AND f2.availability='available' AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
+            + "AND f2.availability='available' AND f2.id<>? AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
             + "AND ec.album_id=? AND ec.chapter_id=? ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
         JSONArray result = new JSONArray();
-        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{
+            String.valueOf(excludedFileId), String.valueOf(excludedFileId), albumId, chapterId})) {
             String exportId = null;
             while (cursor.moveToNext()) {
                 String currentExportId = getString(cursor, "export_id");
@@ -970,19 +976,60 @@ public class LocalFileStore extends SQLiteOpenHelper {
         }
     }
 
+    /** 从导出快照还原分卷交集，文件库记录删除后仍可诊断缺失来源。 */
+    public JSONArray retainedExportCandidates(String albumId, String chapterId) {
+        // 旧版 SQLite 在 CTE 联表中可能返回带表名前缀的列名，显式别名固定游标读取契约。
+        String sql = "WITH chapters AS (SELECT ec.export_id AS export_id,"
+            + "ec.expected_page_count AS expected_page_count,(SELECT COALESCE(SUM(p.expected_page_count),0) "
+            + "FROM export_task_chapters p WHERE p.export_id=ec.export_id AND p.sequence<ec.sequence) AS first_page "
+            + "FROM export_task_chapters ec WHERE ec.album_id=? AND ec.chapter_id=?) "
+            + "SELECT t.export_id AS export_id,t.format AS format,f.id AS file_id,"
+            + "v.output_file_ref AS output_file_ref,v.start_page AS start_page,v.end_page AS end_page,"
+            + "ec.first_page AS first_page,ec.expected_page_count AS expected_page_count,"
+            + "COALESCE(f.availability,'missing') AS availability "
+            + "FROM chapters ec JOIN export_tasks t ON t.export_id=ec.export_id "
+            + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
+            + "LEFT JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "WHERE t.retain_download_entry=1 AND t.status='completed' AND t.format IN ('pdf','cbz') "
+            + "AND v.end_page>ec.first_page AND v.start_page<ec.first_page+ec.expected_page_count "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
+        JSONArray result = new JSONArray();
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
+            while (cursor.moveToNext()) {
+                int first = Math.max(getInt(cursor, "first_page"), getInt(cursor, "start_page"));
+                int last = Math.min(getInt(cursor, "first_page") + getInt(cursor, "expected_page_count"),
+                    getInt(cursor, "end_page"));
+                JSONObject volume = new JSONObject();
+                volume.put("exportId", getString(cursor, "export_id"));
+                volume.put("format", getString(cursor, "format"));
+                if (!cursor.isNull(cursor.getColumnIndexOrThrow("file_id"))) {
+                    volume.put("fileId", getLong(cursor, "file_id"));
+                }
+                volume.put("fileRef", getString(cursor, "output_file_ref"));
+                volume.put("startPage", first - getInt(cursor, "start_page") + 1);
+                volume.put("pageCount", last - first);
+                volume.put("availability", getString(cursor, "availability"));
+                result.put(volume);
+            }
+            return result;
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
     /** 查找章节当前使用的第一个可用保留导出分卷。 */
     public JSONObject findRetainedExportForChapter(String albumId, String chapterId) {
         JSONArray exports = findRetainedExportsForChapter(albumId, chapterId);
         return exports.optJSONObject(0);
     }
 
-    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    /** 根据最近已完成的保留导出判断原图清理状态，失败和活动任务不覆盖该状态。 */
     public boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
         String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
             + "ec.source_cleanup_status "
             + "FROM " + TABLE_TASKS + " t JOIN " + TABLE_CHAPTERS + " ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
-            + "AND t.retain_download_entry=1 "
+            + "AND t.retain_download_entry=1 AND t.status='completed' "
             + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
         try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
             if (!cursor.moveToFirst()) return false;

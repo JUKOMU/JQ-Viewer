@@ -266,6 +266,9 @@ class DownloadServiceTest {
             var permissions = Files.getPosixFilePermissions(directory);
             fixture.store.createOrResetTask("bad_chapter", "bad", "chapter", "Bad", "Chapter",
                 "", "bad/chapter", 1);
+            fixture.store.saveManifest("bad_chapter", 1, "", "[]", 1, false, List.of(
+                new io.github.jukomu.desktop.feature.download.data.StoredDownloadPage(
+                    "bad_chapter", 1, "chapter", "page.jpg", "bad/chapter/page.jpg", "", "", "", true)));
             fixture.store.complete("bad_chapter", 1, 1, 5, 1);
             try {
                 Files.setPosixFilePermissions(directory, java.util.Set.of(

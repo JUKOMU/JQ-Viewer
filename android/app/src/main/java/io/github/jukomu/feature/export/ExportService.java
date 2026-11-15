@@ -123,7 +123,7 @@ public class ExportService {
     }
 
     /**
-     * Marks unfinished persisted work as interrupted and removes its known temporary artifacts once per process.
+     * 恢复成品已登记的原图清理，其余未完成任务标为中断并清理临时文件。
      */
     public synchronized void reconcileOnStartup() {
         if (startupReconciled) return;
@@ -131,6 +131,40 @@ public class ExportService {
         JSONArray before = localFileStore.getAllExportTasks();
         for (int index = 0; index < before.length(); index++) {
             JSONObject task = before.optJSONObject(index);
+            if (task != null && task.optBoolean("deleteSourceAfterExport")
+                && !task.optBoolean("cancelRequested")
+                && ("running".equals(task.optString("status")) || "interrupted".equals(task.optString("status")))) {
+                String exportId = task.optString("exportId");
+                JSONArray volumes = localFileStore.getExportVolumes(exportId);
+                boolean allCompleted = volumes.length() > 0
+                    && volumes.length() == task.optInt("totalVolumes");
+                for (int volumeIndex = 0; volumeIndex < volumes.length(); volumeIndex++) {
+                    allCompleted &= "completed".equals(volumes.optJSONObject(volumeIndex).optString("status"));
+                }
+                if (allCompleted) {
+                    try {
+                        ExportJob job = jobFromSnapshot(task, localFileStore.getExportChapters(exportId));
+                        ensureCleanupTargetOutsideSources(job);
+                        for (int volumeIndex = 0; volumeIndex < volumes.length(); volumeIndex++) {
+                            JSONObject volume = volumes.getJSONObject(volumeIndex);
+                            JSONObject file = localFileStore.getFileByRef(volume.getString("outputFileRef"));
+                            if (file == null || !"available".equals(
+                                io.github.jukomu.feature.localfile.management.LocalFileManagementService
+                                    .getInstance(context).verifyFile(file.getLong("id")).optString("availability"))) {
+                                throw new IOException("已登记的导出分卷不可用");
+                            }
+                        }
+                        boolean complete = deleteSourceDownloads(job, true);
+                        updateProgress(exportId, "completed", "completed",
+                            task.optInt("totalPages"), task.optInt("totalPages"),
+                            volumes.length(), volumes.length(), complete ? null : "SOURCE_CLEANUP_FAILED",
+                            complete ? null : "导出已完成，但部分原下载文件未能删除");
+                        continue;
+                    } catch (Exception error) {
+                        LOGGER.warn("无法恢复导出清理，保留剩余原图: exportId={}", exportId, error);
+                    }
+                }
+            }
             if (task != null && ("queued".equals(task.optString("status"))
                 || "running".equals(task.optString("status"))
                 || "cancelling".equals(task.optString("status")))) {
@@ -215,10 +249,18 @@ public class ExportService {
         if (!LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
             throw new IllegalStateException("活动导出任务不能删除");
         }
-        if (task.optBoolean("retainDownloadEntry")
-            && "completed".equals(task.optString("status"))
-            && localFileStore.hasRetainedExportForTask(exportId)) {
-            throw LocalFileOperationException.conflict("导出任务仍关联下载列表，请先删除对应文件");
+        if (task.optBoolean("retainDownloadEntry") && "completed".equals(task.optString("status"))) {
+            JSONArray chapters = localFileStore.getExportChapters(exportId);
+            for (int index = 0; index < chapters.length(); index++) {
+                JSONObject chapter = chapters.optJSONObject(index);
+                String albumId = chapter.optString("albumId");
+                String chapterId = chapter.optString("chapterId");
+                if (DownloadStore.getInstance(context).getTask(albumId + "_" + chapterId) != null
+                    && localFileStore.isSourceDeletedAfterExport(albumId, chapterId)) {
+                    throw LocalFileOperationException.conflict(
+                        "导出任务仍关联下载列表，请先移除对应下载记录");
+                }
+            }
         }
         cleanupKnownArtifacts(exportId, true);
         cleanupStagingDirectoryQuietly(task);
@@ -626,7 +668,7 @@ public class ExportService {
                     publishExportForeground(sessionId, job, "准备写入", 0, preflight.totalPages, 1,
                         preflight.volumes.size());
                     exportJob(job, preflight, notificationId, sessionId, String.valueOf(batchId));
-                    boolean cleanupComplete = deleteSourceDownloads(job);
+                    boolean cleanupComplete = deleteSourceDownloads(job, false);
                     updateProgress(job.exportId, "completed", "completed", preflight.totalPages,
                         preflight.totalPages, preflight.volumes.size(), preflight.volumes.size(),
                         cleanupComplete ? null : "SOURCE_CLEANUP_FAILED",
@@ -842,12 +884,44 @@ public class ExportService {
             + ", totalMs=" + formatMillis(SystemClock.elapsedRealtimeNanos() - exportStartedAt));
     }
 
-    private boolean deleteSourceDownloads(ExportJob job) {
+    /** 检查真实目标目录；SAF 主存储引用沿用系统 provider 的 primary 文档标识。 */
+    private void ensureCleanupTargetOutsideSources(ExportJob job) throws IOException {
+        if (!job.deleteSourceAfterExport || "zip".equals(job.format)) return;
+        LocalFileRef.Parsed target = LocalFileRef.parse(job.targetFolderRef);
+        File folder;
+        if (target.provider == LocalFileRef.Provider.PATH) {
+            folder = new File(target.payload);
+        } else {
+            android.net.Uri uri = android.net.Uri.parse(target.payload);
+            if (!"com.android.externalstorage.documents".equals(uri.getAuthority())) return;
+            String documentId = android.provider.DocumentsContract.getTreeDocumentId(uri);
+            if (!documentId.startsWith("primary:")) return;
+            folder = new File(android.os.Environment.getExternalStorageDirectory(),
+                documentId.substring("primary:".length()));
+        }
+        File output = new File(folder, ExportTargetPath.normalize(job.targetName)).getCanonicalFile();
+        for (ExportChapter chapter : requestedChapters(job)) {
+            File source = FileStore.getInstance().getChapterDir(chapter.albumId, chapter.chapterId).getCanonicalFile();
+            if (output.toPath().startsWith(source.toPath())) {
+                throw new IOException("导出位置位于待清理的原图目录内，请更换导出位置");
+            }
+        }
+    }
+
+    private boolean deleteSourceDownloads(ExportJob job, boolean recovering) {
         if (!job.deleteSourceAfterExport || "zip".equals(job.format)) return true;
         DownloadStore downloadStore = DownloadStore.getInstance(context);
         boolean complete = true;
         for (ExportChapter chapter : requestedChapters(job)) {
             String taskId = chapter.albumId + "_" + chapter.chapterId;
+            JSONObject download = downloadStore.getTask(taskId);
+            if (download != null && (!"completed".equals(download.optString("status"))
+                || (recovering && download.optLong("createdAt")
+                    > localFileStore.getExportTask(job.exportId).optLong("createdAt")))) {
+                complete = false;
+                localFileStore.updateSourceCleanup(job.exportId, chapter.albumId, chapter.chapterId, "failed");
+                continue;
+            }
             try {
                 FileStore.getInstance().deleteChapter(chapter.albumId, chapter.chapterId);
                 if (!job.retainDownloadEntry) {
@@ -1056,6 +1130,7 @@ public class ExportService {
             }
         }
         File pdfFile = resolveOutputWorkFile(job, targetRef);
+        ensureCleanupTargetOutsideSources(job);
         File parentDir = pdfFile.getParentFile();
         if (parentDir == null) {
             throw new IOException("目标路径不可用: " + job.displayPath);

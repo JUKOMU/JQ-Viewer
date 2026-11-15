@@ -70,8 +70,8 @@
 
       <!-- 已完成 -->
       <div v-else-if="cardStatus === 'completed'" class="status-row">
-        <span v-if="retainedExport" class="tag export-format-tag">
-          {{ retainedExport.format.toUpperCase() }}
+        <span v-if="retainedFormat" class="tag export-format-tag">
+          {{ retainedFormat }}
         </span>
         <span v-if="!isLocalFileEntry" class="tag completed">共 {{ displayTotalPages }} 页</span>
         <span v-if="isLocalFileEntry && displayLocalFilePageCount > 0" class="tag completed"
@@ -82,11 +82,10 @@
           :icon="documentOutline"
           class="tag-icon local-file-tag-icon"
         />
-        <span v-if="sizeText && !retainedExport" class="size-text">
+        <span v-if="sizeText && !retainedFormat" class="size-text">
           {{ sizeText }}
         </span>
       </div>
-
       <!-- 部分失败 -->
       <template v-else-if="cardStatus === 'failed' && (task as DownloadTask).downloadedPages > 0">
         <div class="progress-bar">
@@ -106,6 +105,12 @@
         <span class="tag failed">{{
           sanitizeError((task as DownloadTask).error, '下载失败')
         }}</span>
+      </div>
+      <div
+        v-if="cardStatus === 'completed' && fileStatusText"
+        :class="fileStatusText === '待校验' ? 'status-tag verifying' : 'tag failed'"
+      >
+        {{ fileStatusText }}
       </div>
     </div>
 
@@ -135,6 +140,7 @@
 </template>
 
 <script setup lang="ts">
+import { retainedDeletionFiles, retainedFileStatusLabel } from '@/services/RetainedDownloadService'
 defineOptions({ name: 'DownloadTaskCard' })
 
 const props = defineProps<{
@@ -228,7 +234,21 @@ const sourceDownloadTask = computed(() => {
   return props.task
 })
 
-const retainedExport = computed(() => sourceDownloadTask.value?.retainedExports?.[0])
+const sourceTasks = computed(() => props.downloadedChapters?.length
+  ? props.downloadedChapters.flatMap((entry) => entry.downloadTask ? [entry.downloadTask] : [])
+  : sourceDownloadTask.value ? [sourceDownloadTask.value] : [])
+const retainedFormat = computed(() => [...new Set(sourceTasks.value.flatMap((task) =>
+  retainedDeletionFiles(task).slice(0, 1).map((file) => file.format.toUpperCase()),
+))].join(' / '))
+const fileStatusText = computed(() => {
+  const labels = sourceTasks.value.map(retainedFileStatusLabel)
+  const errors = labels.filter((label) => label && label !== '待校验')
+  if (!errors.length) return labels.includes('待校验') ? '待校验' : ''
+  if (sourceTasks.value.length === 1) return errors[0]
+  return errors.length < sourceTasks.value.length
+    ? `部分章节文件异常（${errors.length}/${sourceTasks.value.length}）`
+    : `文件异常（${errors.length} 章）`
+})
 
 const displayAuthor = computed(() => sourceDownloadTask.value?.author ?? '')
 const displayTags = computed(() => sourceDownloadTask.value?.tags ?? [])

@@ -287,8 +287,12 @@ public class DownloadService {
 
     private void attachRetainedExport(JSONObject task) {
         try {
-            JSONArray retained = LocalFileStore.getInstance(context)
-                .findRetainedExportsForChapter(task.getString("albumId"), task.getString("chapterId"));
+            LocalFileStore files = LocalFileStore.getInstance(context);
+            String albumId = task.getString("albumId");
+            String chapterId = task.getString("chapterId");
+            if (!files.isSourceDeletedAfterExport(albumId, chapterId)) return;
+            task.put("retainedExportCandidates", files.retainedExportCandidates(albumId, chapterId));
+            JSONArray retained = files.findRetainedExportsForChapter(albumId, chapterId);
             if (retained.length() > 0) task.put("retainedExports", retained);
         } catch (org.json.JSONException error) {
             throw new IllegalStateException(error);
@@ -346,7 +350,12 @@ public class DownloadService {
             String albumId = task.optString("albumId");
             String chapterId = task.optString("chapterId");
             try {
-                fileStore.deleteChapter(albumId, chapterId);
+                if (!LocalFileStore.getInstance(context).isSourceDeletedAfterExport(albumId, chapterId)) {
+                    if (STATUS_COMPLETED.equals(task.optString("status"))) {
+                        fileStore.deleteDownloadedImages(albumId, chapterId,
+                            downloadDb.getImages(task.optString("taskId")));
+                    } else fileStore.deleteChapter(albumId, chapterId);
+                }
                 taskIds.add(task.optString("taskId"));
             } catch (RuntimeException error) {
                 failedCount++;
@@ -534,6 +543,21 @@ public class DownloadService {
             STATUS_DOWNLOADING, null);
     }
 
+    /** 仅移除已清理原图的保留项，普通下载不能通过此入口丢弃记录。 */
+    public void removeRetainedDownload(String albumId, String chapterId) {
+        String taskId = albumId + "_" + chapterId;
+        JSONObject task = downloadDb.getTask(taskId);
+        if (task == null) return;
+        if (!STATUS_COMPLETED.equals(task.optString("status"))
+            || !LocalFileStore.getInstance(context).isSourceDeletedAfterExport(albumId, chapterId)) {
+            throw new IllegalStateException("仅可移除已清理原图的保留下载项");
+        }
+        downloadDb.deleteImages(taskId);
+        downloadDb.deleteTask(taskId);
+        cleanupTaskMapping(taskId);
+        cancelNotification(taskId);
+    }
+
     public void deleteDownloaded(String albumId, String chapterId) {
         String taskId = albumId + "_" + chapterId;
         pendingCancel.remove(taskId);
@@ -546,7 +570,10 @@ public class DownloadService {
             }
         }
 
-        fileStore.deleteChapter(albumId, chapterId);
+        JSONObject task = downloadDb.getTask(taskId);
+        if (task != null && STATUS_COMPLETED.equals(task.optString("status"))) {
+            fileStore.deleteDownloadedImages(albumId, chapterId, downloadDb.getImages(taskId));
+        } else fileStore.deleteChapter(albumId, chapterId);
         downloadDb.deleteImages(taskId);
         downloadDb.deleteTask(taskId);
         cleanupTaskMapping(taskId);
@@ -561,8 +588,18 @@ public class DownloadService {
         String status = task.optString("status");
         if (!STATUS_COMPLETED.equals(status))
             throw new IllegalStateException("Task is not completed");
+        if (LocalFileStore.getInstance(context).isSourceDeletedAfterExport(albumId, chapterId)) {
+            throw new IllegalStateException("原下载图片已清理，请使用保留的导出文件");
+        }
 
         List<JSONObject> images = downloadDb.getImages(taskId);
+        if (images.isEmpty() || images.size() != task.optInt("totalPages")
+            || images.stream().anyMatch(image -> {
+                File file = fileStore.getExpectedImageFile(albumId, chapterId, image.optString("filename"));
+                return file == null || !file.isFile();
+            })) {
+            throw new IllegalStateException("已下载章节文件不完整");
+        }
         JSONObject ret = new JSONObject();
         try {
             ret.put("id", chapterId);

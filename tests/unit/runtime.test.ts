@@ -104,6 +104,7 @@ describe('runtime', () => {
       'pauseDownload',
       'resumeDownload',
       'deleteDownloaded',
+      'removeRetainedDownload',
       'getDownloadedPhoto',
       'getBrowseHistory',
       'getBrowseHistoryOverview',
@@ -172,6 +173,20 @@ describe('runtime', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(1.8),
+    })
+  })
+
+  test('保留下载移除操作传递章节标识并返回结果', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ success: true }))
+    const backend = createBackendClient(fetcher)
+
+    await expect(backend.removeRetainedDownload({
+      albumId: 'album-1', chapterId: 'chapter-1',
+    })).resolves.toEqual({ success: true })
+    expect(fetcher).toHaveBeenCalledWith('/api/removeRetainedDownload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ albumId: 'album-1', chapterId: 'chapter-1' }),
     })
   })
 

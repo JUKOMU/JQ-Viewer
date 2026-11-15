@@ -194,9 +194,23 @@ public final class DownloadPluginHandler {
         }
     }
 
-    /**
-     * 返回已完成章节的本地图片信息。
-     */
+    /** 只移除已清理原图的保留下载记录，不删除导出文件。 */
+    public void removeRetainedDownload(PluginCall call) {
+        try {
+            String albumId = call.getString("albumId");
+            String chapterId = call.getString("chapterId");
+            if (albumId == null || chapterId == null) {
+                call.reject("albumId and chapterId are required");
+                return;
+            }
+            downloadService.removeRetainedDownload(albumId, chapterId);
+            call.resolve(successResult());
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /** 返回已完成章节的本地图片信息。 */
     public void getDownloadedPhoto(PluginCall call) {
         try {
             String albumId = call.getString("albumId");

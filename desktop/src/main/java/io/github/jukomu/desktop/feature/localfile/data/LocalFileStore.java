@@ -284,16 +284,28 @@ public final class LocalFileStore {
 
     /** 判断章节是否仍关联可用的保留导出文件。 */
     public synchronized boolean hasRetainedExportForChapter(String albumId, String chapterId) {
+        return hasRetainedExportForChapter(albumId, chapterId, -1L);
+    }
+
+    /** 排除待移除文件后，按整章页数判断是否仍有完整导出。 */
+    public synchronized boolean hasRetainedExportForChapter(String albumId, String chapterId, long excludedFileId) {
         String sql = "SELECT 1 FROM export_tasks t JOIN export_task_chapters ec "
             + "ON ec.export_id=t.export_id JOIN export_task_volumes v ON v.export_id=t.export_id "
             + "AND v.status='completed' JOIN local_files f ON f.file_ref=v.output_file_ref "
             + "JOIN local_file_chapters c ON c.file_id=f.id AND c.album_id=ec.album_id "
             + "AND c.chapter_id=ec.chapter_id WHERE t.retain_download_entry=1 "
             + "AND t.status='completed' AND t.format IN ('pdf','cbz') AND f.availability='available' "
+            + "AND f.id<>? AND ec.expected_page_count=(SELECT COALESCE(SUM(c2.page_count),0) "
+            + "FROM export_task_volumes v2 JOIN local_files f2 ON f2.file_ref=v2.output_file_ref "
+            + "JOIN local_file_chapters c2 ON c2.file_id=f2.id WHERE v2.export_id=t.export_id "
+            + "AND v2.status='completed' AND f2.availability='available' AND f2.id<>? "
+            + "AND c2.album_id=ec.album_id AND c2.chapter_id=ec.chapter_id) "
             + "AND ec.album_id=? AND ec.chapter_id=? LIMIT 1";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, albumId);
-            statement.setString(2, chapterId);
+            statement.setLong(1, excludedFileId);
+            statement.setLong(2, excludedFileId);
+            statement.setString(3, albumId);
+            statement.setString(4, chapterId);
             try (ResultSet rows = statement.executeQuery()) {
                 return rows.next();
             }

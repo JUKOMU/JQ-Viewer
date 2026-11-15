@@ -72,6 +72,23 @@ public final class DownloadFiles {
         return resolve(page.relativePath());
     }
 
+    /** 已完成下载只清理图片清单，保留用户放在同目录的导出文件。 */
+    public synchronized void cleanupCompleted(String relativeDirectory,
+                                               java.util.List<StoredDownloadPage> pages) {
+        Path directory = chapterDirectory(relativeDirectory);
+        try {
+            for (StoredDownloadPage page : pages) Files.deleteIfExists(resolvePage(page));
+            if (Files.isDirectory(directory)) {
+                try (var remaining = Files.list(directory)) {
+                    if (remaining.findAny().isPresent()) return;
+                }
+                Files.delete(directory);
+            }
+        } catch (IOException exception) {
+            throw failure("清理下载图片失败", exception);
+        }
+    }
+
     public synchronized long directorySize(String relativeDirectory) {
         Path directory = chapterDirectory(relativeDirectory);
         if (Files.notExists(directory)) return 0;

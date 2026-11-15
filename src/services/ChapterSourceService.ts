@@ -1,6 +1,12 @@
 import type { RouteLocationRaw } from 'vue-router'
 import { JmcomicService } from './JmcomicService'
-import type { DownloadTask, LocalFileChapter, LocalFileRecord } from './JmcomicTypes'
+import { isRetainedDownload, verifyRetainedDownloads } from './RetainedDownloadService'
+import type {
+  DownloadTask,
+  LocalFileChapter,
+  LocalFileRecord,
+  RetainedDownloadExport,
+} from './JmcomicTypes'
 
 export type ChapterSourceKind = 'download' | 'cbz' | 'pdf' | 'network'
 
@@ -8,6 +14,7 @@ export interface LocalChapterSource {
   kind: 'cbz' | 'pdf'
   file: LocalFileRecord
   chapter: LocalFileChapter
+  retainedExports?: RetainedDownloadExport[]
 }
 
 export interface DownloadChapterSource {
@@ -167,8 +174,40 @@ export const ChapterSourceService = {
         const photo = await JmcomicService.getDownloadedPhoto(albumId, chapterId)
         if (photo.images.length > 0) return { kind: 'download', task: summary.download }
       } catch {
-        if (requested === 'download') return null
+        if (requested === 'download' && !isRetainedDownload(summary.download)) return null
       }
+    }
+
+    if (summary.download && isRetainedDownload(summary.download)) {
+      if (requested === 'pdf' || requested === 'cbz') {
+        // 指定格式时也必须按整套导出选择，不能落回任意单个分卷。
+        summary.download = {
+          ...summary.download,
+          retainedExports: summary.download.retainedExports?.filter((volume) => volume.format === requested),
+          retainedExportCandidates: summary.download.retainedExportCandidates
+            ?.filter((volume) => volume.format === requested),
+        }
+      }
+      summary.download = (await verifyRetainedDownloads([summary.download]))[0]
+      if (!summary.download.retainedExports?.length) {
+        return requested === 'preferred' ? { kind: 'network' } : null
+      }
+    }
+    // 保留下载入口引用的是整章分卷，不能把任意一个分卷当成完整章节。
+    const retained = summary.download?.retainedExports
+    if (
+      retained?.length &&
+      (requested === 'preferred' || requested === 'download' || requested === retained[0].format)
+    ) {
+      const candidates = await listChapterCandidates(retained[0].format, albumId, chapterId)
+      let first: LocalChapterSource | undefined
+      for (const volume of retained) {
+        const candidate = candidates.find((source) => source.file.id === volume.fileId)
+        const verified = candidate ? await verifyLocalCandidate(candidate) : null
+        if (!verified) return requested === 'preferred' ? { kind: 'network' } : null
+        first ??= verified
+      }
+      return { ...first!, retainedExports: retained }
     }
 
     for (const kind of ['cbz', 'pdf'] as const) {
@@ -232,7 +271,11 @@ export const ChapterSourceService = {
         chapterId: metadata.chapterId,
         chapterTitle: metadata.chapterTitle || source.chapter.chapterTitle,
         chapterStartPage: String(source.chapter.startPage),
-        chapterPageCount: String(source.chapter.pageCount),
+        chapterPageCount: String(
+          source.retainedExports?.reduce((total, volume) => total + volume.pageCount, 0) ??
+            source.chapter.pageCount,
+        ),
+        ...(source.retainedExports ? { retainedVolumes: JSON.stringify(source.retainedExports) } : {}),
         ...(page ? { page: String(page) } : {}),
       },
     }

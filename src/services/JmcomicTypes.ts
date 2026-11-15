@@ -328,6 +328,8 @@ export interface DownloadTask {
   downloadedBytes?: number
   totalSize?: number
   retainedExports?: RetainedDownloadExport[]
+  retainedExportCandidates?: RetainedExportCandidate[]
+  retainedFileStatus?: LocalFileRecord['availability']
 }
 
 export interface RetainedDownloadExport {
@@ -337,6 +339,12 @@ export interface RetainedDownloadExport {
   fileRef: FileRef
   startPage: number
   pageCount: number
+}
+
+/** 已清理原图的保留项来源，包括已从文件库删除的分卷。 */
+export interface RetainedExportCandidate extends Omit<RetainedDownloadExport, 'fileId'> {
+  fileId?: number | null
+  availability: LocalFileRecord['availability']
 }
 
 export interface CompletedGroup {

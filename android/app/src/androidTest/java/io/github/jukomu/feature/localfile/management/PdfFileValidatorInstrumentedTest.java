@@ -75,6 +75,30 @@ public class PdfFileValidatorInstrumentedTest {
     }
 
     @Test
+    public void corruptFileDoesNotBreakSubsequentValidation() throws Exception {
+        File corrupt = new File(context.getCacheDir(), "pdf-validator-corrupt.pdf");
+        try {
+            try (FileOutputStream output = new FileOutputStream(corrupt)) {
+                output.write(new byte[]{1, 2, 3});
+            }
+            try {
+                PdfFileValidator.validate(
+                    context, LocalFileRef.createPathFileRef(corrupt.getCanonicalPath()), -1);
+                fail("expected corrupt file failure");
+            } catch (PdfFileValidator.ValidationException error) {
+                assertEquals("PDF_INVALID", error.code);
+            }
+            // 构造失败的系统解析器会在终结时再次清理，必须验证清理后的正常文件仍可读取。
+            System.gc();
+            System.runFinalization();
+            assertEquals(2, PdfFileValidator.validate(
+                context, LocalFileRef.createPathFileRef(pdfFile.getCanonicalPath()), 2).pageCount);
+        } finally {
+            corrupt.delete();
+        }
+    }
+
+    @Test
     public void reportsMissingFileAsInvalidInput() throws Exception {
         assertEquals(true, pdfFile.delete());
         try {

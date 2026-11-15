@@ -122,6 +122,10 @@ public class DownloadPaginationInstrumentedTest {
             fixture.add("good", "chapter", "completed", 2);
             File directory = fixture.files.ensureChapterDir("bad", "chapter");
             assertTrue(new File(directory, "image.jpg").createNewFile());
+            // 已完成下载按图片清单清理，失败样本必须登记实际受权限限制的文件。
+            fixture.store.insertImages("bad_chapter", Collections.singletonList(
+                new io.github.jukomu.jmcomic.api.model.JmImage(
+                    "chapter", "", "image.jpg", "", "", 1)));
             fixture.files.ensureChapterDir("good", "chapter");
             ExecutorService executor = Executors.newSingleThreadExecutor();
             DownloadService service = new DownloadService(fixture.store, fixture.files, () -> null,

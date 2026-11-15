@@ -280,8 +280,16 @@ public final class LocalFileManagementService {
         return response;
     }
 
-    public SuccessResponse removeFromLibrary(long id) {
+    public synchronized SuccessResponse removeFromLibrary(long id) {
         long startedNanos = System.nanoTime();
+        // 移除文件库记录前排除该文件，保护仍依赖它的完整章节。
+        for (var chapter : store.retainedChapters(id)) {
+            if (downloads.findTask(chapter.albumId(), chapter.chapterId()) != null
+                && !hasCompleteDownload(chapter.albumId(), chapter.chapterId())
+                && !store.hasRetainedExportForChapter(chapter.albumId(), chapter.chapterId(), id)) {
+                throw ApiException.conflict("该文件仍是保留下载入口的唯一可用来源，无法移出文件库");
+            }
+        }
         boolean removed = store.remove(id);
         LOGGER.info("local_file.delete event=completed operationId={} fileId={} result={} ownership=library-only elapsedMs={}",
             clean(operationId()), id, removed ? "removed_from_library" : "missing_record",
@@ -289,12 +297,10 @@ public final class LocalFileManagementService {
         return new SuccessResponse(removed);
     }
 
-    public LocalFileStorageDeleteResponse deleteFile(long id) {
+    public synchronized LocalFileStorageDeleteResponse deleteFile(long id) {
         long startedNanos = System.nanoTime();
         String operationId = operationId();
         StoredLocalFile record = requireFile(id);
-        List<io.github.jukomu.desktop.feature.localfile.data.StoredLocalFileChapter> retainedChapters =
-            "exported".equals(record.sourceType()) ? store.retainedChapters(id) : List.of();
         Path file = FileReferences.parseFile(record.fileRef());
         LOGGER.info("local_file.delete event=started operationId={} fileId={} format={} fileName={} elapsedMs=0",
             clean(operationId), id, clean(record.format()), clean(record.fileName()));
@@ -325,22 +331,23 @@ public final class LocalFileManagementService {
                 clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos));
             throw new ApiException("internal", 500, "本地文件已处理，但文件库记录移除失败");
         }
-        for (var chapter : retainedChapters) {
-            if (!store.hasRetainedExportForChapter(chapter.albumId(), chapter.chapterId())) {
-                var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
-                if (download != null && !Set.of("queued", "downloading", "paused", "verifying")
-                    .contains(download.status())) {
-                    downloadFiles.cleanup(download.relativeDirectory());
-                    downloads.deleteTask(download.taskId());
-                }
-            }
-        }
+        // 文件删除只清理文件库，下载记录由下载列表的主动操作移除。
         LOGGER.info("local_file.delete event=completed operationId={} fileId={} format={} fileName={} result={} elapsedMs={}",
             clean(operationId), id, clean(record.format()), clean(record.fileName()), clean(result),
             elapsed(startedNanos));
         return new LocalFileStorageDeleteResponse(
             result, record.id(), record.sourceType(), record.ownership(),
             record.fileRef(), record.displayPath(), record.fileName());
+    }
+
+    /** 保留完整原图的章节不随导出文件删除而丢失。 */
+    private boolean hasCompleteDownload(String albumId, String chapterId) {
+        var task = downloads.findTask(albumId, chapterId);
+        if (task == null || !"completed".equals(task.status())) return false;
+        var pages = downloads.pages(task.taskId());
+        return !pages.isEmpty() && pages.size() == task.totalPages()
+            && pages.stream().allMatch(page -> page.completed()
+                && Files.isRegularFile(downloadFiles.resolvePage(page)));
     }
 
     public SuccessResponse openLocalFile(String fileRef) {

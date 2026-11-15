@@ -231,6 +231,8 @@ export interface JmcomicClient {
 
   deleteDownloaded(options: { albumId: string; chapterId: string }): Promise<{ success: boolean }>
 
+  removeRetainedDownload(options: { albumId: string; chapterId: string }): Promise<{ success: boolean }>
+
   getDownloadedPhoto(options: { albumId: string; chapterId: string }): Promise<PhotoDetail>
 
   addListener(

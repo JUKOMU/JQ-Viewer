@@ -447,6 +447,11 @@ public final class Plugin {
     }
 
     @PluginMethod
+    public void removeRetainedDownload(Context context) {
+        downloads.removeRetainedDownload(context);
+    }
+
+    @PluginMethod
     public void getDownloadedPhoto(Context context) {
         downloads.getDownloadedPhoto(context);
     }

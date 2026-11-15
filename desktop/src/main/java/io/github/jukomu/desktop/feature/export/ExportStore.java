@@ -152,19 +152,56 @@ public final class ExportStore {
         }
     }
 
+    /** 从导出快照还原章节与分卷交集，不依赖仍存在的文件库记录。 */
+    public synchronized List<io.github.jukomu.desktop.feature.download.model.RetainedExportCandidate>
+    retainedExportCandidates(String albumId, String chapterId) {
+        String sql = "WITH chapters AS (SELECT ec.*,(SELECT COALESCE(SUM(p.expected_page_count),0) "
+            + "FROM export_task_chapters p WHERE p.export_id=ec.export_id AND p.sequence<ec.sequence) AS first_page "
+            + "FROM export_task_chapters ec WHERE ec.album_id=? AND ec.chapter_id=?) "
+            + "SELECT t.export_id,t.format,f.id AS file_id,v.output_file_ref,v.start_page,v.end_page,"
+            + "ec.first_page,ec.expected_page_count,COALESCE(f.availability,'missing') AS availability "
+            + "FROM chapters ec JOIN export_tasks t ON t.export_id=ec.export_id "
+            + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
+            + "LEFT JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "WHERE t.retain_download_entry=1 AND t.status='completed' AND t.format IN ('pdf','cbz') "
+            + "AND v.end_page>ec.first_page AND v.start_page<ec.first_page+ec.expected_page_count "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, albumId);
+            statement.setString(2, chapterId);
+            try (ResultSet rows = statement.executeQuery()) {
+                var result = new ArrayList<io.github.jukomu.desktop.feature.download.model.RetainedExportCandidate>();
+                while (rows.next()) {
+                    long id = rows.getLong("file_id");
+                    Long fileId = rows.wasNull() ? null : id;
+                    int first = Math.max(rows.getInt("first_page"), rows.getInt("start_page"));
+                    int last = Math.min(rows.getInt("first_page") + rows.getInt("expected_page_count"),
+                        rows.getInt("end_page"));
+                    result.add(new io.github.jukomu.desktop.feature.download.model.RetainedExportCandidate(
+                        rows.getString("export_id"), rows.getString("format"), fileId,
+                        rows.getString("output_file_ref"), first - rows.getInt("start_page") + 1,
+                        last - first, rows.getString("availability")));
+                }
+                return result;
+            }
+        } catch (SQLException exception) {
+            throw failure("读取保留下载来源失败", exception);
+        }
+    }
+
     /** 查找章节当前使用的第一个可用保留导出分卷。 */
     public synchronized RetainedExport findRetainedExportForChapter(String albumId, String chapterId) {
         List<RetainedExport> exports = findRetainedExportsForChapter(albumId, chapterId);
         return exports.isEmpty() ? null : exports.get(0);
     }
 
-    /** 判断章节原下载文件是否已按保留入口导出任务成功清理。 */
+    /** 根据最近已完成的保留导出判断原图清理状态，失败和活动任务不覆盖该状态。 */
     public synchronized boolean isSourceDeletedAfterExport(String albumId, String chapterId) {
         String sql = "SELECT t.delete_source_after_export,t.retain_download_entry,t.status,"
             + "ec.source_cleanup_status "
             + "FROM export_tasks t JOIN export_task_chapters ec ON ec.export_id=t.export_id "
             + "WHERE ec.album_id=? AND ec.chapter_id=? AND t.format IN ('pdf','cbz') "
-            + "AND t.retain_download_entry=1 "
+            + "AND t.retain_download_entry=1 AND t.status='completed' "
             + "ORDER BY t.updated_at DESC,t.export_id DESC LIMIT 1";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, albumId);
@@ -629,6 +666,21 @@ public final class ExportStore {
             }
             return true;
         }, "准备导出重试失败");
+    }
+
+    /** 成品已登记的清理中断任务可在不重读原图的情况下恢复。 */
+    public synchronized List<ExportTaskResponse> sourceCleanupCandidates() {
+        List<ExportTaskResponse> tasks = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(taskSelect()
+            + " WHERE t.status IN ('running','interrupted') AND t.delete_source_after_export=1 "
+            + "AND t.cancel_requested=0 AND t.format IN ('pdf','cbz')")) {
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) tasks.add(task(rows));
+            }
+        } catch (SQLException exception) {
+            throw failure("读取待恢复的原图清理任务失败", exception);
+        }
+        return List.copyOf(tasks);
     }
 
     public synchronized List<String> markActiveInterrupted() {

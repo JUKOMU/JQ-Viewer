@@ -330,15 +330,7 @@ public final class LocalFilePluginHandler {
     }
 
     public void deleteImportedLocalFile(PluginCall call) {
-        int id = call.getInt("id", -1);
-        if (id < 0) {
-            call.reject("id is required");
-            return;
-        }
-        boolean ok = LocalFileStore.getInstance(context).removeFileFromLibrary(id);
-        JSObject ret = new JSObject();
-        ret.put("success", ok);
-        call.resolve(ret);
+        removeLocalFileFromLibrary(call);
     }
 
 
@@ -454,7 +446,12 @@ public final class LocalFilePluginHandler {
             return;
         }
         JSObject result = new JSObject();
-        result.put("success", LocalFileStore.getInstance(context).removeFileFromLibrary(id));
+        try {
+            result.put("success", LocalFileManagementService.getInstance(context).removeFromLibrary(id));
+        } catch (LocalFileOperationException error) {
+            rejectPdfOperation(call, error);
+            return;
+        }
         call.resolve(result);
         LOGGER.info("event=local_file_delete phase=complete operationId={} fileId={} "
                 + "result=library_removed physicalDelete=false recordDelete={} durationMs={}",
@@ -846,6 +843,9 @@ public final class LocalFilePluginHandler {
                     job.compressionRatio = (float) Math.max(0.1, Math.min(1.0, cr));
                     job.splitPages = Math.max(0, t.optInt("splitPages", 0));
                     job.allowOverwrite = t.optBoolean("allowOverwrite", false);
+                    // 清理和保留入口选项必须随原生任务一起持久化。
+                    job.deleteSourceAfterExport = t.optBoolean("deleteSourceAfterExport", false);
+                    job.retainDownloadEntry = t.optBoolean("retainDownloadEntry", false);
 
                     if ("merged".equals(job.mode)) {
                         JSONArray chaptersJson = t.optJSONArray("chapters");

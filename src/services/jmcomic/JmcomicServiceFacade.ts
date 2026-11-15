@@ -390,6 +390,10 @@ export const JmcomicService = {
     return native.deleteDownloaded({ albumId, chapterId })
   },
 
+  removeRetainedDownload(albumId: string, chapterId: string) {
+    return native.removeRetainedDownload({ albumId, chapterId })
+  },
+
   /** 获取离线下载的章节详情（用于离线阅读） */
   getDownloadedPhoto(albumId: string, chapterId: string) {
     return native.getDownloadedPhoto({ albumId, chapterId })

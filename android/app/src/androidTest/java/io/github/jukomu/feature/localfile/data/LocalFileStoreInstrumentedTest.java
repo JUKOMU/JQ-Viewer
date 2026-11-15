@@ -103,6 +103,14 @@ public class LocalFileStoreInstrumentedTest {
         store.updateExportProgress("cleanup-state", "completed", "completed",
             0, 0, 0, 0, "SOURCE_CLEANUP_FAILED", "原下载文件清理失败");
         assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+
+        // 后续失败或尚未完成的导出不能覆盖已经成功清理原图的事实。
+        task.put("exportId", "z-failed").put("status", "failed").put("phase", "failed");
+        store.reserveExport(task, chapters, new JSONArray());
+        store.getWritableDatabase().execSQL("UPDATE export_tasks SET updated_at=updated_at+1 WHERE export_id='z-failed'");
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
+        store.updateExportProgress("z-failed", "running", "writing", 0, 0, 0, 0, null, null);
+        assertTrue(store.isSourceDeletedAfterExport("album-1", "chapter-1"));
     }
 
     @Test
@@ -166,6 +174,42 @@ public class LocalFileStoreInstrumentedTest {
         assertEquals(2, retained.length());
         assertEquals("a-complete", retained.getJSONObject(0).getString("exportId"));
         assertEquals("a-complete", retained.getJSONObject(1).getString("exportId"));
+        JSONArray candidates = store.retainedExportCandidates("album-1", "chapter-1");
+        assertEquals(3, candidates.length());
+        for (int index = 0; index < candidates.length(); index++) {
+            JSONObject candidate = candidates.getJSONObject(index);
+            assertEquals(1, candidate.getInt("startPage"));
+            assertEquals(1, candidate.getInt("pageCount"));
+            assertEquals("pdf", candidate.getString("format"));
+            assertEquals("available", candidate.getString("availability"));
+            assertEquals(store.getFile(candidate.getLong("fileId")).getString("fileRef"),
+                candidate.getString("fileRef"));
+        }
+        SQLiteDatabase database = store.getReadableDatabase();
+        long shortNames = scalarLong(database, "PRAGMA short_column_names");
+        long fullNames = scalarLong(database, "PRAGMA full_column_names");
+        try {
+            // 强制完整列名，保证 CTE 和外层投影都不依赖 SQLite 自动命名。
+            database.execSQL("PRAGMA short_column_names=OFF");
+            database.execSQL("PRAGMA full_column_names=ON");
+            assertEquals(candidates.toString(),
+                store.retainedExportCandidates("album-1", "chapter-1").toString());
+        } finally {
+            database.execSQL("PRAGMA short_column_names=" + shortNames);
+            database.execSQL("PRAGMA full_column_names=" + fullNames);
+        }
+        store.removeFileFromLibrary(retained.getJSONObject(0).getLong("fileId"));
+        JSONArray missing = store.retainedExportCandidates("album-1", "chapter-1");
+        boolean foundMissing = false;
+        for (int index = 0; index < missing.length(); index++) {
+            JSONObject candidate = missing.getJSONObject(index);
+            if ("a-complete".equals(candidate.getString("exportId"))
+                && !candidate.has("fileId")) {
+                assertEquals("missing", candidate.getString("availability"));
+                foundMissing = true;
+            }
+        }
+        assertTrue(foundMissing);
     }
 
     @Test

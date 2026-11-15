@@ -978,11 +978,15 @@ public class LocalFileStore extends SQLiteOpenHelper {
 
     /** 从导出快照还原分卷交集，文件库记录删除后仍可诊断缺失来源。 */
     public JSONArray retainedExportCandidates(String albumId, String chapterId) {
-        String sql = "WITH chapters AS (SELECT ec.*,(SELECT COALESCE(SUM(p.expected_page_count),0) "
+        // 旧版 SQLite 在 CTE 联表中可能返回带表名前缀的列名，显式别名固定游标读取契约。
+        String sql = "WITH chapters AS (SELECT ec.export_id AS export_id,"
+            + "ec.expected_page_count AS expected_page_count,(SELECT COALESCE(SUM(p.expected_page_count),0) "
             + "FROM export_task_chapters p WHERE p.export_id=ec.export_id AND p.sequence<ec.sequence) AS first_page "
             + "FROM export_task_chapters ec WHERE ec.album_id=? AND ec.chapter_id=?) "
-            + "SELECT t.export_id,t.format,f.id AS file_id,v.output_file_ref,v.start_page,v.end_page,"
-            + "ec.first_page AS first_page,ec.expected_page_count,COALESCE(f.availability,'missing') AS availability "
+            + "SELECT t.export_id AS export_id,t.format AS format,f.id AS file_id,"
+            + "v.output_file_ref AS output_file_ref,v.start_page AS start_page,v.end_page AS end_page,"
+            + "ec.first_page AS first_page,ec.expected_page_count AS expected_page_count,"
+            + "COALESCE(f.availability,'missing') AS availability "
             + "FROM chapters ec JOIN export_tasks t ON t.export_id=ec.export_id "
             + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
             + "LEFT JOIN local_files f ON f.file_ref=v.output_file_ref "

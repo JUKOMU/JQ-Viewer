@@ -169,8 +169,26 @@ public class LocalFileStoreInstrumentedTest {
         JSONArray candidates = store.retainedExportCandidates("album-1", "chapter-1");
         assertEquals(3, candidates.length());
         for (int index = 0; index < candidates.length(); index++) {
-            assertEquals(1, candidates.getJSONObject(index).getInt("startPage"));
-            assertEquals(1, candidates.getJSONObject(index).getInt("pageCount"));
+            JSONObject candidate = candidates.getJSONObject(index);
+            assertEquals(1, candidate.getInt("startPage"));
+            assertEquals(1, candidate.getInt("pageCount"));
+            assertEquals("pdf", candidate.getString("format"));
+            assertEquals("available", candidate.getString("availability"));
+            assertEquals(store.getFile(candidate.getLong("fileId")).getString("fileRef"),
+                candidate.getString("fileRef"));
+        }
+        SQLiteDatabase database = store.getReadableDatabase();
+        long shortNames = scalarLong(database, "PRAGMA short_column_names");
+        long fullNames = scalarLong(database, "PRAGMA full_column_names");
+        try {
+            // 强制完整列名，保证 CTE 和外层投影都不依赖 SQLite 自动命名。
+            database.execSQL("PRAGMA short_column_names=OFF");
+            database.execSQL("PRAGMA full_column_names=ON");
+            assertEquals(candidates.toString(),
+                store.retainedExportCandidates("album-1", "chapter-1").toString());
+        } finally {
+            database.execSQL("PRAGMA short_column_names=" + shortNames);
+            database.execSQL("PRAGMA full_column_names=" + fullNames);
         }
         store.removeFileFromLibrary(retained.getJSONObject(0).getLong("fileId"));
         JSONArray missing = store.retainedExportCandidates("album-1", "chapter-1");

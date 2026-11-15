@@ -337,11 +337,11 @@ function getZoomFocusContentY() {
   const el = containerRef.value
   const ch = containerHeight.value || el?.clientHeight || 0
   const focusY = ch * 0.35
-  return ((el?.scrollTop ?? 0) + focusY - zoomTy.value) / (zoomScale.value || 1)
+  return (getScrollPosition() + focusY - zoomTy.value) / (zoomScale.value || 1)
 }
 
 function getZoomViewportContentTop() {
-  const scrollTop = containerRef.value?.scrollTop ?? 0
+  const scrollTop = getScrollPosition()
   return Math.max(0, (scrollTop - zoomTy.value) / (zoomScale.value || 1))
 }
 
@@ -748,7 +748,7 @@ function mid(t: TouchList) {
 }
 
 function getViewportContentPoint(relX: number, relY: number, scale = zoomScale.value) {
-  const scrollTop = containerRef.value?.scrollTop ?? 0
+  const scrollTop = getScrollPosition()
   const safeScale = scale || 1
   return {
     x: (relX - getContentOffsetX() - zoomTx.value) / safeScale,
@@ -763,7 +763,7 @@ function applyZoomAtContentPoint(
   contentX: number,
   contentY: number,
 ) {
-  const scrollTop = containerRef.value?.scrollTop ?? 0
+  const scrollTop = getScrollPosition()
   zoomScale.value = scale
   zoomTx.value = relX - getContentOffsetX() - contentX * scale
   zoomTy.value = scrollTop + relY - contentY * scale
@@ -802,16 +802,25 @@ function zoomAtViewportCenter(scale: number) {
 }
 
 function zoomIn() {
+  // 工具栏缩放也走交互交接，先提交动画位置，再计算焦点并恢复原播放意图。
+  emit('interaction-start')
   zoomAtViewportCenter(nextZoomScale())
+  emit('interaction-end')
 }
 
 function zoomOut() {
+  emit('interaction-start')
   const next = previousZoomScale()
   if (next === ZOOM_MIN) {
     resetZoom(true)
-    return
-  }
-  zoomAtViewportCenter(next)
+  } else zoomAtViewportCenter(next)
+  emit('interaction-end')
+}
+
+function resetZoomWithInteraction(preserveViewport = false) {
+  emit('interaction-start')
+  resetZoom(preserveViewport)
+  emit('interaction-end')
 }
 
 function cycleDoubleTapZoom(clientX: number, clientY: number) {
@@ -1086,7 +1095,7 @@ defineExpose({
   isAtBottom,
   zoomIn,
   zoomOut,
-  resetZoom,
+  resetZoom: resetZoomWithInteraction,
   startAutoScroll,
   cancelAutoScroll,
 })

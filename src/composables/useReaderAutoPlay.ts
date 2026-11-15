@@ -1,4 +1,4 @@
-import { onDeactivated, onUnmounted, ref, watch, type Ref } from 'vue'
+import { nextTick, onDeactivated, onUnmounted, ref, watch, type Ref } from 'vue'
 import { getRuntime } from '@/runtime/runtimeContext'
 import { sanitizeError, showToast } from '@/services/JmcomicService'
 import { persistReaderAutoPlayInterval, SettingsStore } from '@/services/SettingsService'
@@ -158,7 +158,8 @@ export function useReaderAutoPlay(options: {
       if (!isPlaying.value || interactionActive) return
       clearScheduledWork()
       remainingMs = Math.abs(intervalSeconds.value) * 1000
-      schedule()
+      // 先取消旧视图的动画，再等新视图挂载后调用其播放接口。
+      void nextTick(schedule)
     },
   )
 

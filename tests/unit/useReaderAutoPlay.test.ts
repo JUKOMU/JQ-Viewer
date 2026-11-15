@@ -70,6 +70,8 @@ async function mountVerticalReader(round: (value: number) => number = (value) =>
         totalCount: 30, currentIndex: currentIndex.value,
         'onUpdate:currentIndex': (index: number) => { currentIndex.value = index },
         onGeometryChange: autoPlay.resumeAfterGeometryChange,
+        onInteractionStart: autoPlay.pauseForInteraction,
+        onInteractionEnd: autoPlay.resumeAfterInteraction,
       })
     },
   }))
@@ -81,6 +83,9 @@ async function mountVerticalReader(round: (value: number) => number = (value) =>
   Object.defineProperties(container, {
     clientWidth: { configurable: true, value: 600 },
     clientHeight: { configurable: true, value: 600 },
+    getBoundingClientRect: { configurable: true, value: () => ({
+      left: 0, top: 0, right: 600, bottom: 600, width: 600, height: 600,
+    }) },
     scrollHeight: { configurable: true, get: contentHeight },
     scrollTop: {
       configurable: true,
@@ -124,6 +129,37 @@ afterEach(() => {
 })
 
 describe('纵向播放的位置协作', () => {
+  test('工具栏缩放先交接逻辑位置，缩回原倍率和重置后继续播放', async () => {
+    const reader = await mountVerticalReader()
+    const start = reader.container.scrollTop
+    reader.autoPlay.toggle()
+    const animation = reader.animations.at(-1)!
+    animation.currentTime = 1000
+    reader.view.value!.zoomIn()
+    await nextTick()
+    expect(animation.cancel).toHaveBeenCalledOnce()
+    expect(reader.container.scrollTop).toBeCloseTo(start + 300)
+    const zoomState = (reader.wrapper.findComponent(VerticalScrollView).vm as any).$.setupState
+    expect(zoomState.zoomTy).toBeCloseTo(-(start + 600))
+    expect(reader.autoPlay.isPlaying.value).toBe(true)
+    expect(reader.animations).toHaveLength(2)
+    const second = reader.animations.at(-1)!
+    second.currentTime = 100
+    reader.view.value!.zoomOut()
+    await nextTick()
+    expect(second.cancel).toHaveBeenCalledOnce()
+    expect(reader.autoPlay.isPlaying.value).toBe(true)
+    expect(reader.animations).toHaveLength(3)
+    reader.view.value!.zoomIn()
+    const beforeReset = reader.animations.at(-1)!
+    reader.view.value!.resetZoom(true)
+    await nextTick()
+    expect(beforeReset.cancel).toHaveBeenCalledOnce()
+    expect(reader.animations.at(-1)).not.toBe(beforeReset)
+    expect(reader.autoPlay.isPlaying.value).toBe(true)
+    reader.wrapper.unmount()
+  })
+
   test.each([30, -30, 0.1, -0.1])('间隔 %s 时由动画时钟推进，rAF 不写原生位置', async (interval) => {
     const reader = await mountVerticalReader(Math.trunc)
     const start = reader.container.scrollTop
@@ -288,6 +324,41 @@ function mountHorizontalReader(index = 0, count = 4) {
 }
 
 describe('useReaderAutoPlay', () => {
+  test('播放中切换显示模式在新视图挂载后启动，并取消旧视图调度', async () => {
+    const vertical = ref(false)
+    const view = ref<{ startAutoScroll: (seconds: number) => void; cancelAutoScroll: () => void } | null>(null)
+    const start = vi.fn()
+    const cancel = vi.fn()
+    const goToIndex = vi.fn()
+    let autoPlay!: ReturnType<typeof useReaderAutoPlay>
+    const child = defineComponent({ setup(_, { expose }) {
+      expose({ startAutoScroll: start, cancelAutoScroll: cancel })
+      return () => h('div')
+    } })
+    const wrapper = mount(defineComponent({ setup() {
+      autoPlay = useReaderAutoPlay({ isVertical: vertical, currentIndex: ref(0), totalCount: ref(3),
+        startScroll: (seconds) => view.value!.startAutoScroll(seconds),
+        cancelScroll: () => view.value?.cancelAutoScroll(), goToIndex })
+      return () => vertical.value ? h(child, { ref: view }) : h('div')
+    } }))
+    vi.useFakeTimers()
+    autoPlay.toggle()
+    vertical.value = true
+    await nextTick()
+    await nextTick()
+    expect(start).toHaveBeenCalledOnce()
+    expect(start).toHaveBeenCalledWith(2)
+    vi.advanceTimersByTime(2000)
+    expect(goToIndex).not.toHaveBeenCalled()
+    vertical.value = false
+    await nextTick()
+    await nextTick()
+    expect(cancel).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(2000)
+    expect(goToIndex).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
   test('横向自动播放按方向推进页面', () => {
     vi.useFakeTimers()
     const reader = mountHorizontalReader(1)

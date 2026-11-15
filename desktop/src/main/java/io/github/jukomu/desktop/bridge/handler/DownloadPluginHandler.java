@@ -97,6 +97,13 @@ public final class DownloadPluginHandler {
         });
     }
 
+    public void removeRetainedDownload(Context context) {
+        requests.runLongOperation(context, DownloadedChapterRequest.class, request -> {
+            downloads.removeRetainedDownload(request.albumId(), request.chapterId());
+            return SuccessResponse.ok();
+        });
+    }
+
     public void getDownloadedPhoto(Context context) {
         requests.runLongOperation(context, DownloadedChapterRequest.class,
             request -> downloads.getDownloadedPhoto(

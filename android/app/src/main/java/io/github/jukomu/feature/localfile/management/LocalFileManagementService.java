@@ -291,32 +291,13 @@ public final class LocalFileManagementService {
     public synchronized JSONObject deleteFile(long id, String operationId) throws Exception {
         long startedAt = System.nanoTime();
         JSONObject record = requireFile(id);
-        JSONArray retainedChapters = "exported".equals(record.optString("sourceType"))
-            ? store.getRetainedChaptersForFile(id) : new JSONArray();
         String fileRef = record.getString("fileRef");
         try {
             DeleteOutcome result = deleteFileRef(fileRef);
             if (!store.removeFileFromLibrary(id)) {
                 throw new IOException("文件已处理，但文件库记录移除失败");
             }
-            DownloadStore downloadStore = DownloadStore.getInstance(context);
-            for (int index = 0; index < retainedChapters.length(); index++) {
-                JSONObject chapter = retainedChapters.getJSONObject(index);
-                String albumId = chapter.getString("albumId");
-                String chapterId = chapter.getString("chapterId");
-                if (store.findRetainedExportForChapter(albumId, chapterId) == null) {
-                    String taskId = albumId + "_" + chapterId;
-                    JSONObject downloadTask = downloadStore.getTask(taskId);
-                    String status = downloadTask == null ? "" : downloadTask.optString("status");
-                    if (!hasCompleteDownload(albumId, chapterId)
-                        && !"queued".equals(status) && !"downloading".equals(status)
-                        && !"paused".equals(status) && !"verifying".equals(status)) {
-                        FileStore.getInstance().deleteChapter(albumId, chapterId);
-                        downloadStore.deleteImages(taskId);
-                        downloadStore.deleteTask(taskId);
-                    }
-                }
-            }
+            // 文件删除只清理文件库，不联动移除下载列表中的章节。
             JSONObject output = outcome(result == DeleteOutcome.DELETED ? "deleted" : "already_missing",
                 record, null);
             LOGGER.info("event=local_file_delete phase=complete operationId={} fileId={} "

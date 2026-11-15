@@ -41,6 +41,7 @@ export const COMMON_BACKEND_METHODS = [
   'pauseDownload',
   'resumeDownload',
   'deleteDownloaded',
+  'removeRetainedDownload',
   'getDownloadedPhoto',
   'getDomainStates',
   'getUsedDomain',

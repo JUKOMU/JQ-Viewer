@@ -9,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   cardRender: vi.fn(),
   getDownloadTasksPage: vi.fn(),
   clearDownloadTasks: vi.fn(),
+  deleteDownloaded: vi.fn(),
+  deleteLocalFile: vi.fn(),
+  removeRetainedDownload: vi.fn(),
+  getLocalFiles: vi.fn(),
+  refreshLocalFileAvailability: vi.fn(),
+  inspectLocalFileForDeletion: vi.fn(),
   getLocalFileManagementState: vi.fn(),
   consumeLaunchRoute: vi.fn(),
   addLaunchRouteListener: vi.fn(),
@@ -91,6 +97,12 @@ vi.mock('@/services/JmcomicService', () => ({
   JmcomicService: {
     getDownloadTasksPage: mocks.getDownloadTasksPage,
     clearDownloadTasks: mocks.clearDownloadTasks,
+    deleteDownloaded: mocks.deleteDownloaded,
+    deleteLocalFile: mocks.deleteLocalFile,
+    removeRetainedDownload: mocks.removeRetainedDownload,
+    getLocalFiles: mocks.getLocalFiles,
+    refreshLocalFileAvailability: mocks.refreshLocalFileAvailability,
+    inspectLocalFileForDeletion: mocks.inspectLocalFileForDeletion,
     getLocalFileManagementState: mocks.getLocalFileManagementState,
     consumeLaunchRoute: mocks.consumeLaunchRoute,
     addLaunchRouteListener: mocks.addLaunchRouteListener,
@@ -180,6 +192,13 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     mocks.offlineGetAll.mockReturnValue([])
     mocks.offlineGetCompletedGroups.mockReturnValue([])
     mocks.refreshPdf.mockResolvedValue(undefined)
+    mocks.clearDownloadTasks.mockResolvedValue({ success: true, deletedCount: 1, failedCount: 0 })
+    mocks.deleteDownloaded.mockResolvedValue({ success: true })
+    mocks.deleteLocalFile.mockResolvedValue({ result: 'deleted' })
+    mocks.removeRetainedDownload.mockResolvedValue({ success: true })
+    mocks.getLocalFiles.mockResolvedValue({ files: [{ id: 1 }] })
+    mocks.inspectLocalFileForDeletion.mockResolvedValue({ chapters: [] })
+    mocks.refreshLocalFileAvailability.mockResolvedValue({ files: [{ id: 1, availability: 'available' }] })
     mocks.checkFilesExist.mockResolvedValue({ existing: [] })
     mocks.checkNotificationPermission.mockResolvedValue({ granted: true })
     mocks.buildExportPlan.mockReturnValue({ tasks: [{}], outputDisplayPaths: [] })
@@ -198,6 +217,64 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
     totalCount: 0, usedBytes: 0, availableBytes: 1000, totalBytes: 2000 })
   const groupAt = (id: number) => ({ ...taskAt(id), chapters: [{ ...taskAt(id), status: 'completed' }],
     type: 'single', totalSize: 1, completedAt: id })
+
+  const retainedAt = (id: number) => ({
+    ...taskAt(id), status: 'completed', totalPages: 1, downloadedPages: 1,
+    retainedExportCandidates: [{
+      exportId: 'export-1', format: 'pdf', fileId: 1, fileRef: 'file:path:/export.pdf',
+      startPage: 1, pageCount: 1, availability: 'available',
+    }],
+  })
+
+  test('普通下载没有移除操作，删除只清理原图记录而不删除导出文件', async () => {
+    mocks.route.query = { view: 'downloads' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const ordinary = { ...taskAt(1), status: 'completed' }
+    state.selectedTask = ordinary
+    expect(state.actionMenuActions.map((action: any) => action.id)).not.toContain('remove')
+    await state.onDelete(ordinary)
+    expect(mocks.deleteDownloaded).toHaveBeenCalledWith(ordinary.albumId, ordinary.chapterId)
+    expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    expect(mocks.removeRetainedDownload).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('保留项删除文件并删除选中记录，移除只删除记录', async () => {
+    mocks.route.query = { view: 'downloads' }
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    const retained = retainedAt(1)
+    state.selectedTask = retained
+    expect(state.actionMenuActions.map((action: any) => action.id)).toContain('remove')
+    await state.onDelete(retained)
+    expect(mocks.deleteLocalFile).toHaveBeenCalledWith(1)
+    expect(mocks.removeRetainedDownload).toHaveBeenCalledWith(retained.albumId, retained.chapterId)
+    expect(mocks.deleteDownloaded).not.toHaveBeenCalled()
+    mocks.deleteLocalFile.mockClear()
+    await state.runDownloadBatch('remove', [retained])
+    expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('清空对保留项不删除导出文件，确认说明两类范围', async () => {
+    mocks.route.query = { view: 'downloads' }
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }: any) => status === 'completed'
+      ? { ...emptyPage(), items: [{ ...groupAt(1), chapters: [retainedAt(1), { ...taskAt(2), status: 'completed' }] }], totalCount: 1 }
+      : emptyPage())
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const state = (wrapper.vm as any).$.setupState
+    await state.requestClear('completed')
+    expect(mocks.createAppAlert.mock.calls.at(-1)?.[0].message).toContain('1 个保留导出章节')
+    expect(mocks.createAppAlert.mock.calls.at(-1)?.[0].message).toContain('1 个普通下载章节')
+    await state.executeClear()
+    expect(mocks.clearDownloadTasks).toHaveBeenCalledWith('completed')
+    expect(mocks.deleteLocalFile).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 
   test('下载列表开启 Ionic 滚动事件以支持自动分页', async () => {
     mocks.route.query = { view: 'downloads' }

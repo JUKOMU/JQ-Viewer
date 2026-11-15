@@ -249,10 +249,18 @@ public class ExportService {
         if (!LocalFileStore.isTerminalExportStatus(task.optString("status"))) {
             throw new IllegalStateException("活动导出任务不能删除");
         }
-        if (task.optBoolean("retainDownloadEntry")
-            && "completed".equals(task.optString("status"))
-            && localFileStore.hasRetainedExportForTask(exportId)) {
-            throw LocalFileOperationException.conflict("导出任务仍关联下载列表，请先删除对应文件");
+        if (task.optBoolean("retainDownloadEntry") && "completed".equals(task.optString("status"))) {
+            JSONArray chapters = localFileStore.getExportChapters(exportId);
+            for (int index = 0; index < chapters.length(); index++) {
+                JSONObject chapter = chapters.optJSONObject(index);
+                String albumId = chapter.optString("albumId");
+                String chapterId = chapter.optString("chapterId");
+                if (DownloadStore.getInstance(context).getTask(albumId + "_" + chapterId) != null
+                    && localFileStore.isSourceDeletedAfterExport(albumId, chapterId)) {
+                    throw LocalFileOperationException.conflict(
+                        "导出任务仍关联下载列表，请先移除对应下载记录");
+                }
+            }
         }
         cleanupKnownArtifacts(exportId, true);
         cleanupStagingDirectoryQuietly(task);

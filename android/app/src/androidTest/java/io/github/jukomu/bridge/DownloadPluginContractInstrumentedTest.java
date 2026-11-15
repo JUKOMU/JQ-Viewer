@@ -35,6 +35,7 @@ public class DownloadPluginContractInstrumentedTest {
         RecordingPluginCall resume = call("resumeDownload");
         RecordingPluginCall delete = call("deleteDownloaded", "chapterId", "2");
         RecordingPluginCall photo = call("getDownloadedPhoto", "albumId", "1");
+        RecordingPluginCall remove = call("removeRetainedDownload", "albumId", "1");
 
         plugin.downloadChapter(download);
         plugin.cancelDownload(cancel);
@@ -42,6 +43,7 @@ public class DownloadPluginContractInstrumentedTest {
         plugin.resumeDownload(resume);
         plugin.deleteDownloaded(delete);
         plugin.getDownloadedPhoto(photo);
+        plugin.removeRetainedDownload(remove);
 
         assertRejected(download, "albumId and chapterId are required");
         assertRejected(cancel, "taskId is required");
@@ -49,6 +51,7 @@ public class DownloadPluginContractInstrumentedTest {
         assertRejected(resume, "taskId is required");
         assertRejected(delete, "albumId and chapterId are required");
         assertRejected(photo, "albumId and chapterId are required");
+        assertRejected(remove, "albumId and chapterId are required");
     }
 
     @Test

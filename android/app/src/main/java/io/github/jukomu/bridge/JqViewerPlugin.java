@@ -760,6 +760,11 @@ public class JqViewerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void removeRetainedDownload(PluginCall call) {
+        downloadHandler.removeRetainedDownload(call);
+    }
+
+    @PluginMethod
     public void getDownloadedPhoto(PluginCall call) {
         downloadHandler.getDownloadedPhoto(call);
     }

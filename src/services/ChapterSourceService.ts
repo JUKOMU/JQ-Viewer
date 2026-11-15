@@ -1,5 +1,6 @@
 import type { RouteLocationRaw } from 'vue-router'
 import { JmcomicService } from './JmcomicService'
+import { isRetainedDownload, verifyRetainedDownloads } from './RetainedDownloadService'
 import type {
   DownloadTask,
   LocalFileChapter,
@@ -173,10 +174,16 @@ export const ChapterSourceService = {
         const photo = await JmcomicService.getDownloadedPhoto(albumId, chapterId)
         if (photo.images.length > 0) return { kind: 'download', task: summary.download }
       } catch {
-        if (requested === 'download' && !summary.download.retainedExports?.length) return null
+        if (requested === 'download' && !isRetainedDownload(summary.download)) return null
       }
     }
 
+    if (summary.download && isRetainedDownload(summary.download)) {
+      summary.download = (await verifyRetainedDownloads([summary.download]))[0]
+      if (!summary.download.retainedExports?.length) {
+        return requested === 'preferred' ? { kind: 'network' } : null
+      }
+    }
     // 保留下载入口引用的是整章分卷，不能把任意一个分卷当成完整章节。
     const retained = summary.download?.retainedExports
     if (

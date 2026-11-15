@@ -976,6 +976,43 @@ public class LocalFileStore extends SQLiteOpenHelper {
         }
     }
 
+    /** 从导出快照还原分卷交集，文件库记录删除后仍可诊断缺失来源。 */
+    public JSONArray retainedExportCandidates(String albumId, String chapterId) {
+        String sql = "WITH chapters AS (SELECT ec.*,(SELECT COALESCE(SUM(p.expected_page_count),0) "
+            + "FROM export_task_chapters p WHERE p.export_id=ec.export_id AND p.sequence<ec.sequence) AS first_page "
+            + "FROM export_task_chapters ec WHERE ec.album_id=? AND ec.chapter_id=?) "
+            + "SELECT t.export_id,t.format,f.id AS file_id,v.output_file_ref,v.start_page,v.end_page,"
+            + "ec.first_page,ec.expected_page_count,COALESCE(f.availability,'missing') AS availability "
+            + "FROM chapters ec JOIN export_tasks t ON t.export_id=ec.export_id "
+            + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
+            + "LEFT JOIN local_files f ON f.file_ref=v.output_file_ref "
+            + "WHERE t.retain_download_entry=1 AND t.status='completed' AND t.format IN ('pdf','cbz') "
+            + "AND v.end_page>ec.first_page AND v.start_page<ec.first_page+ec.expected_page_count "
+            + "ORDER BY t.updated_at DESC,t.export_id DESC,v.volume_index";
+        JSONArray result = new JSONArray();
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{albumId, chapterId})) {
+            while (cursor.moveToNext()) {
+                int first = Math.max(getInt(cursor, "first_page"), getInt(cursor, "start_page"));
+                int last = Math.min(getInt(cursor, "first_page") + getInt(cursor, "expected_page_count"),
+                    getInt(cursor, "end_page"));
+                JSONObject volume = new JSONObject();
+                volume.put("exportId", getString(cursor, "export_id"));
+                volume.put("format", getString(cursor, "format"));
+                if (!cursor.isNull(cursor.getColumnIndexOrThrow("file_id"))) {
+                    volume.put("fileId", getLong(cursor, "file_id"));
+                }
+                volume.put("fileRef", getString(cursor, "output_file_ref"));
+                volume.put("startPage", first - getInt(cursor, "start_page") + 1);
+                volume.put("pageCount", last - first);
+                volume.put("availability", getString(cursor, "availability"));
+                result.put(volume);
+            }
+            return result;
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
     /** 查找章节当前使用的第一个可用保留导出分卷。 */
     public JSONObject findRetainedExportForChapter(String albumId, String chapterId) {
         JSONArray exports = findRetainedExportsForChapter(albumId, chapterId);

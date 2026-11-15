@@ -301,8 +301,6 @@ public final class LocalFileManagementService {
         long startedNanos = System.nanoTime();
         String operationId = operationId();
         StoredLocalFile record = requireFile(id);
-        List<io.github.jukomu.desktop.feature.localfile.data.StoredLocalFileChapter> retainedChapters =
-            "exported".equals(record.sourceType()) ? store.retainedChapters(id) : List.of();
         Path file = FileReferences.parseFile(record.fileRef());
         LOGGER.info("local_file.delete event=started operationId={} fileId={} format={} fileName={} elapsedMs=0",
             clean(operationId), id, clean(record.format()), clean(record.fileName()));
@@ -333,17 +331,7 @@ public final class LocalFileManagementService {
                 clean(operationId), id, clean(record.format()), clean(record.fileName()), elapsed(startedNanos));
             throw new ApiException("internal", 500, "本地文件已处理，但文件库记录移除失败");
         }
-        for (var chapter : retainedChapters) {
-            if (!store.hasRetainedExportForChapter(chapter.albumId(), chapter.chapterId())) {
-                var download = downloads.findTask(chapter.albumId(), chapter.chapterId());
-                if (download != null && !hasCompleteDownload(chapter.albumId(), chapter.chapterId())
-                    && !Set.of("queued", "downloading", "paused", "verifying")
-                    .contains(download.status())) {
-                    downloadFiles.cleanup(download.relativeDirectory());
-                    downloads.deleteTask(download.taskId());
-                }
-            }
-        }
+        // 文件删除只清理文件库，下载记录由下载列表的主动操作移除。
         LOGGER.info("local_file.delete event=completed operationId={} fileId={} format={} fileName={} result={} elapsedMs={}",
             clean(operationId), id, clean(record.format()), clean(record.fileName()), clean(result),
             elapsed(startedNanos));

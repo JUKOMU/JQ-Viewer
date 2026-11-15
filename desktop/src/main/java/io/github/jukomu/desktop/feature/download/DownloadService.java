@@ -215,7 +215,9 @@ public final class DownloadService implements AutoCloseable {
         int failedCount = 0;
         for (StoredDownloadTask task : tasks) {
             try {
-                files.cleanup(task.relativeDirectory());
+                if (!exports.isSourceDeletedAfterExport(task.albumId(), task.chapterId())) {
+                    files.cleanup(task.relativeDirectory());
+                }
                 taskIds.add(task.taskId());
             } catch (RuntimeException error) {
                 failedCount++;
@@ -273,6 +275,18 @@ public final class DownloadService implements AutoCloseable {
         }
 
         completeCancellation(taskId, null);
+    }
+
+    /** 仅移除已清理原图的保留项，不触碰导出文件。 */
+    public void removeRetainedDownload(String albumId, String chapterId) {
+        StoredDownloadTask task = store.findTask(requiredText(albumId, "albumId"),
+            requiredText(chapterId, "chapterId"));
+        if (task == null) return;
+        if (!STATUS_COMPLETED.equals(task.status())
+            || !exports.isSourceDeletedAfterExport(albumId, chapterId)) {
+            throw ApiException.conflict("仅可移除已清理原图的保留下载项");
+        }
+        store.deleteTask(task.taskId());
     }
 
     public void deleteDownloaded(String albumId, String chapterId) {
@@ -675,7 +689,10 @@ public final class DownloadService implements AutoCloseable {
             task.firstImageSortOrder(), task.chapterSortOrder(), task.isSingleEpisode(),
             task.totalPages(), task.downloadedPages(), task.status(), task.createdAt(), task.completedAt(),
             task.error(), task.downloadedBytes(), task.totalSize(),
-            retainedExportResponses(task.albumId(), task.chapterId())
+            exports.isSourceDeletedAfterExport(task.albumId(), task.chapterId())
+                ? retainedExportResponses(task.albumId(), task.chapterId()) : List.of(),
+            exports.isSourceDeletedAfterExport(task.albumId(), task.chapterId())
+                ? exports.retainedExportCandidates(task.albumId(), task.chapterId()) : List.of()
         );
     }
 

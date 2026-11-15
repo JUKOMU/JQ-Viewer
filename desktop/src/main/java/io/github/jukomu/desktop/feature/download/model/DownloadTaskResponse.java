@@ -29,6 +29,7 @@ public record DownloadTaskResponse(
     String error,
     long downloadedBytes,
     long totalSize,
-    List<RetainedDownloadExport> retainedExports
+    List<RetainedDownloadExport> retainedExports,
+    List<RetainedExportCandidate> retainedExportCandidates
 ) {
 }

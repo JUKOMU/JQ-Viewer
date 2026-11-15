@@ -31,7 +31,11 @@
               <span class="chapter-title">{{ ch.chapterId }}</span>
               <span v-if="ch.totalPages > 0" class="chapter-pages">{{ ch.totalPages }} 页</span>
               <span class="source-row">
-                <span v-if="ch.downloadTask" class="source-chip image">图片</span>
+                <span v-if="ch.downloadTask && !isRetainedDownload(ch.downloadTask)" class="source-chip image">图片</span>
+                <span v-if="ch.downloadTask && isRetainedDownload(ch.downloadTask)" class="source-chip">
+                  {{ retainedDeletionFiles(ch.downloadTask)[0]?.format.toUpperCase() }}
+                  {{ retainedFileStatusLabel(ch.downloadTask) }}
+                </span>
                 <span v-if="ch.sources.cbz" class="source-chip cbz">CBZ</span>
                 <span v-if="ch.sources.pdf" class="source-chip pdf">PDF</span>
               </span>
@@ -63,7 +67,7 @@
                 >{{ getDownloadedPages(meta.id) }} 页</span
               >
               <span v-if="downloadedIds.has(meta.id)" class="source-row">
-                <span v-if="downloadedMap.get(meta.id)?.downloadTask" class="source-chip image"
+                <span v-if="downloadedMap.get(meta.id)?.downloadTask && !isRetainedDownload(downloadedMap.get(meta.id)!.downloadTask!)" class="source-chip image"
                   >图片</span
                 >
                 <span v-if="downloadedMap.get(meta.id)?.sources.cbz" class="source-chip cbz"
@@ -72,6 +76,9 @@
                 <span v-if="downloadedMap.get(meta.id)?.sources.pdf" class="source-chip pdf"
                   >PDF</span
                 >
+              </span>
+              <span v-if="downloadedMap.get(meta.id)?.downloadTask">
+                {{ retainedFileStatusLabel(downloadedMap.get(meta.id)!.downloadTask!) }}
               </span>
               <img
                 v-if="downloadedIds.has(meta.id) && getDownloadedCover(meta.id)"
@@ -102,7 +109,8 @@ import {
   IonTitle,
   IonToolbar,
 } from '@ionic/vue'
-import { getImageUrl, JmcomicService } from '@/services/JmcomicService'
+import { getImageUrl, JmcomicService, showToast } from '@/services/JmcomicService'
+import { isRetainedDownload, retainedDeletionFiles, retainedFileStatusLabel, verifyRetainedDownloads } from '@/services/RetainedDownloadService'
 import { ChapterSourceService, type ChapterSourceSummary } from '@/services/ChapterSourceService'
 import type { PhotoMeta } from '@/services/JmcomicTypes'
 import { arrowBack } from 'ionicons/icons'
@@ -170,8 +178,12 @@ const toggleMode = async () => {
 }
 
 const openLocalChapter = async (chapter: LocalChapter) => {
-  const source = await ChapterSourceService.resolve(albumId.value, chapter.chapterId)
-  if (!source) return
+  const retained = chapter.downloadTask && isRetainedDownload(chapter.downloadTask)
+  const source = await ChapterSourceService.resolve(albumId.value, chapter.chapterId, retained ? 'download' : 'preferred')
+  if (!source) {
+    await showToast('该章节文件不可用，请刷新查看文件状态', 'medium')
+    return
+  }
   await router.push(
     ChapterSourceService.readerLocation(source, {
       albumId: chapter.albumId,
@@ -211,6 +223,9 @@ onMounted(async () => {
   const sources = await ChapterSourceService.getAlbumSources(albumId.value).catch(
     () => new Map<string, ChapterSourceSummary>(),
   )
+  const verified = await verifyRetainedDownloads([...sources.values()].flatMap((summary) =>
+    summary.download ? [summary.download] : []))
+  for (const task of verified) sources.get(task.chapterId)!.download = task
   downloadedChapters.value = [...sources.entries()]
     .map(([chapterId, summary]) => {
       const meta = allChapters.value.find((candidate) => candidate.id === chapterId)

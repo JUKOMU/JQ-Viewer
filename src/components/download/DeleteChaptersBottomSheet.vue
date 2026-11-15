@@ -35,13 +35,13 @@
             </div>
           </div>
 
-          <p class="delete-hint">选中的下载章节会删除下载文件和记录。</p>
+          <p class="delete-hint">{{ operation === 'remove' ? '仅移除选中的保留下载记录，实际导出文件保留。' : '选中章节会删除对应文件和下载记录；共享文件可能影响其他章节。' }}</p>
         </div>
 
         <div class="sheet-footer">
           <button class="btn-cancel" @click="close">取消</button>
           <button class="btn-confirm" :disabled="selectedKeys.size === 0" @click="onConfirm">
-            删除{{ selectedKeys.size > 0 ? ` (${selectedKeys.size})` : '' }}
+            {{ operation === 'remove' ? '移除' : '删除' }}{{ selectedKeys.size > 0 ? ` (${selectedKeys.size})` : '' }}
           </button>
         </div>
       </div>
@@ -53,6 +53,7 @@
 import { ref, watch } from 'vue'
 import { useBackButton } from '@ionic/vue'
 import type { CompletedEntry } from '@/services/JmcomicTypes'
+import { retainedDeletionFiles, retainedFileStatusLabel } from '@/services/RetainedDownloadService'
 
 defineOptions({ name: 'DeleteChaptersBottomSheet' })
 
@@ -60,6 +61,7 @@ const props = defineProps<{
   modelValue: boolean
   albumTitle: string
   chapters: CompletedEntry[]
+  operation?: 'delete' | 'remove'
 }>()
 
 const emit = defineEmits<{
@@ -82,7 +84,9 @@ const chapterMeta = (ch: CompletedEntry) => {
   if (ch.source === 'local-file') {
     return `${ch.localFileData?.format.toUpperCase() ?? '文件'} · ${ch.localFileData?.pageCount ?? '?'}页`
   }
-  return `图片 · ${ch.downloadTask?.totalPages ?? 0}页`
+  const task = ch.downloadTask
+  const format = task ? retainedDeletionFiles(task)[0]?.format.toUpperCase() : undefined
+  return `${format ?? '图片'} · ${task?.totalPages ?? 0}页 ${task ? retainedFileStatusLabel(task) : ''}`
 }
 
 const selectAll = () => {

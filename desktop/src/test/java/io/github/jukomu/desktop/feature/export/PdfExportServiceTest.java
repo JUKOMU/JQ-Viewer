@@ -430,7 +430,7 @@ class ExportServiceTest {
     }
 
     @Test
-    void removingAUniqueRetainedSourceIsRejectedAndDeletingAVolumeClearsTheEntry() throws Exception {
+    void removingAUniqueRetainedSourceIsRejectedAndDeletingAVolumePreservesTheEntry() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter())) {
             fixture.addDownload("album-1", "chapter-1", 2);
             var queued = fixture.service.submit(List.of(
@@ -451,7 +451,16 @@ class ExportServiceTest {
 
             assertFalse(library.hasRetainedExportForChapter("album-1", "chapter-1"));
             assertTrue(fixture.store.findRetainedExportsForChapter("album-1", "chapter-1").isEmpty());
-            assertNull(fixture.downloads.findTask("album-1", "chapter-1"));
+            assertNotNull(fixture.downloads.findTask("album-1", "chapter-1"));
+            var candidates = fixture.store.retainedExportCandidates("album-1", "chapter-1");
+            assertEquals(2, candidates.size());
+            assertEquals("missing", candidates.get(0).availability());
+            assertNull(candidates.get(0).fileId());
+            assertEquals(1, candidates.get(0).startPage());
+            assertEquals(1, candidates.get(0).pageCount());
+            org.junit.jupiter.api.Assertions.assertThrows(
+                io.github.jukomu.desktop.bridge.ApiException.class,
+                () -> fixture.service.deleteTask(queued.exportId()));
         }
     }
 
@@ -534,6 +543,98 @@ class ExportServiceTest {
             assertTrue(Files.isRegularFile(fixture.files.chapterDirectory("album-1/chapter-1").resolve("001.png")));
             assertEquals("SOURCE_CLEANUP_FAILED", fixture.store.find(queued.exportId()).errorCode());
             assertNotNull(fixture.downloads.findTask("album-1", "chapter-1"));
+        }
+    }
+
+    @Test
+    void mergedSplitCandidatesKeepExactChapterRangesAfterDeletion() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            fixture.addDownload("album-1", "chapter-2", 2);
+            var queued = fixture.service.submit(List.of(
+                fixture.mergedTask("pdf", "merged.pdf", true, true, 2))).tasks().get(0);
+            fixture.awaitTerminal(queued.exportId());
+            var first = fixture.store.retainedExportCandidates("album-1", "chapter-1");
+            var second = fixture.store.retainedExportCandidates("album-1", "chapter-2");
+            assertEquals(1, first.size());
+            assertEquals(1, first.get(0).startPage());
+            assertEquals(1, first.get(0).pageCount());
+            assertEquals(2, second.size());
+            assertEquals(2, second.get(0).startPage());
+            assertEquals(1, second.get(0).pageCount());
+            assertEquals(1, second.get(1).startPage());
+            fixture.management().deleteFile(first.get(0).fileId());
+            assertNotNull(fixture.downloads.findTask("album-1", "chapter-1"));
+            assertNotNull(fixture.downloads.findTask("album-1", "chapter-2"));
+            assertEquals("missing", fixture.store.retainedExportCandidates("album-1", "chapter-2").get(0).availability());
+            assertEquals("available", fixture.store.retainedExportCandidates("album-1", "chapter-2").get(1).availability());
+        }
+    }
+
+    @Test
+    void removalAndClearingRetainedEntriesKeepSharedExportAndDoNotResurrectRecords() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            fixture.addDownload("album-1", "chapter-2", 1);
+            var queued = fixture.service.submit(List.of(
+                fixture.mergedTask("pdf", "shared.pdf", true, true))).tasks().get(0);
+            fixture.awaitTerminal(queued.exportId());
+            try (var downloads = fixture.downloadService()) {
+                downloads.removeRetainedDownload("album-1", "chapter-1");
+                assertNull(fixture.downloads.findTask("album-1", "chapter-1"));
+                assertNotNull(fixture.downloads.findTask("album-1", "chapter-2"));
+                assertTrue(Files.isRegularFile(fixture.output.resolve("shared.pdf")));
+                assertEquals(1, new LocalFileStore(fixture.database).listAll().size());
+                downloads.clearDownloadTasks("completed");
+            }
+            try (var restarted = fixture.downloadService()) {
+                assertTrue(restarted.getCompletedDownloadChapters("album-1").isEmpty());
+                assertTrue(Files.isRegularFile(fixture.output.resolve("shared.pdf")));
+                assertTrue(fixture.service.deleteTask(queued.exportId()));
+            }
+        }
+    }
+
+    @Test
+    void keepingOriginalsExposesNoRetainedOperationAndDeletingDownloadKeepsExport() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            var queued = fixture.service.submit(List.of(
+                fixture.task("chapter-1", "keep.pdf", 0, false))).tasks().get(0);
+            fixture.awaitTerminal(queued.exportId());
+            try (var downloads = fixture.downloadService()) {
+                var task = downloads.getCompletedDownloadChapters("album-1").get(0);
+                assertTrue(task.retainedExports().isEmpty());
+                assertTrue(task.retainedExportCandidates().isEmpty());
+                org.junit.jupiter.api.Assertions.assertThrows(
+                    io.github.jukomu.desktop.bridge.ApiException.class,
+                    () -> downloads.removeRetainedDownload("album-1", "chapter-1"));
+                downloads.deleteDownloaded("album-1", "chapter-1");
+                assertFalse(Files.exists(fixture.files.chapterDirectory("album-1/chapter-1")));
+                assertTrue(Files.isRegularFile(fixture.output.resolve("keep.pdf")));
+            }
+        }
+    }
+
+    @Test
+    void externalDeletionAndRestoredOriginalsUpdateRetainedIdentity() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            var queued = fixture.service.submit(List.of(
+                fixture.task("chapter-1", "external.pdf", 0, false, true, true))).tasks().get(0);
+            fixture.awaitTerminal(queued.exportId());
+            var file = fixture.store.findRetainedExportForChapter("album-1", "chapter-1");
+            Files.delete(fixture.output.resolve("external.pdf"));
+            fixture.management().refreshAvailability(List.of(file.fileId()));
+            try (var downloads = fixture.downloadService()) {
+                var missing = downloads.getCompletedDownloadChapters("album-1").get(0);
+                assertTrue(missing.retainedExports().isEmpty());
+                assertEquals("missing", missing.retainedExportCandidates().get(0).availability());
+                fixture.store.invalidateSourceCleanup("album-1", "chapter-1");
+                fixture.addDownload("album-1", "chapter-1", 1);
+                assertTrue(downloads.getCompletedDownloadChapters("album-1").get(0).retainedExportCandidates().isEmpty());
+                assertEquals(1, downloads.getDownloadedPhoto("album-1", "chapter-1").images().size());
+            }
         }
     }
 
@@ -670,6 +771,13 @@ class ExportServiceTest {
             ExportService service,
             ExecutorService executor
     ) implements AutoCloseable {
+        io.github.jukomu.desktop.feature.download.DownloadService downloadService() {
+            return new io.github.jukomu.desktop.feature.download.DownloadService(
+                downloads, files, store,
+                (io.github.jukomu.jmcomic.api.client.JmClient) null,
+                (io.github.jukomu.jmcomic.api.client.JmDownloadClient) null, Runnable::run, events);
+        }
+
         io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService management() {
             return new io.github.jukomu.desktop.feature.localfile.management.LocalFileManagementService(
                 new LocalFileStore(database), downloads, files,
@@ -760,6 +868,11 @@ class ExportServiceTest {
 
         ExportTaskRequest mergedTask(String format, String targetName,
                                      boolean deleteSourceAfterExport, boolean retainDownloadEntry) {
+            return mergedTask(format, targetName, deleteSourceAfterExport, retainDownloadEntry, 0);
+        }
+
+        ExportTaskRequest mergedTask(String format, String targetName,
+                                     boolean deleteSourceAfterExport, boolean retainDownloadEntry, int splitPages) {
             return new ExportTaskRequest(
                     format, "merged", "album-1", "Album", "", "Alice", false,
                     null, "Album", List.of(
@@ -768,7 +881,7 @@ class ExportServiceTest {
                     new io.github.jukomu.desktop.feature.localfile.model.ExportTaskChapterRequest(
                             "album-1", "chapter-2", "Chapter 2", 2)),
                     new ExportTargetRequest(FileReferences.folderRef(output), targetName),
-                    output.resolve(targetName).toString(), true, 1D, 0, false,
+                    output.resolve(targetName).toString(), true, 1D, splitPages, false,
                     deleteSourceAfterExport, retainDownloadEntry);
         }
 

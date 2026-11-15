@@ -403,6 +403,8 @@ class BackendHttpContractTest {
                     "{\"exportId\":\"" + exportId + "\"}"));
             assertOk(post(http, base, requestedMethods, "deleteDownloaded",
                     "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
+            assertOk(post(http, base, requestedMethods, "removeRetainedDownload",
+                    "{\"albumId\":\"album-1\",\"chapterId\":\"download-photo\"}"));
             assertOk(post(http, base, requestedMethods, "cancelDownload",
                     "{\"taskId\":\"missing\"}"));
             assertEquals(404, post(http, base, requestedMethods, "pauseDownload",

@@ -247,8 +247,10 @@ public final class ExportService implements AutoCloseable {
             throw ApiException.conflict("活动导出任务不能删除");
         }
         if (task.retainDownloadEntry() && "completed".equals(task.status())
-            && store.hasRetainedExportForTask(task.exportId())) {
-            throw ApiException.conflict("导出任务仍关联下载列表，请先删除对应文件");
+            && store.chapters(exportId).stream().anyMatch(chapter ->
+                downloads.findTask(chapter.albumId(), chapter.chapterId()) != null
+                    && store.isSourceDeletedAfterExport(chapter.albumId(), chapter.chapterId()))) {
+            throw ApiException.conflict("导出任务仍关联下载列表，请先移除对应下载记录");
         }
         for (ExportStore.Volume volume : store.volumes(exportId)) {
             deleteQuietly(Path.of(volume.tempPath()));

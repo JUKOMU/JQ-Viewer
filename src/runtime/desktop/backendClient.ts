@@ -146,6 +146,8 @@ export function createBackendClient(
       call<'resumeDownload'>('resumeDownload', options),
     deleteDownloaded: (options: Parameters<JmcomicClient['deleteDownloaded']>[0]) =>
       call<'deleteDownloaded'>('deleteDownloaded', options),
+    removeRetainedDownload: (options: Parameters<JmcomicClient['removeRetainedDownload']>[0]) =>
+      call<'removeRetainedDownload'>('removeRetainedDownload', options),
     getDownloadedPhoto: (options: Parameters<JmcomicClient['getDownloadedPhoto']>[0]) =>
       call<'getDownloadedPhoto'>('getDownloadedPhoto', options),
     getBrowseHistory: (options: Parameters<JmcomicClient['getBrowseHistory']>[0]) =>

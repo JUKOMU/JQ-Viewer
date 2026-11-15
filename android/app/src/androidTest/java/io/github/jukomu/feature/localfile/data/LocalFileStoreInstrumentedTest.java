@@ -166,6 +166,24 @@ public class LocalFileStoreInstrumentedTest {
         assertEquals(2, retained.length());
         assertEquals("a-complete", retained.getJSONObject(0).getString("exportId"));
         assertEquals("a-complete", retained.getJSONObject(1).getString("exportId"));
+        JSONArray candidates = store.retainedExportCandidates("album-1", "chapter-1");
+        assertEquals(3, candidates.length());
+        for (int index = 0; index < candidates.length(); index++) {
+            assertEquals(1, candidates.getJSONObject(index).getInt("startPage"));
+            assertEquals(1, candidates.getJSONObject(index).getInt("pageCount"));
+        }
+        store.removeFileFromLibrary(retained.getJSONObject(0).getLong("fileId"));
+        JSONArray missing = store.retainedExportCandidates("album-1", "chapter-1");
+        boolean foundMissing = false;
+        for (int index = 0; index < missing.length(); index++) {
+            JSONObject candidate = missing.getJSONObject(index);
+            if ("a-complete".equals(candidate.getString("exportId"))
+                && !candidate.has("fileId")) {
+                assertEquals("missing", candidate.getString("availability"));
+                foundMissing = true;
+            }
+        }
+        assertTrue(foundMissing);
     }
 
     @Test

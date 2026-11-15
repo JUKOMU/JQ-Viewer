@@ -2,6 +2,7 @@ package io.github.jukomu.feature.localfile.management;
 
 import android.content.Context;
 import android.graphics.pdf.PdfRenderer;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
 
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
@@ -37,37 +38,41 @@ public final class PdfFileValidator {
         } catch (IllegalArgumentException error) {
             throw new ValidationException("PDF_PATH_INVALID", "PDF 文件引用无效", error);
         }
-        Exception rendererFailure;
-        try (ParcelFileDescriptor descriptor = openDescriptor(context, fileRef);
-             PdfRenderer renderer = new PdfRenderer(descriptor)) {
-            int actualPages = validatePageCount(renderer.getPageCount(), expectedPages);
-            for (int pageIndex = 0; pageIndex < actualPages; pageIndex++) {
-                try (PdfRenderer.Page ignored = renderer.openPage(pageIndex)) {
-                    // Opening every page detects a damaged page tree without rendering full bitmaps.
+        Exception rendererFailure = null;
+        // Android 7 的 PdfRenderer 构造失败后可能重复释放原生库，导致后续正常 PDF 校验崩溃。
+        // 这些版本直接使用已有 PDFBox 校验器，避免损坏文件进入系统原生解析器。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try (ParcelFileDescriptor descriptor = openDescriptor(context, fileRef);
+                 PdfRenderer renderer = new PdfRenderer(descriptor)) {
+                int actualPages = validatePageCount(renderer.getPageCount(), expectedPages);
+                for (int pageIndex = 0; pageIndex < actualPages; pageIndex++) {
+                    try (PdfRenderer.Page ignored = renderer.openPage(pageIndex)) {
+                        // 逐页打开可检查页面树，无需渲染完整位图。
+                    }
                 }
+                long fileSize = descriptor.getStatSize();
+                if (fileSize < 0) {
+                    File file = LocalFileRefResolver.pathFile(fileRef);
+                    if (file != null) fileSize = file.length();
+                }
+                return new Report(Math.max(0L, fileSize), actualPages);
+            } catch (ValidationException error) {
+                throw error;
+            } catch (SecurityException error) {
+                throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF", error);
+            } catch (FileNotFoundException error) {
+                throw new ValidationException("PDF_MISSING", "PDF 文件不存在", error);
+            } catch (OutOfMemoryError error) {
+                throw new ValidationException("PDF_VALIDATION_OOM", "PDF 校验资源不足", error);
+            } catch (Exception error) {
+                rendererFailure = error;
             }
-            long fileSize = descriptor.getStatSize();
-            if (fileSize < 0) {
-                File file = LocalFileRefResolver.pathFile(fileRef);
-                if (file != null) fileSize = file.length();
-            }
-            return new Report(Math.max(0L, fileSize), actualPages);
-        } catch (ValidationException error) {
-            throw error;
-        } catch (SecurityException error) {
-            throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF", error);
-        } catch (FileNotFoundException error) {
-            throw new ValidationException("PDF_MISSING", "PDF 文件不存在", error);
-        } catch (OutOfMemoryError error) {
-            throw new ValidationException("PDF_VALIDATION_OOM", "PDF 校验资源不足", error);
-        } catch (Exception error) {
-            rendererFailure = error;
         }
 
         try {
             return validateWithPdfBox(context, fileRef, expectedPages);
         } catch (ValidationException error) {
-            error.addSuppressed(rendererFailure);
+            if (rendererFailure != null) error.addSuppressed(rendererFailure);
             throw error;
         } catch (SecurityException error) {
             throw new ValidationException("PDF_INACCESSIBLE", "没有权限读取 PDF", error);
@@ -76,7 +81,7 @@ public final class PdfFileValidator {
         } catch (OutOfMemoryError error) {
             throw new ValidationException("PDF_VALIDATION_OOM", "PDF 校验资源不足", error);
         } catch (Exception error) {
-            error.addSuppressed(rendererFailure);
+            if (rendererFailure != null) error.addSuppressed(rendererFailure);
             throw new ValidationException("PDF_INVALID", "PDF 文件无法读取", error);
         }
     }

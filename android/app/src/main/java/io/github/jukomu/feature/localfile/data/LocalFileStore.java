@@ -982,7 +982,7 @@ public class LocalFileStore extends SQLiteOpenHelper {
             + "FROM export_task_chapters p WHERE p.export_id=ec.export_id AND p.sequence<ec.sequence) AS first_page "
             + "FROM export_task_chapters ec WHERE ec.album_id=? AND ec.chapter_id=?) "
             + "SELECT t.export_id,t.format,f.id AS file_id,v.output_file_ref,v.start_page,v.end_page,"
-            + "ec.first_page,ec.expected_page_count,COALESCE(f.availability,'missing') AS availability "
+            + "ec.first_page AS first_page,ec.expected_page_count,COALESCE(f.availability,'missing') AS availability "
             + "FROM chapters ec JOIN export_tasks t ON t.export_id=ec.export_id "
             + "JOIN export_task_volumes v ON v.export_id=t.export_id AND v.status='completed' "
             + "LEFT JOIN local_files f ON f.file_ref=v.output_file_ref "

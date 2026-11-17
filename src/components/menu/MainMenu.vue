@@ -1132,7 +1132,10 @@ onUnmounted(() => {
 
 .main-menu.wide-menu {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   z-index: 1;
   flex: 0 0 304px;
   width: 304px;
@@ -1161,7 +1164,10 @@ onUnmounted(() => {
 
 .main-menu-panel {
   position: absolute;
-  inset: 0 auto 0 0;
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: 0;
   width: 304px;
   display: flex;
   flex-direction: column;
@@ -1181,7 +1187,10 @@ onUnmounted(() => {
 
 .main-menu.wide-menu .main-menu-panel {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   width: 100%;
   height: 100%;
   transform: none;

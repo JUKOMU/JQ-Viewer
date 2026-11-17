@@ -377,7 +377,10 @@ defineExpose({ panelRef })
 <style scoped>
 .fav-menu-backdrop {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 50;
   background: rgb(16 12 10 / 0.28);
   backdrop-filter: blur(2px);
@@ -385,7 +388,10 @@ defineExpose({ panelRef })
 
 .fav-menu-pane {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   flex: 0 0 var(--favorite-pane-width, 280px);
   width: var(--favorite-pane-width, 280px);
   min-width: var(--favorite-pane-width, 280px);
@@ -410,7 +416,10 @@ defineExpose({ panelRef })
 
 .fav-menu-panel--pane {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   width: 100%;
   height: 100%;
   box-shadow: none;

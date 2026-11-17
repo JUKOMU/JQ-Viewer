@@ -454,7 +454,10 @@ onBeforeUnmount(() => {
 
 .header-bg {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   overflow: hidden;
 }
 
@@ -468,7 +471,10 @@ onBeforeUnmount(() => {
 
 .header-bg-mask {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: linear-gradient(180deg, rgb(125 125 125 / 0.4) 0%, rgb(125 125 125 / 0.2) 100%);
 }
 
@@ -748,7 +754,10 @@ onBeforeUnmount(() => {
   }
 
   .header-bg {
-    inset: 0 auto 0 calc(-1 * var(--detail-page-inset));
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: calc(-1 * var(--detail-page-inset));
     z-index: 0;
     width: 100cqw;
     transform: none;
@@ -893,7 +902,10 @@ onBeforeUnmount(() => {
 /* 封面预览遮罩 */
 .cover-preview-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 9999;
   display: flex;
   align-items: center;

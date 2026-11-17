@@ -1584,7 +1584,10 @@ function formatRelativeTime(timestamp: number): string {
 .multi-select-overlay {
   --desktop-page-max-width: 960px;
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -1647,7 +1650,10 @@ function formatRelativeTime(timestamp: number): string {
 .date-group-heading.is-stuck::before {
   position: absolute;
   z-index: -1;
-  inset: 0 auto 0 50%;
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: 50%;
   width: 100vw;
   transform: translateX(-50%);
   background: var(--ion-background-color);

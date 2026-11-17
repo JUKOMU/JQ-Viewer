@@ -1902,7 +1902,10 @@ IonHeader {
 
   .search-drawer {
     position: relative;
-    inset: auto;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
     z-index: auto;
     display: flex;
     flex-direction: column;

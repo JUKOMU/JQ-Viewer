@@ -748,7 +748,10 @@ onBeforeUnmount(() => {
   }
 
   .header-bg {
-    inset: 0 auto 0 calc(-1 * var(--detail-page-inset));
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: calc(-1 * var(--detail-page-inset));
     z-index: 0;
     width: 100cqw;
     transform: none;

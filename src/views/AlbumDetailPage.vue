@@ -1719,7 +1719,10 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
 .tab-content.swiping .tab-panel {
   display: block;
   position: absolute;
-  inset: 12px 14px auto;
+  top: 12px;
+  right: 14px;
+  bottom: auto;
+  left: 14px;
   width: calc(100% - 28px);
   will-change: transform;
 }
@@ -1779,7 +1782,10 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   .tab-bar::before {
     content: '';
     position: absolute;
-    inset: 0 auto 0 calc(-1 * (var(--detail-page-inset) + var(--tab-bar-centered-offset)));
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: calc(-1 * (var(--detail-page-inset) + var(--tab-bar-centered-offset)));
     width: 100cqw;
     background: #fffaf6;
     border-bottom: 1px solid rgb(245 210 188 / 0.5);
@@ -1799,7 +1805,10 @@ const handleScroll = async (event: CustomEvent<{ scrollTop?: number }>) => {
   }
 
   .tab-content.swiping .tab-panel {
-    inset: 20px 0 auto;
+    top: 20px;
+    right: 0;
+    bottom: auto;
+    left: 0;
     width: 100%;
   }
 }

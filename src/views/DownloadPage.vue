@@ -2428,7 +2428,10 @@ const clearFailed = async () => {
 .section-header.is-stuck::before {
   position: absolute;
   z-index: -1;
-  inset: 0 auto 0 50%;
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: 50%;
   width: 100vw;
   transform: translateX(-50%);
   background: var(--ion-background-color);

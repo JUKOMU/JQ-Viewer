@@ -385,7 +385,10 @@ defineExpose({ panelRef })
 
 .fav-menu-pane {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   flex: 0 0 var(--favorite-pane-width, 280px);
   width: var(--favorite-pane-width, 280px);
   min-width: var(--favorite-pane-width, 280px);
@@ -410,7 +413,10 @@ defineExpose({ panelRef })
 
 .fav-menu-panel--pane {
   position: relative;
-  inset: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
   width: 100%;
   height: 100%;
   box-shadow: none;

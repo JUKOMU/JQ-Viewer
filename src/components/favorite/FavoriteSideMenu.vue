@@ -377,7 +377,10 @@ defineExpose({ panelRef })
 <style scoped>
 .fav-menu-backdrop {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 50;
   background: rgb(16 12 10 / 0.28);
   backdrop-filter: blur(2px);

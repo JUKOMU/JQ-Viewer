@@ -105,15 +105,28 @@
             >
               <IonIcon :icon="sortDirection === 'asc' ? arrowUpOutline : arrowDownOutline" />
             </button>
-            <button
-              type="button"
-              class="sort-btn"
-              :aria-label="sortLabel"
-              :disabled="downloadSelectionActive"
-              @click="toggleSort"
+            <div
+              class="sort-modes"
+              role="group"
+              aria-label="排序模式"
+              :style="{ '--sort-index': sortModes.findIndex((mode) => mode.value === sortMode) }"
             >
-              <IonIcon :icon="sortIcon" />
-            </button>
+              <button
+                v-for="mode in sortModes"
+                :key="mode.value"
+                type="button"
+                class="sort-btn sort-mode-btn"
+                :class="{ active: sortMode === mode.value }"
+                :aria-label="`${mode.label}排序`"
+                :title="`${mode.label}排序`"
+                :aria-pressed="sortMode === mode.value"
+                :disabled="downloadSelectionActive"
+                @click="selectSort(mode.value)"
+              >
+                <IonIcon v-if="mode.value === 'time'" :icon="timeOutline" />
+                <span v-else>{{ mode.text }}</span>
+              </button>
+            </div>
             <span class="toolbar-action-label">{{ sortLabel }}</span>
           </div>
 
@@ -355,7 +368,6 @@ import {
   playOutline,
   refreshOutline,
   saveOutline,
-  textOutline,
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
@@ -591,23 +603,18 @@ const unseenActiveTaskIds = new Set<string>()
 type SortMode = DownloadTaskSort
 const sortMode = ref<SortMode>('time')
 const sortDirection = ref<DownloadTaskSortDirection>('desc')
-const sortIcon = computed(() => {
-  if (sortMode.value === 'time') return timeOutline
-  if (sortMode.value === 'author') return textOutline
-  if (sortMode.value === 'id') return textOutline
-  return textOutline
-})
+const sortModes = [
+  { value: 'time', label: '时间', text: '' },
+  { value: 'title', label: '标题', text: 'T' },
+  { value: 'id', label: 'ID', text: ' ID ' },
+  { value: 'author', label: '作者', text: 'A' },
+] as const
 const sortLabel = computed(
   () => ({ time: '时间排序', title: '标题排序', id: 'ID排序', author: '作者排序' })[sortMode.value],
 )
-const defaultDirection = (mode: SortMode): DownloadTaskSortDirection =>
-  mode === 'time' ? 'desc' : 'asc'
-
-const toggleSort = async () => {
-  if (downloadSelectionActive.value) return
-  const modes: SortMode[] = ['time', 'title', 'id', 'author']
-  sortMode.value = modes[(modes.indexOf(sortMode.value) + 1) % modes.length]
-  sortDirection.value = defaultDirection(sortMode.value)
+const selectSort = async (mode: SortMode) => {
+  if (downloadSelectionActive.value || sortMode.value === mode) return
+  sortMode.value = mode
   await resetDownloadGroups(true, true)
   await downloadContentRef.value?.$el?.scrollToTop?.(0)
 }
@@ -2243,6 +2250,7 @@ const clearFailed = async () => {
 }
 
 .toolbar-action-label {
+  flex: 0 0 4em;
   color: #8a6048;
   font-size: 12px;
   line-height: 1;
@@ -2267,6 +2275,51 @@ const clearFailed = async () => {
 
 .sort-btn:active {
   background: #f5d2bc;
+}
+
+/* 分组底板比按钮上下各收进 4px，白色滑块随当前模式移动。 */
+.sort-modes {
+  position: relative;
+  display: flex;
+  gap: 6px;
+}
+
+.sort-modes::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  border-radius: 10px;
+  background: #f0e3da;
+}
+
+.sort-modes::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(115, 67, 38, 0.1);
+  transform: translateX(calc(var(--sort-index) * 40px));
+  transition: transform 0.18s ease;
+  pointer-events: none;
+}
+
+.sort-mode-btn,
+.sort-mode-btn:active {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  font-weight: 400;
+  box-shadow: none;
+}
+
+.sort-mode-btn.active {
+  color: #a95128;
+}
+
+.sort-mode-btn span {
+  font-size: 12px;
 }
 
 :deep(ion-header),
@@ -2570,7 +2623,8 @@ const clearFailed = async () => {
     transition-duration: 0.01ms;
   }
   .storage-progress-download,
-  .storage-progress-available {
+  .storage-progress-available,
+  .sort-modes::after {
     transition: none;
   }
 }

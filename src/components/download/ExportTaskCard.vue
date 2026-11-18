@@ -198,8 +198,7 @@ const statusLabel = computed(() => {
   flex: 1;
 }
 .title,
-.subtitle,
-.error {
+.subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -259,6 +258,7 @@ const statusLabel = computed(() => {
   margin-top: 5px;
   color: #b53d36;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .actions {
   display: flex;

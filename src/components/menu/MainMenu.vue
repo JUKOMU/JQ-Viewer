@@ -191,8 +191,8 @@
             </div>
             <IonIcon slot="start" class="menu-icon" :icon="downloadSharp" />
             <IonLabel class="download-menu-label">
-              <div class="item-title">下载</div>
-              <div class="item-subtitle">离线任务与管理</div>
+              <div class="item-title">下载和导出</div>
+              <div class="item-subtitle">离线内容与管理</div>
             </IonLabel>
             <div v-if="shouldShowTaskProgress" class="task-progress-copy" aria-live="polite">
               <div v-if="downloadProgress" class="task-progress-row">

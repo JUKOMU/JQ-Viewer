@@ -147,7 +147,7 @@ public final class ExportService implements AutoCloseable {
                 logEvent("preflight", plan, "preflight", "queued", elapsed(preflightStarted),
                     0, plan.images().size(), 0, plan.volumes().size(), null, null, false, null);
                 if (store.hasActiveChapterConflict(plan.chapters())) {
-                    logEvent("failed", plan, "submit", "failed", 0, 0, 0,
+                    logEvent("failed", plan, "submit", "failed", 0, 0, 0, 0,
                         plan.volumes().size(), "TASK_CONFLICT", null, false, null);
                     results.add(ExportTaskResponse.rejected(task.format(),
                         "TASK_CONFLICT", "相同章节已有导出任务正在排队或运行",

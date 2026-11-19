@@ -98,11 +98,15 @@ describe('保留下载项的来源和操作', () => {
   })
 
   test.each(['unknown', 'invalid'] as const)('状态 %s 的卡片使用相应提示样式', (status) => {
-    const item = { ...task([volume(1)]), retainedFileStatus: status }
+    const item = selectRetainedExport(task([
+      { ...volume(1), availability: status },
+    ]))
     const wrapper = mount(DownloadTaskCard, {
       props: { task: item }, global: { stubs: { IonIcon: true } },
     })
-    const label = wrapper.find(status === 'unknown' ? '.status-tag.verifying' : '.tag.failed')
+    const label = wrapper.find(
+      status === 'unknown' ? '.status-tag.verifying' : '.tag.retained-file-status',
+    )
     expect(label.text()).toBe(status === 'unknown' ? '待校验' : '文件损坏')
     wrapper.unmount()
   })

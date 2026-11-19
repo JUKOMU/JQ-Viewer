@@ -1902,7 +1902,11 @@ const onExportConfirm = async (payload: {
       const failure = finalTasks.find((task) => !task.accepted)
       await showToast(getExportErrorMessage(failure?.errorCode, 'submit'), 'danger')
     } else if (rejected > 0) {
-      await showToast('部分导出任务未开始。请打开导出任务查看失败原因。', 'medium')
+      const failure = finalTasks.find((task) => !task.accepted)
+      await showToast(
+        `部分导出任务未开始。${getExportErrorMessage(failure?.errorCode, 'submit')}`,
+        'medium',
+      )
     } else if (!isBatchExport) {
       await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
     }

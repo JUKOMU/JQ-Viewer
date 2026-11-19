@@ -703,7 +703,7 @@ describe('LocalFileManagementView', () => {
     await flushPromises()
 
     expect(mocks.getExportTasks.mock.calls.length).toBeGreaterThan(initialCalls)
-    expect(mocks.showToast).toHaveBeenCalledWith('相同章节已有任务正在运行', 'medium')
+    expect(mocks.showToast).toHaveBeenCalledWith('导出任务状态已变化。请刷新后重试。', 'medium')
     wrapper.unmount()
   })
 })

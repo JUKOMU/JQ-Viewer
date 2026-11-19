@@ -624,7 +624,7 @@ public class ExportService {
                                 int totalVolumes, String errorCode, String extra,
                                 Throwable error) {
         long now = SystemClock.elapsedRealtimeNanos();
-        Long started = taskStartedAtNanos.get(job.exportId);
+        Long started = job.exportId == null ? null : taskStartedAtNanos.get(job.exportId);
         long elapsedMs = started == null ? 0 : (now - started) / 1_000_000L;
         StringBuilder message = new StringBuilder("export event=").append(event);
         appendLogField(message, "taskId", job.exportId);

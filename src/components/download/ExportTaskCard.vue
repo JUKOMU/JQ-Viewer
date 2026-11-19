@@ -31,7 +31,7 @@
           分卷 {{ task.currentVolume }}/{{ task.totalVolumes }}
         </span>
       </div>
-      <div v-if="task.errorMessage" class="error">{{ task.errorMessage }}</div>
+      <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
     </div>
     <input
       v-if="selectionMode && selectable"
@@ -83,6 +83,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { closeCircleOutline, documentOutline, refreshOutline, trashOutline } from 'ionicons/icons'
 import type { ExportTaskRecord } from '@/services/JmcomicTypes'
+import { getExportErrorMessage } from '@/services/ExportErrorService'
 
 const props = defineProps<{ task: ExportTaskRecord; selectionMode?: boolean; selected?: boolean }>()
 const emit = defineEmits<{
@@ -140,6 +141,11 @@ const progressPercent = computed(() => {
   if (props.task.totalPages <= 0) return 0
   return Math.min(100, Math.round((props.task.currentPage / props.task.totalPages) * 100))
 })
+const errorMessage = computed(() =>
+  props.task.errorCode || props.task.errorMessage
+    ? getExportErrorMessage(props.task.errorCode, 'task')
+    : '',
+)
 const statusLabel = computed(() => {
   const labels: Record<string, string> = {
     queued: '排队中',
@@ -198,8 +204,7 @@ const statusLabel = computed(() => {
   flex: 1;
 }
 .title,
-.subtitle,
-.error {
+.subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -259,6 +264,7 @@ const statusLabel = computed(() => {
   margin-top: 5px;
   color: #b53d36;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .actions {
   display: flex;

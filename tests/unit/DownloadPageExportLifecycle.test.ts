@@ -825,9 +825,12 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       expect(wrapper.find('.batch-progress-overlay').exists()).toBe(false)
       expect(mocks.showToast).not.toHaveBeenCalledWith('PDF 导出已开始，请查看通知', 'success')
       if (outcome === 'failed') {
-        expect(mocks.showToast).toHaveBeenCalledWith('导出启动失败', 'danger')
+        expect(mocks.showToast).toHaveBeenCalledWith(
+          '导出启动失败。请检查导出目录和下载内容后重试。',
+          'danger',
+        )
       } else if (outcome === 'overwrite-cancelled') {
-        expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
+        expect(mocks.showToast).toHaveBeenCalledWith('目标文件已存在。已取消覆盖。', 'medium')
       }
       wrapper.unmount()
     },
@@ -840,13 +843,16 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
       tone: 'success',
     },
     {
-      results: [{ accepted: true }, { accepted: false }],
-      message: '已开始 1 个，1 个未进入队列，请查看导出任务',
+      results: [{ accepted: true }, { accepted: false, errorCode: 'TASK_CONFLICT' }],
+      message: '部分导出任务未开始。导出任务已存在。请等待当前任务完成。',
       tone: 'medium',
     },
     {
-      results: [{ accepted: false }, { accepted: false }],
-      message: 'PDF 导出未开始，请查看任务失败原因',
+      results: [
+        { accepted: false, errorCode: 'DOWNLOAD_NOT_COMPLETED' },
+        { accepted: false, errorCode: 'TASK_CONFLICT' },
+      ],
+      message: '下载内容未完成。请先完成下载后重试。',
       tone: 'danger',
     },
   ])('按原生接受结果显示导出提示: $message', async ({ results, message, tone }) => {
@@ -960,7 +966,7 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
 
     expect(mocks.createAppAlert).toHaveBeenCalledOnce()
     expect(mocks.exportBatch).toHaveBeenCalledOnce()
-    expect(mocks.showToast).toHaveBeenCalledWith('检测到已有同名 PDF，已取消覆盖', 'medium')
+    expect(mocks.showToast).toHaveBeenCalledWith('目标文件已存在。已取消覆盖。', 'medium')
     wrapper.unmount()
   })
 

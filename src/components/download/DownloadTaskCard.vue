@@ -85,6 +85,12 @@
         <span v-if="sizeText && !retainedFormat" class="size-text">
           {{ sizeText }}
         </span>
+        <span
+          v-if="fileStatusText"
+          :class="fileStatusText === '待校验' ? 'status-tag verifying' : 'tag retained-file-status'"
+        >
+          {{ fileStatusText }}
+        </span>
       </div>
       <!-- 部分失败 -->
       <template v-else-if="cardStatus === 'failed' && (task as DownloadTask).downloadedPages > 0">
@@ -105,12 +111,6 @@
         <span class="tag failed">{{
           sanitizeError((task as DownloadTask).error, '下载失败')
         }}</span>
-      </div>
-      <div
-        v-if="cardStatus === 'completed' && fileStatusText"
-        :class="fileStatusText === '待校验' ? 'status-tag verifying' : 'tag failed'"
-      >
-        {{ fileStatusText }}
       </div>
     </div>
 
@@ -629,6 +629,7 @@ const onCardClick = () => {
 .status-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 0;
 }
@@ -653,6 +654,14 @@ const onCardClick = () => {
 .tag.failed {
   background: #ffeaea;
   color: #d9534f;
+}
+
+.tag.retained-file-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 2px 6px;
+  background: #ffe3df;
+  color: #a52d27;
 }
 
 .size-text {

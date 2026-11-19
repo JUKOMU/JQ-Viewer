@@ -232,13 +232,16 @@ public class ExportService {
             releaseJobLocksAndUpdate(job);
             throw LocalFileOperationException.conflict("当前任务状态不能重试");
         }
+        int batchId = batchCounter.incrementAndGet();
         taskStartedAtNanos.put(exportId, SystemClock.elapsedRealtimeNanos());
         QueuedExportJob queued = new QueuedExportJob(job, preflight,
             NotificationIds.exportTask(notificationCounter.getAndIncrement()));
+        logExportEvent(job, String.valueOf(batchId), "retry", "submit", "queued",
+            0, preflight.totalPages, 0, preflight.volumes.size(), null, null, null);
         updateProgress(exportId, "queued", "queued", 0, preflight.totalPages, 0,
             preflight.volumes.size(), null, null);
         updateForegroundQueued(Collections.singletonList(queued));
-        executor.submit(() -> executeBatch(batchCounter.incrementAndGet(),
+        executor.submit(() -> executeBatch(batchId,
             Collections.singletonList(queued)));
         return localFileStore.getExportTask(exportId);
     }
@@ -527,6 +530,8 @@ public class ExportService {
             for (ExportJob job : jobs) {
                 ExportJobValidator.validate(job);
                 if (!acquireJobLocks(job)) {
+                    logExportEvent(job, String.valueOf(batchId), "failed", "submit", "failed",
+                        0, 0, "TASK_CONFLICT", null, null);
                     results.put(new JSONObject()
                         .put("accepted", false)
                         .put("errorCode", "TASK_CONFLICT")
@@ -541,7 +546,7 @@ public class ExportService {
                 try {
                     ExportPreflight preflight = preflight(job);
                     logExportEvent(job, String.valueOf(batchId), "phase", "preflight", "queued",
-                        0, preflight.totalPages, null, null, null);
+                        0, preflight.totalPages, 0, preflight.volumes.size(), null, null, null);
                     reserveExport(job, preflight, String.valueOf(batchId), "queued", null, null);
                     int notificationId = NotificationIds.exportTask(
                         notificationCounter.getAndIncrement());
@@ -610,8 +615,16 @@ public class ExportService {
     private void logExportEvent(ExportJob job, String batchId, String event, String phase,
                                 String status, int page, int totalPages, String errorCode,
                                 String extra, Throwable error) {
+        logExportEvent(job, batchId, event, phase, status, page, totalPages, 0, 0,
+            errorCode, extra, error);
+    }
+
+    private void logExportEvent(ExportJob job, String batchId, String event, String phase,
+                                String status, int page, int totalPages, int currentVolume,
+                                int totalVolumes, String errorCode, String extra,
+                                Throwable error) {
         long now = SystemClock.elapsedRealtimeNanos();
-        Long started = taskStartedAtNanos.get(job.exportId);
+        Long started = job.exportId == null ? null : taskStartedAtNanos.get(job.exportId);
         long elapsedMs = started == null ? 0 : (now - started) / 1_000_000L;
         StringBuilder message = new StringBuilder("export event=").append(event);
         appendLogField(message, "taskId", job.exportId);
@@ -624,11 +637,14 @@ public class ExportService {
         message.append(" elapsedMs=").append(elapsedMs)
             .append(" page=").append(Math.max(0, page))
             .append(" totalPages=").append(Math.max(0, totalPages));
+        if (currentVolume > 0) appendLogField(message, "volume", String.valueOf(currentVolume));
+        if (totalVolumes > 0) appendLogField(message, "totalVolumes", String.valueOf(totalVolumes));
         appendLogField(message, "errorCode", errorCode);
         appendLogField(message, "detail", extra);
+        if (error != null) appendLogField(message, "errorClass", error.getClass().getName());
         try {
             if ("failed".equals(event) || "crashed".equals(event)) {
-                if (errorCode != null && errorCode.endsWith("_OUTPUT_EXISTS")) {
+                if (error == null || (errorCode != null && errorCode.endsWith("_OUTPUT_EXISTS"))) {
                     LOGGER.error(message.toString());
                 } else {
                     LOGGER.error(message.toString(), error);
@@ -642,6 +658,10 @@ public class ExportService {
     private static void appendLogField(StringBuilder out, String key, String value) {
         if (value == null || value.isEmpty()) return;
         out.append(' ').append(key).append('=').append(LogFields.clean(value));
+    }
+
+    private int currentExportVolume(String exportId) {
+        return localFileStore.getExportTask(exportId).optInt("currentVolume");
     }
 
     private void executeBatch(int batchId, List<QueuedExportJob> queuedJobs) {
@@ -664,7 +684,7 @@ public class ExportService {
                         continue;
                     }
                     logExportEvent(job, String.valueOf(batchId), "phase", "writing", "running",
-                        0, preflight.totalPages, null, null, null);
+                        0, preflight.totalPages, 1, preflight.volumes.size(), null, null, null);
                     publishExportForeground(sessionId, job, "准备写入", 0, preflight.totalPages, 1,
                         preflight.volumes.size());
                     exportJob(job, preflight, notificationId, sessionId, String.valueOf(batchId));
@@ -675,12 +695,15 @@ public class ExportService {
                         cleanupComplete ? null : "导出已完成，但部分原下载文件未能删除");
                     success++;
                     logExportEvent(job, String.valueOf(batchId), "completed", "completed", "completed",
-                        preflight.totalPages, preflight.totalPages, null, null, null);
+                        preflight.totalPages, preflight.totalPages, preflight.volumes.size(),
+                        preflight.volumes.size(), null, null, null);
                 } catch (ExportCancelledException | ExportCancelledRuntimeException error) {
-                    logExportEvent(job, String.valueOf(batchId), "cancelled", "writing", "cancelled",
-                        0, queuedJob.preflight.totalPages, "CANCELLED", null, null);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "cancelled";
+                    int currentVolume = currentExportVolume(job.exportId);
+                    logExportEvent(job, String.valueOf(batchId), "cancelled", "writing", status,
+                        0, queuedJob.preflight.totalPages, currentVolume,
+                        queuedJob.preflight.volumes.size(), "CANCELLED", null, null);
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
                         "CANCELLED", "导出已取消");
@@ -691,11 +714,13 @@ public class ExportService {
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
-                    logExportEvent(job, String.valueOf(batchId), "failed", "writing", "failed",
-                        0, queuedJob.preflight.totalPages, errorCode(e, job), null, e);
-                    LOGGER.error(failure.debugMessage, e);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "failed";
+                    int currentVolume = currentExportVolume(job.exportId);
+                    logExportEvent(job, String.valueOf(batchId), "failed", "writing", status,
+                        0, queuedJob.preflight.totalPages, currentVolume,
+                        queuedJob.preflight.volumes.size(), errorCode(e, job), null, e);
+                    LOGGER.error(failure.debugMessage, e);
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
                         errorCode(e, job), failure.userMessage);
@@ -703,8 +728,10 @@ public class ExportService {
                         status, failure.userMessage);
                 } catch (Throwable t) {
                     fail++;
+                    int currentVolume = currentExportVolume(job.exportId);
                     logExportEvent(job, String.valueOf(batchId), "crashed", "writing", "failed",
-                        0, queuedJob.preflight.totalPages, "INTERNAL_ERROR", null, t);
+                        0, queuedJob.preflight.totalPages, currentVolume,
+                        queuedJob.preflight.volumes.size(), "INTERNAL_ERROR", null, t);
                     LOGGER.error(job.format.toUpperCase(Locale.ROOT)
                         + " export crashed: " + job.chapterTitle, t);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
@@ -767,7 +794,7 @@ public class ExportService {
             LOGGER.info("Volume " + (volumeIndex + 1) + "/" + volumes.size()
                 + ": " + volume.file.getName());
             logExportEvent(job, batchId, "phase", "writing", "running", volume.start, total,
-                null, "volume=" + volumeNumber + "/" + volumeCount, null);
+                volumeNumber, volumeCount, null, null, null);
 
             List<PdfBoxExportWriter.ExportImageDescriptor> volumeImages =
                 images.subList(volume.start, volume.end);
@@ -807,7 +834,7 @@ public class ExportService {
                         job.compressionRatio, progress, overwriteWorkFile);
                     try {
                         logExportEvent(job, batchId, "phase", "validating", "running", volume.end,
-                            total, null, "volume=" + volumeNumber + "/" + volumeCount, null);
+                            total, volumeNumber, volumeCount, null, null, null);
                         PdfFileValidator.Report pdfReport = PdfFileValidator.validate(
                             context, LocalFileRef.createPathFileRef(volume.file.getAbsolutePath()),
                             volume.end - volume.start);
@@ -830,7 +857,7 @@ public class ExportService {
             long pathOutputLength = volume.file.length();
             long pathOutputLastModified = volume.file.lastModified();
             logExportEvent(job, batchId, "phase", "publishing", "running", volume.end, total,
-                null, "volume=" + volumeNumber + "/" + volumeCount, null);
+                volumeNumber, volumeCount, null, null, null);
             String outputFileRef = publishVolume(job, volume);
             try {
                 checkExportCancelled(job.exportId);
@@ -1889,7 +1916,7 @@ public class ExportService {
             lastHeartbeatPage.put(job.exportId, currentPage);
         }
         logExportEvent(job, batchId, "heartbeat", "writing", "running", currentPage,
-            totalPages, null, "volume=" + volumeNumber + "/" + volumeCount, null);
+            totalPages, volumeNumber, volumeCount, null, null, null);
     }
 
     private void clearTaskTracking(String exportId) {

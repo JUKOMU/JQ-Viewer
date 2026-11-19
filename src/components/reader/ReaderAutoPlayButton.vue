@@ -166,10 +166,13 @@ onBeforeUnmount(() => {
   left: 0;
   width: 100%;
   height: 50%;
-  background: linear-gradient(
-    to top,
-    #cc7435 0 var(--speed-fill),
-    transparent var(--speed-fill) 100%
+  /* 左右两端各填充四分之一圆周，填满时在半环中央汇合。 */
+  background: conic-gradient(
+    from 270deg at 50% 100%,
+    #cc7435 0 calc(var(--speed-fill) / 4),
+    transparent calc(var(--speed-fill) / 4) calc(50% - var(--speed-fill) / 4),
+    #cc7435 calc(50% - var(--speed-fill) / 4) 50%,
+    transparent 50% 100%
   );
 }
 
@@ -181,10 +184,12 @@ onBeforeUnmount(() => {
 .reader-auto-play-speed-half.lower {
   bottom: 0;
   border-radius: 0 0 100% 100%;
-  background: linear-gradient(
-    to bottom,
-    #cc7435 0 var(--speed-fill),
-    transparent var(--speed-fill) 100%
+  background: conic-gradient(
+    from 90deg at 50% 0%,
+    #cc7435 0 calc(var(--speed-fill) / 4),
+    transparent calc(var(--speed-fill) / 4) calc(50% - var(--speed-fill) / 4),
+    #cc7435 calc(50% - var(--speed-fill) / 4) 50%,
+    transparent 50% 100%
   );
 }
 

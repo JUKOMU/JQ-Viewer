@@ -283,6 +283,7 @@ import { useMultiSelect } from '@/composables/useMultiSelect'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
 import { LocalFileImportService } from '@/services/LocalFileImportService'
 import { normalizeRuntimeError } from '@/runtime/errors'
+import { getExportErrorMessageFrom } from '@/services/ExportErrorService'
 import { LocalFileManagementService } from '@/services/LocalFileManagementService'
 import type {
   LocalFileRecord,
@@ -850,7 +851,7 @@ const load = async (): Promise<void> => {
         if (props.initialExportId) await focusTask(props.initialExportId)
       }
     } catch (error) {
-      errorMessage.value = sanitizeError(error, '导出管理数据加载失败')
+      errorMessage.value = getExportErrorMessageFrom(error, 'load')
     } finally {
       loading.value = false
     }
@@ -895,7 +896,7 @@ const loadMoreTasks = async (direction: 'next' | 'previous' = 'next') => {
     taskLoadError.value = false
   } catch (error) {
     taskLoadError.value = true
-    await showToast(sanitizeError(error, '加载导出任务失败'), 'danger')
+    await showToast(getExportErrorMessageFrom(error, 'load'), 'danger')
   } finally {
     taskLoadingMore.value = false
   }
@@ -1057,7 +1058,7 @@ const cancelTask = async (task: ExportTaskRecord) => {
       await requestTasksReload()
       return
     }
-    await showToast(sanitizeError(error, '取消导出失败'), 'danger')
+    await showToast(getExportErrorMessageFrom(error, 'cancel'), 'danger')
   }
 }
 const retryTask = async (task: ExportTaskRecord) => {
@@ -1079,10 +1080,10 @@ const retryTask = async (task: ExportTaskRecord) => {
               const runtimeError = normalizeRuntimeError(error)
               if (runtimeError.code === 'not-found' || runtimeError.code === 'conflict') {
                 await requestTasksReload()
-                await showToast(sanitizeError(error, '导出任务状态已变化，请刷新后重试'), 'medium')
+                await showToast(getExportErrorMessageFrom(error, 'retry'), 'medium')
                 return
               }
-              await showToast(sanitizeError(error, '重试导出失败'), 'danger')
+              await showToast(getExportErrorMessageFrom(error, 'retry'), 'danger')
             }
           })()
         },
@@ -1107,7 +1108,7 @@ const deleteTask = async (task: ExportTaskRecord) => {
               if (!result.success) throw new Error('删除任务记录失败')
               await removeTaskAndFill(task.exportId)
             } catch (error) {
-              await showToast(sanitizeError(error, '删除任务记录失败'), 'danger')
+              await showToast(getExportErrorMessageFrom(error, 'delete'), 'danger')
             }
           })()
         },
@@ -1314,7 +1315,7 @@ const reloadTasksWithFeedback = async () => {
   try {
     await requestTasksReload()
   } catch (error) {
-    await showToast(sanitizeError(error, '导出任务加载失败'), 'danger')
+    await showToast(getExportErrorMessageFrom(error, 'load'), 'danger')
   }
 }
 
@@ -1383,7 +1384,7 @@ onMounted(async () => {
       progressHandle = handle
     } catch (error) {
       if (!isUnmounted) {
-        await showToast(sanitizeError(error, '导出进度监听失败'), 'danger')
+        await showToast(getExportErrorMessageFrom(error, 'progress'), 'danger')
       }
     }
   })()

@@ -384,6 +384,7 @@ import BatchProgressOverlay from '@/components/common/BatchProgressOverlay.vue'
 import { useMultiSelect } from '@/composables/useMultiSelect'
 import { createAppAlert } from '@/services/AppAlertService'
 import { JmcomicService, sanitizeError, showToast } from '@/services/JmcomicService'
+import { getExportErrorMessage, getExportErrorMessageFrom } from '@/services/ExportErrorService'
 import { OfflineDownloadService } from '@/services/OfflineDownloadService'
 import {
   isRetainedDownload,
@@ -1764,7 +1765,7 @@ const requestOverwriteConfirmation = async (
 
   const alert = await createAppAlert({
     tone: 'danger',
-    header: '文件已存在',
+    header: '目标文件已存在',
     message: `以下 ${format.toUpperCase()} 文件已存在，是否覆盖？${pathSummary}${remainingSummary}`,
     buttons: [
       { text: '取消', role: 'cancel' },
@@ -1822,7 +1823,7 @@ const onExportConfirm = async (payload: {
           : payload.retainDownloadEntry,
     })
   } catch (e: any) {
-    await showToast(sanitizeError(e, '无法创建导出任务'), 'danger')
+    await showToast(getExportErrorMessageFrom(e, 'create'), 'danger')
     return
   }
 
@@ -1869,7 +1870,7 @@ const onExportConfirm = async (payload: {
             if (retryTask) finalTasks[originalIndex] = retryTask
           })
         } catch (e: any) {
-          await showToast(sanitizeError(e, '覆盖导出启动失败'), 'danger')
+          await showToast(getExportErrorMessageFrom(e, 'overwrite'), 'danger')
           return
         }
       }
@@ -1888,21 +1889,25 @@ const onExportConfirm = async (payload: {
           'medium',
         )
       } else if (accepted === 0) {
-        await showToast(`检测到已有同名 ${payload.format.toUpperCase()}，已取消覆盖`, 'medium')
+        await showToast('目标文件已存在。已取消覆盖。', 'medium')
       } else {
-        await showToast(`已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖`, 'medium')
+        await showToast(
+          `部分导出任务未开始。已开始 ${accepted} 个，${conflictIndexes.length} 个已取消覆盖。`,
+          'medium',
+        )
       }
       return
     }
     if (accepted === 0) {
-      await showToast(`${payload.format.toUpperCase()} 导出未开始，请查看任务失败原因`, 'danger')
+      const failure = finalTasks.find((task) => !task.accepted)
+      await showToast(getExportErrorMessage(failure?.errorCode, 'submit'), 'danger')
     } else if (rejected > 0) {
-      await showToast(`已开始 ${accepted} 个，${rejected} 个未进入队列，请查看导出任务`, 'medium')
+      await showToast('部分导出任务未开始。请打开导出任务查看失败原因。', 'medium')
     } else if (!isBatchExport) {
       await showToast(`${payload.format.toUpperCase()} 导出已开始，请查看通知`, 'success')
     }
   } catch (e: any) {
-    await showToast(sanitizeError(e, '导出启动失败'), 'danger')
+    await showToast(getExportErrorMessageFrom(e, 'submit'), 'danger')
   }
 }
 

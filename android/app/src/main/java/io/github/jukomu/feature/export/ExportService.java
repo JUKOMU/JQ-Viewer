@@ -698,12 +698,12 @@ public class ExportService {
                         preflight.totalPages, preflight.totalPages, preflight.volumes.size(),
                         preflight.volumes.size(), null, null, null);
                 } catch (ExportCancelledException | ExportCancelledRuntimeException error) {
-                    int currentVolume = currentExportVolume(job.exportId);
-                    logExportEvent(job, String.valueOf(batchId), "cancelled", "writing", "cancelled",
-                        0, queuedJob.preflight.totalPages, currentVolume,
-                        queuedJob.preflight.volumes.size(), "CANCELLED", null, null);
                     int completed = localFileStore.countCompletedVolumes(job.exportId);
                     String status = completed > 0 ? "partial" : "cancelled";
+                    int currentVolume = currentExportVolume(job.exportId);
+                    logExportEvent(job, String.valueOf(batchId), "cancelled", "writing", status,
+                        0, queuedJob.preflight.totalPages, currentVolume,
+                        queuedJob.preflight.volumes.size(), "CANCELLED", null, null);
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
                         "CANCELLED", "导出已取消");
@@ -714,13 +714,13 @@ public class ExportService {
                 } catch (Exception e) {
                     fail++;
                     ExportFailure failure = describeExportFailure(e, job);
+                    int completed = localFileStore.countCompletedVolumes(job.exportId);
+                    String status = completed > 0 ? "partial" : "failed";
                     int currentVolume = currentExportVolume(job.exportId);
-                    logExportEvent(job, String.valueOf(batchId), "failed", "writing", "failed",
+                    logExportEvent(job, String.valueOf(batchId), "failed", "writing", status,
                         0, queuedJob.preflight.totalPages, currentVolume,
                         queuedJob.preflight.volumes.size(), errorCode(e, job), null, e);
                     LOGGER.error(failure.debugMessage, e);
-                    int completed = localFileStore.countCompletedVolumes(job.exportId);
-                    String status = completed > 0 ? "partial" : "failed";
                     cleanupKnownArtifactsQuietly(job.exportId);
                     updateTerminalProgress(job, queuedJob.preflight, status, completed,
                         errorCode(e, job), failure.userMessage);

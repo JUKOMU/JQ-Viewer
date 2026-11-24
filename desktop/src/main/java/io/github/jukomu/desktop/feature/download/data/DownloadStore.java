@@ -11,6 +11,14 @@ import java.util.*;
  * 事务化保存下载任务、图片清单和启动恢复状态。
  */
 public final class DownloadStore {
+    // 任一已完成章节命中时，按漫画纳入结果，保留整本的章节和大小。
+    private static final String COMPLETED_SEARCH_FILTER =
+        " AND album_id IN (SELECT album_id FROM download_tasks WHERE status='completed' AND ("
+            + "instr(lower(album_title), lower(?1)) > 0 OR instr(lower(chapter_title), lower(?1)) > 0"
+            + " OR instr(lower(author), lower(?1)) > 0 OR instr(lower(authors_json), lower(?1)) > 0"
+            + " OR instr(lower(tags_json), lower(?1)) > 0 OR instr(album_id, ?1) > 0"
+            + " OR instr(chapter_id, ?1) > 0))";
+
     private static final String ACTIVE_STATUSES = "'queued','downloading','paused','verifying'";
 
     private final Connection connection;
@@ -99,6 +107,11 @@ public final class DownloadStore {
 
     public synchronized TaskPage page(String status, String sort, String direction,
                                       String cursor, int requestedLimit) {
+        return page(status, sort, direction, cursor, requestedLimit, null);
+    }
+
+    public synchronized TaskPage page(String status, String sort, String direction,
+                                      String cursor, int requestedLimit, String search) {
         String normalizedStatus = normalizeStatus(status);
         String normalizedSort = normalizeSort(sort);
         String normalizedDirection = "desc".equalsIgnoreCase(direction) ? "desc" : "asc";
@@ -109,7 +122,8 @@ public final class DownloadStore {
             ? flip(normalizedDirection) : normalizedDirection;
         // completed 先按 album 聚合并分页，再展开本页章节，避免分页边界拆开本子。
         if ("completed".equals(normalizedStatus)) {
-            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit);
+            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit,
+                search == null ? "" : search.trim());
         }
         String statusSql = "active".equals(normalizedStatus)
             ? "status IN (" + ACTIVE_STATUSES + ")" : "status='failed'";
@@ -224,15 +238,23 @@ public final class DownloadStore {
 
     public synchronized int countByStatus(String status) {
         if ("completed".equals(status)) {
-            try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT COUNT(DISTINCT album_id) FROM download_tasks WHERE status='completed'");
-                 ResultSet rows = statement.executeQuery()) {
-                return rows.next() ? rows.getInt(1) : 0;
-            } catch (SQLException exception) {
-                throw failure("统计已完成本子失败", exception);
-            }
+            return countCompletedAlbums("");
         }
         return count("active".equals(status) ? "status IN (" + ACTIVE_STATUSES + ")" : "status='failed'");
+    }
+
+    private int countCompletedAlbums(String search) {
+        boolean filtered = !search.isEmpty();
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT COUNT(DISTINCT album_id) FROM download_tasks WHERE status='completed'"
+                + (filtered ? COMPLETED_SEARCH_FILTER : ""))) {
+            if (filtered) statement.setString(1, search);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
+            }
+        } catch (SQLException exception) {
+            throw failure("统计已完成本子失败", exception);
+        }
     }
 
     public synchronized List<StoredDownloadTask> tasksByStatus(String status) {
@@ -545,7 +567,8 @@ public final class DownloadStore {
     }
 
     private TaskPage completedPage(String sort, String direction, String queryDirection,
-                                   CursorValue boundary, int limit) {
+                                    CursorValue boundary, int limit, String search) {
+        boolean filtered = !search.isEmpty();
         String value = switch (sort) {
             case "title" -> "g.album_title";
             case "id" -> "CAST(g.album_id AS INTEGER)";
@@ -562,13 +585,14 @@ public final class DownloadStore {
             + "FROM (SELECT album_id,MIN(album_title) AS album_title,"
             + "CAST(MAX(completed_at) AS INTEGER) AS latest_completed_at,SUM(total_size) AS total_size,"
             + "MIN(chapter_id) AS rep_chapter_id FROM download_tasks "
-            + "WHERE status='completed' GROUP BY album_id) g "
+            + "WHERE status='completed'" + (filtered ? COMPLETED_SEARCH_FILTER : "") + " GROUP BY album_id) g "
             + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
             + "AND r.status='completed' WHERE 1=1" + boundarySql
             + " ORDER BY " + order.replace("task_id", "g.album_id") + " LIMIT ?";
         List<AlbumRow> rows = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            int index = bindBoundary(statement, boundary, value, queryDirection, 1);
+            if (filtered) statement.setString(1, search);
+            int index = bindBoundary(statement, boundary, value, queryDirection, filtered ? 2 : 1);
             statement.setInt(index, limit + 1);
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) rows.add(new AlbumRow(
@@ -598,7 +622,7 @@ public final class DownloadStore {
               .encode(false, "completed", sort, direction) : null;
         String previous = boundary != null && (!boundary.previous() || hasNext) && !rows.isEmpty()
             ? rows.get(0).cursor(sort).encode(true, "completed", sort, direction) : null;
-        return new TaskPage(List.of(), albums, next, previous, countByStatus("completed"));
+        return new TaskPage(List.of(), albums, next, previous, countCompletedAlbums(search));
     }
 
     private int count(String where) {

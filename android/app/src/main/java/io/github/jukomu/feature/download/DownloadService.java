@@ -249,8 +249,8 @@ public class DownloadService {
     }
 
     public JSONObject getDownloadTasksPage(String status, String sort, String direction,
-                                           String cursor, int limit) throws org.json.JSONException {
-        JSONObject result = downloadDb.getTasksPage(status, sort, direction, cursor, limit);
+                                           String cursor, int limit, String search) throws org.json.JSONException {
+        JSONObject result = downloadDb.getTasksPage(status, sort, direction, cursor, limit, search);
         attachRetainedExports(result);
         result.put("usedBytes", getUsedBytes());
         result.put("availableBytes", getAvailableBytes());

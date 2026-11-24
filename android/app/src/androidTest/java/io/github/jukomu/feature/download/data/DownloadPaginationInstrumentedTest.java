@@ -87,6 +87,46 @@ public class DownloadPaginationInstrumentedTest {
     }
 
     @Test
+    public void completedSearchFiltersBeforePagingAndKeepsAllCompletedChapters() throws Exception {
+        try (Fixture fixture = new Fixture()) {
+            DownloadStore store = fixture.store;
+            fixture.add("5201", "prologue", "completed", 1);
+            fixture.add("5201", "second-chapter", "completed", 2);
+            fixture.add("5202", "prologue", "completed", 3);
+            fixture.add("5202", "failed-chapter", "failed", 4);
+            fixture.add("5203", "prologue", "completed", 5);
+            store.updateTaskDetail("5201_second-chapter", 1, "Alice", "[\"Second Artist\"]",
+                "[\"蓝色海岸\"]", 2, false);
+            store.updateTaskDetail("5202_failed-chapter", 1, "Alice", "[]",
+                "[\"蓝色海岸\"]", 2, false);
+            store.updateTaskDetail("5203_prologue", 1, "Alice", "[]",
+                "[\"蓝色海岸\"]", 1, true);
+            store.getWritableDatabase().execSQL(
+                "UPDATE download_tasks SET album_title='Moonlight Tale' WHERE album_id='5201'");
+
+            JSONObject first = store.getTasksPage("completed", "id", "asc", null, 1, "色海");
+            assertEquals(List.of("5201"), ids(first, "completed"));
+            assertEquals(2, first.getInt("totalCount"));
+            assertEquals(2, first.getJSONArray("items").getJSONObject(0).getJSONArray("chapters").length());
+
+            JSONObject second = store.getTasksPage("completed", "id", "asc",
+                first.getString("nextCursor"), 1, "色海");
+            assertEquals(List.of("5203"), ids(second, "completed"));
+            assertTrue(second.isNull("nextCursor"));
+            JSONObject previous = store.getTasksPage("completed", "id", "asc",
+                second.getString("previousCursor"), 1, "色海");
+            assertEquals(List.of("5201"), ids(previous, "completed"));
+
+            for (String search : List.of("light Ta", "cond-ch", "ond ART", "201")) {
+                JSONObject match = store.getTasksPage("completed", "id", "asc", null, 50, search);
+                assertEquals(search, List.of("5201"), ids(match, "completed"));
+                assertEquals(search, 1, match.getInt("totalCount"));
+            }
+            assertEquals(0, store.getTasksPage("completed", "id", "asc", null, 50, "%").getInt("totalCount"));
+        }
+    }
+
+    @Test
     public void authorPagesMatchSqlNullRankForSpacesAndTabs() throws Exception {
         try (Fixture fixture = new Fixture()) {
             fixture.add("album1", "chapter1", "failed", 1);

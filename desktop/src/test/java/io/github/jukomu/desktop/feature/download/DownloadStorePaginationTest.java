@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** 锁定下载列表分页的数据库边界，避免前端测试掩盖本子跨页问题。 */
 class DownloadStorePaginationTest {
@@ -40,6 +41,45 @@ class DownloadStorePaginationTest {
                     .map(DownloadStore.CompletedAlbum::albumId).toList());
             assertEquals("chapter-1", first.albums().get(0).chapters().get(0).chapterId());
             assertEquals("chapter-2", first.albums().get(0).chapters().get(1).chapterId());
+        }
+    }
+
+    @Test
+    void completedSearchFiltersBeforePagingAndKeepsAllCompletedChapters() throws Exception {
+        Path root = Files.createTempDirectory("jq-viewer-search-pagination-");
+        try (Database database = new Database(root.resolve("test.db"))) {
+            database.open();
+            DownloadStore store = new DownloadStore(database);
+            createCompleted(store, "5201", "prologue", 1);
+            createCompleted(store, "5201", "second-chapter", 2);
+            createCompleted(store, "5202", "prologue", 3);
+            createFailed(store, "5202", "failed-chapter", "Alice");
+            createCompleted(store, "5203", "prologue", 5);
+            try (var statement = database.connection().createStatement()) {
+                statement.executeUpdate("UPDATE download_tasks SET tags_json='[\"蓝色海岸\"]' "
+                    + "WHERE task_id IN ('5201_second-chapter','5202_failed-chapter','5203_prologue')");
+                statement.executeUpdate("UPDATE download_tasks SET authors_json='[\"Second Artist\"]' "
+                    + "WHERE task_id='5201_second-chapter'");
+            }
+
+            var first = store.page("completed", "id", "asc", null, 1, "色海");
+            assertEquals(List.of("5201"), pageIds(first));
+            assertEquals(2, first.totalCount());
+            assertEquals(2, first.albums().get(0).chapters().size());
+            assertEquals(20, first.albums().get(0).totalSize());
+
+            var second = store.page("completed", "id", "asc", first.nextCursor(), 1, "色海");
+            assertEquals(List.of("5203"), pageIds(second));
+            assertNull(second.nextCursor());
+            assertEquals(List.of("5201"),
+                pageIds(store.page("completed", "id", "asc", second.previousCursor(), 1, "色海")));
+
+            for (String search : List.of("bum 5201", "cond-ch", "ond ART", "201")) {
+                var match = store.page("completed", "id", "asc", null, 50, search);
+                assertEquals(List.of("5201"), pageIds(match), search);
+                assertEquals(1, match.totalCount(), search);
+            }
+            assertEquals(0, store.page("completed", "id", "asc", null, 50, "%").totalCount());
         }
     }
 

@@ -378,6 +378,7 @@ export interface DownloadTaskPageQuery {
   direction: DownloadTaskSortDirection
   cursor?: string
   limit?: number
+  search?: string
 }
 
 export interface DownloadTasksPageResult<T = DownloadTask | CompletedDownloadGroup> {

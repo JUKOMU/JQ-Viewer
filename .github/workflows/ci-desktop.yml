@@ -43,6 +43,9 @@ on:
 permissions:
   contents: read
 
+env:
+  MAVEN_VERSION: 3.10.0
+
 jobs:
   desktop:
     name: Desktop JVM and HTTP
@@ -62,6 +65,18 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+
+      - name: Install Maven 3.10.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+          root="$RUNNER_TEMP/apache-maven-${MAVEN_VERSION}"
+          curl --fail --silent --show-error --location \
+            "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/${archive}" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$root/bin" >> "$GITHUB_PATH"
+          "$root/bin/mvn" --version
 
       - run: npm ci
       - run: npm run desktop:sync -- --platform linux
@@ -104,6 +119,33 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+
+      - name: Install Maven 3.10.0 on Linux
+        if: ${{ matrix.platform == 'linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+          root="$RUNNER_TEMP/apache-maven-${MAVEN_VERSION}"
+          curl --fail --silent --show-error --location \
+            "https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/${archive}" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$root/bin" >> "$GITHUB_PATH"
+          "$root/bin/mvn" --version
+
+      - name: Install Maven 3.10.0 on Windows
+        if: ${{ matrix.platform == 'windows' }}
+        shell: pwsh
+        run: |
+          $archive = "apache-maven-$env:MAVEN_VERSION-bin.tar.gz"
+          $archivePath = Join-Path $env:RUNNER_TEMP $archive
+          $root = Join-Path $env:RUNNER_TEMP "apache-maven-$env:MAVEN_VERSION"
+          $url = "https://archive.apache.org/dist/maven/maven-3/$env:MAVEN_VERSION/binaries/$archive"
+          Invoke-WebRequest -Uri $url -OutFile $archivePath
+          tar -xzf $archivePath -C $env:RUNNER_TEMP
+          $mavenBin = Join-Path $root 'bin'
+          $mavenBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $mavenBin 'mvn.cmd') --version
 
       - name: Install Linux packaging tools
         if: ${{ matrix.platform == 'linux' }}

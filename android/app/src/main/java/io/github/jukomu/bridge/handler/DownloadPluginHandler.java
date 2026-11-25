@@ -48,7 +48,7 @@ public final class DownloadPluginHandler {
             call.resolve(JSObject.fromJSONObject(downloadService.getDownloadTasksPage(
                 call.getString("status", "active"), call.getString("sort", "time"),
                 call.getString("direction", "desc"), call.getString("cursor"),
-                call.getInt("limit", 50))));
+                call.getInt("limit", 50), call.getString("search"))));
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }

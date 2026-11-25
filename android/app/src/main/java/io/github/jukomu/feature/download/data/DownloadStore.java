@@ -29,6 +29,14 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     private static final String DB_NAME = "jq_download.db";
     private static final int DB_VERSION = 6;
 
+    // 任一已完成章节命中时，按漫画纳入结果，保留整本的章节和大小。
+    private static final String COMPLETED_SEARCH_FILTER =
+        " AND album_id IN (SELECT album_id FROM download_tasks WHERE status='completed' AND ("
+            + "instr(lower(album_title), lower(?1)) > 0 OR instr(lower(chapter_title), lower(?1)) > 0"
+            + " OR instr(lower(author), lower(?1)) > 0 OR instr(lower(authors_json), lower(?1)) > 0"
+            + " OR instr(lower(tags), lower(?1)) > 0 OR instr(album_id, ?1) > 0"
+            + " OR instr(chapter_id, ?1) > 0))";
+
     // ---- 表名 ----
     static final String TABLE_TASKS = "download_tasks";
     static final String TABLE_IMAGES = "download_images";
@@ -309,6 +317,11 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
 
     public JSONObject getTasksPage(String status, String sort, String direction,
                                    String cursor, int requestedLimit) throws org.json.JSONException {
+        return getTasksPage(status, sort, direction, cursor, requestedLimit, null);
+    }
+
+    public JSONObject getTasksPage(String status, String sort, String direction,
+                                   String cursor, int requestedLimit, String search) throws org.json.JSONException {
         String normalizedStatus = normalizeStatus(status);
         String normalizedSort = normalizeSort(sort);
         String normalizedDirection = "desc".equalsIgnoreCase(direction) ? "desc" : "asc";
@@ -319,7 +332,8 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
             ? flip(normalizedDirection) : normalizedDirection;
         // completed 先按 album 聚合并分页，再批量展开章节，保证同一本子不会跨页。
         if ("completed".equals(normalizedStatus)) {
-            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit);
+            return completedPage(normalizedSort, normalizedDirection, queryDirection, boundary, limit,
+                search == null ? "" : search.trim());
         }
         String selection = "active".equals(normalizedStatus)
             ? COL_STATUS + " IN (?, ?, ?, ?)" : COL_STATUS + " = ?";
@@ -348,8 +362,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !tasks.isEmpty()
             ? CursorBoundary.from(tasks.get(0), normalizedSort)
               .encode(true, normalizedStatus, normalizedSort, normalizedDirection) : JSONObject.NULL);
-        result.put("totalCount", "completed".equals(normalizedStatus)
-            ? countCompletedAlbums() : countTasks(normalizedStatus));
+        result.put("totalCount", countTasks(normalizedStatus));
         return result;
     }
 
@@ -418,9 +431,15 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     }
 
     public int countCompletedAlbums() {
+        return countCompletedAlbums("");
+    }
+
+    private int countCompletedAlbums(String search) {
+        boolean filtered = !search.isEmpty();
         try (Cursor c = getReadableDatabase().rawQuery(
             "SELECT COUNT(DISTINCT " + COL_ALBUM_ID + ") FROM " + TABLE_TASKS
-                + " WHERE " + COL_STATUS + "='completed'", null)) {
+                + " WHERE " + COL_STATUS + "='completed'" + (filtered ? COMPLETED_SEARCH_FILTER : ""),
+            filtered ? new String[]{search} : null)) {
             return c.moveToFirst() ? c.getInt(0) : 0;
         }
     }
@@ -438,7 +457,8 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
     }
 
     private JSONObject completedPage(String sort, String direction, String queryDirection,
-                                     CursorBoundary boundary, int limit) throws org.json.JSONException {
+                                      CursorBoundary boundary, int limit, String search) throws org.json.JSONException {
+        boolean filtered = !search.isEmpty();
         String value = switch (sort) {
             case "title" -> "g.album_title";
             case "id" -> "CAST(g.album_id AS INTEGER)";
@@ -453,13 +473,16 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         String sql = "SELECT g.album_id,g.album_title,g.latest_completed_at,g.total_size,g.rep_chapter_id,"
             + "r.cover_url,r.author,r.authors_json,r.is_single_episode FROM (SELECT album_id,"
             + "MIN(album_title) album_title,CAST(MAX(completed_at) AS INTEGER) latest_completed_at,SUM(total_size) total_size,"
-            + "MIN(chapter_id) rep_chapter_id FROM download_tasks WHERE status='completed' GROUP BY album_id) g "
+            + "MIN(chapter_id) rep_chapter_id FROM download_tasks WHERE status='completed'"
+            + (filtered ? COMPLETED_SEARCH_FILTER : "") + " GROUP BY album_id) g "
             + "JOIN download_tasks r ON r.album_id=g.album_id AND r.chapter_id=g.rep_chapter_id "
             + "AND r.status='completed' WHERE 1=1" + selection + " ORDER BY " + order + " LIMIT ?";
         List<JSONObject> rows = new ArrayList<>();
-        String[] args = boundary == null ? new String[0]
-            : new String[]{Integer.toString(boundary.nullFlag()), Integer.toString(boundary.nullFlag()),
-            boundary.value, boundary.value, boundary.stable, boundary.stable};
+        String[] args = filtered ? new String[]{search} : new String[0];
+        if (boundary != null) {
+            args = append(args, boundary.nullFlag(), boundary.nullFlag(), boundary.value,
+                boundary.value, boundary.stable, boundary.stable);
+        }
         try {
             try (Cursor c = getReadableDatabase().rawQuery(sql, append(args, Integer.toString(limit + 1)))) {
                 while (c.moveToNext()) {
@@ -522,7 +545,7 @@ public class DownloadStore extends SQLiteOpenHelper implements DownloadTaskReade
         result.put("previousCursor", boundary != null && (!boundary.previous || hasNext) && !rows.isEmpty()
             ? CursorBoundary.from(rows.get(0), sort)
               .encode(true, "completed", sort, direction) : JSONObject.NULL);
-        result.put("totalCount", countCompletedAlbums());
+        result.put("totalCount", countCompletedAlbums(search));
         return result;
     }
 

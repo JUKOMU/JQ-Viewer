@@ -58,7 +58,7 @@
         <div v-if="initialLoading" class="download-list-loader">
           <IonSpinner name="dots" />
         </div>
-        <div v-else-if="!hasTasks" class="empty-state">
+        <div v-else-if="!showDownloadGroups" class="empty-state">
           <IonIcon :icon="cloudDownloadOutline" class="empty-icon" />
           <p>暂无下载内容</p>
         </div>
@@ -94,7 +94,7 @@
               <span>可用 {{ formatBytes(spaceAvailBytes) }}</span>
             </div>
           </div>
-          <div v-if="hasTasks" class="sort-label-row">
+          <div class="sort-label-row">
             <button
               type="button"
               class="sort-btn sort-direction-btn"
@@ -145,48 +145,113 @@
               selectedTask,
               downloadSelectionActive,
               downloadSelectedIds,
+              group.key === 'completed' && completedSearchOpen,
+              group.key === 'completed' && completedSearchRevealing,
+              group.key === 'completed' && completedSearchText,
+              group.key === 'completed' && completedSearch,
+              group.key === 'completed' && group.initialized,
             ]"
+            :id="group.key === 'completed' ? 'completed-download-group' : undefined"
             class="download-group section"
           >
-            <h2 class="section-header">
-              <button
-                type="button"
-                class="section-toggle"
-                :aria-expanded="!group.collapsed"
-                :disabled="downloadSelectionActive"
-                :aria-controls="`download-group-${group.key}`"
-                :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
-                @click="toggleGroup(group.key, $event)"
+            <div class="section-header">
+              <h2 class="section-header-row">
+                <button
+                  type="button"
+                  class="section-toggle"
+                  :aria-expanded="!group.collapsed"
+                  :disabled="downloadSelectionActive"
+                  :aria-controls="`download-group-${group.key}`"
+                  :aria-label="`${group.collapsed ? '展开' : '收起'}${group.label}`"
+                  @click="toggleGroup(group.key, $event)"
+                >
+                  <span class="section-title">
+                    {{ group.label }} <span class="section-count">({{ group.totalCount }})</span>
+                  </span>
+                  <IonIcon
+                    :icon="chevronDownOutline"
+                    class="section-toggle-icon"
+                    :class="{ collapsed: group.collapsed }"
+                    aria-hidden="true"
+                  />
+                </button>
+                <button
+                  v-if="group.key === 'completed'"
+                  type="button"
+                  class="completed-search-toggle"
+                  :class="{ 'is-expanded': completedSearchOpen }"
+                  :aria-expanded="completedSearchOpen"
+                  aria-controls="completed-download-search"
+                  :aria-label="completedSearchOpen ? '收起搜索' : '搜索已完成下载'"
+                  :disabled="downloadSelectionActive"
+                  @click="toggleCompletedSearch"
+                >
+                  <IonIcon :icon="searchOutline" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="group.clearable"
+                  type="button"
+                  class="clear-btn"
+                  :disabled="
+                    downloadSelectionActive || (group.key === 'completed' && completedSearch !== '')
+                  "
+                  @click="requestClear(group.status as 'completed' | 'failed')"
+                >
+                  清空
+                </button>
+                <button
+                  v-if="group.clearable"
+                  type="button"
+                  class="clear-btn"
+                  :disabled="downloadSelectionActive"
+                  @click="enterGroupDownloadSelection(group.key)"
+                >
+                  多选
+                </button>
+              </h2>
+              <Transition
+                v-if="group.key === 'completed'"
+                name="completed-search"
+                @after-leave="finishCompletedSearchClose"
               >
-                <span class="section-title">
-                  {{ group.label }} <span class="section-count">({{ group.totalCount }})</span>
-                </span>
-                <IonIcon
-                  :icon="chevronDownOutline"
-                  class="section-toggle-icon"
-                  :class="{ collapsed: group.collapsed }"
-                  aria-hidden="true"
-                />
-              </button>
-              <button
-                v-if="group.clearable"
-                type="button"
-                class="clear-btn"
-                :disabled="downloadSelectionActive"
-                @click="requestClear(group.status as 'completed' | 'failed')"
-              >
-                清空
-              </button>
-              <button
-                v-if="group.clearable"
-                type="button"
-                class="clear-btn"
-                :disabled="downloadSelectionActive"
-                @click="enterGroupDownloadSelection(group.key)"
-              >
-                多选
-              </button>
-            </h2>
+                <div
+                  v-show="completedSearchOpen"
+                  id="completed-download-search"
+                  class="completed-search-drawer"
+                  :class="{ 'is-revealing': completedSearchRevealing }"
+                  :inert="!completedSearchOpen"
+                >
+                  <div class="completed-search-drawer-inner">
+                    <form
+                      class="completed-search-form"
+                      role="search"
+                      @submit.prevent="applyCompletedSearch()"
+                    >
+                      <IonSearchbar
+                        :value="completedSearchText"
+                        :disabled="downloadSelectionActive"
+                        aria-label="搜索已完成下载"
+                        placeholder="搜索已完成下载"
+                        enterkeyhint="search"
+                        show-clear-button="always"
+                        @ion-input="completedSearchText = $event.detail.value ?? ''"
+                        @ion-clear="clearCompletedSearch"
+                        @keydown.enter="onCompletedSearchEnter"
+                      />
+                      <button
+                        type="submit"
+                        class="completed-search-submit"
+                        aria-label="搜索"
+                        :disabled="downloadSelectionActive"
+                        @animationend.self="completedSearchRevealing = false"
+                      >
+                        <IonIcon :icon="searchOutline" aria-hidden="true" />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </Transition>
+            </div>
             <div
               v-if="!group.collapsed"
               :id="`download-group-${group.key}`"
@@ -257,6 +322,14 @@
               >
                 加载失败，点击重试
               </button>
+              <p
+                v-else-if="
+                  group.key === 'completed' && completedSearch && group.initialized && !group.totalCount
+                "
+                class="completed-search-empty"
+              >
+                没有匹配的已完成下载
+              </p>
               <div
                 v-if="group.nextCursor"
                 class="group-sentinel"
@@ -349,6 +422,7 @@ import {
   IonPage,
   IonRefresher,
   IonRefresherContent,
+  IonSearchbar,
   IonSpinner,
   IonToolbar,
   onIonViewWillEnter,
@@ -368,6 +442,7 @@ import {
   playOutline,
   refreshOutline,
   saveOutline,
+  searchOutline,
   timeOutline,
   trashOutline,
 } from 'ionicons/icons'
@@ -449,7 +524,7 @@ const {
   selected: downloadSelectedIds,
   count: downloadSelectionCount,
   allSelected: downloadSelectionAllSelected,
-  enter: enterDownloadSelection,
+  enter: beginDownloadSelection,
   toggle: toggleDownloadSelection,
   selectAll: selectAllDownloadItems,
   invert: invertDownloadItems,
@@ -543,13 +618,26 @@ const downloadGroupStates = reactive<Record<DownloadGroupKey, DownloadGroupState
   failed: createDownloadGroup('failed', '下载失败', true),
 })
 const downloadGroups = computed(() => Object.values(downloadGroupStates))
+const completedSearchOpen = ref(false)
+const completedSearchClosing = ref(false)
+const completedSearchRevealing = ref(false)
+const completedSearchText = ref('')
+const completedSearch = ref('')
+const completedSearchTransition = ref<symbol | null>(null)
 const tasks = ref<DownloadTask[]>([])
 const initialLoading = computed(
   () =>
-    !hasTasks.value && downloadGroups.value.some((group) => group.loading && !group.initialized),
+    !showDownloadGroups.value &&
+    downloadGroups.value.some((group) => group.loading && !group.initialized),
 )
 const hasTasks = computed(() =>
   downloadGroups.value.some((group) => group.totalCount > 0 || group.items.length > 0),
+)
+const showDownloadGroups = computed(() =>
+  hasTasks.value ||
+  completedSearchOpen.value ||
+  completedSearchClosing.value ||
+  completedSearchTransition.value !== null,
 )
 const spaceUsedBytes = ref(0)
 const spaceAvailBytes = ref(0)
@@ -941,6 +1029,11 @@ const downloadSelectionActions = computed(() => {
   return actions
 })
 
+const enterDownloadSelection = (taskId?: string) => {
+  // 收起后会清除搜索条件，多选应从已经恢复的列表开始。
+  if (!completedSearchClosing.value) beginDownloadSelection(taskId)
+}
+
 const enterCompletedDownloadSelection = (group: CompletedDownloadGroup) => {
   if (group.type !== 'single') return
   completedSelectionDomain.value = true
@@ -987,6 +1080,7 @@ async function prepareDownloadSelection(invert: boolean) {
           direction: sortDirection.value,
           cursor,
           limit: 50,
+          ...(status === 'completed' && completedSearch.value ? { search: completedSearch.value } : {}),
         })
         if (token !== downloadSelectionToken) return
         for (const item of page.items) {
@@ -1188,7 +1282,85 @@ const resetGroup = (group: DownloadGroupState, keepWindow = false) => {
 
 let restoredDownloadScrollTop: number | null = null
 
-const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' = 'next') => {
+const clearCompletedSearch = () => {
+  completedSearchText.value = ''
+  void applyCompletedSearch()
+}
+
+const onCompletedSearchEnter = (event: KeyboardEvent) => {
+  if (event.isComposing) return
+  event.preventDefault()
+  void applyCompletedSearch()
+}
+
+const toggleCompletedSearch = () => {
+  completedSearchOpen.value = !completedSearchOpen.value
+  if (completedSearchOpen.value && !completedSearchClosing.value) {
+    completedSearchRevealing.value = true
+  }
+  completedSearchClosing.value = !completedSearchOpen.value
+}
+
+const finishCompletedSearchClose = () => {
+  completedSearchClosing.value = false
+  completedSearchRevealing.value = false
+  clearCompletedSearch()
+}
+
+const scrollToCompletedGroup = (scrollElement: HTMLElement, section: HTMLElement) => {
+  // 吸顶标题的视口坐标会随滚动变化，使用分组容器计算列表起点。
+  const previousTop = scrollElement.scrollTop
+  const targetTop =
+    previousTop + section.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top
+  scrollElement.scrollTop = targetTop
+  const actualTop = scrollElement.scrollTop
+  if (actualTop !== previousTop) {
+    downloadScrollTop = actualTop
+    restoredDownloadScrollTop = actualTop
+  }
+  return targetTop - actualTop > 1
+}
+
+async function applyCompletedSearch() {
+  if (downloadSelectionActive.value) {
+    completedSearchText.value = completedSearch.value
+    return
+  }
+  const search = completedSearchText.value.trim()
+  if (search === completedSearch.value) return
+  const transition = Symbol()
+  completedSearchTransition.value = transition
+  completedSearch.value = search
+  const group = downloadGroupStates.completed
+  group.collapsed = false
+  resetGroup(group)
+  rebuildVisibleTasks()
+  const request = loadGroup('completed', 'next', false)
+  try {
+    await nextTick()
+    const scrollElement = await resolveDownloadScrollElement()
+    const section: HTMLElement | null | undefined =
+      downloadContentRef.value?.$el?.querySelector('#completed-download-group')
+    const canPosition = () =>
+      completedSearchTransition.value === transition && activeMainView.value === 'downloads'
+    const clamped =
+      scrollElement && section && canPosition() && scrollToCompletedGroup(scrollElement, section)
+    const loadingTop = scrollElement?.scrollTop
+    await request
+    // 加载行较短时可能先碰到滚动底部，列表渲染后再补足剩余偏移。
+    if (clamped && scrollElement && section && canPosition() && scrollElement.scrollTop === loadingTop) {
+      scrollToCompletedGroup(scrollElement, section)
+    }
+  } finally {
+    if (completedSearchTransition.value === transition) completedSearchTransition.value = null
+  }
+}
+
+const loadGroup = async (
+  key: DownloadGroupKey,
+  direction: 'next' | 'previous' = 'next',
+  preserveScroll = true,
+) => {
   if (downloadSelectionActive.value) return
   const group = downloadGroupStates[key]
   if (group.loading || (group.collapsed && group.initialized)) return
@@ -1208,12 +1380,15 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
       direction: sortDirection.value,
       ...(cursor ? { cursor } : {}),
       limit: 50,
+      ...(key === 'completed' && completedSearch.value ? { search: completedSearch.value } : {}),
     })
+    if (requestId !== group.requestId || isUnmounted) return
     const pageTasks = result.items.flatMap((item) => 'chapters' in item ? item.chapters : [item])
     let verifiedTasks = pageTasks
     try {
       verifiedTasks = await verifyRetainedDownloads(pageTasks)
     } catch (error) {
+      if (requestId !== group.requestId || isUnmounted) return
       // 校验异常不隐藏下载记录，也不能沿用上次的可用结论。
       verifiedTasks = pageTasks.map((task) => hasRetainedExport(task)
         ? { ...task, retainedFileStatus: 'unknown' as const } : task)
@@ -1224,7 +1399,7 @@ const loadGroup = async (key: DownloadGroupKey, direction: 'next' | 'previous' =
       ? { ...item, chapters: item.chapters.map((task) => verified.get(task.taskId)!) }
       : verified.get(item.taskId)!)
     if (requestId !== group.requestId || isUnmounted) return
-    const viewport = scrollElement?.getBoundingClientRect()
+    const viewport = preserveScroll ? scrollElement?.getBoundingClientRect() : undefined
     const anchor = viewport
       ? Array.from(document.querySelectorAll<HTMLElement>('[data-download-key]')).find(
           (element) => element.getBoundingClientRect().bottom > viewport.top,
@@ -1285,7 +1460,7 @@ const toggleGroup = async (key: DownloadGroupKey, event?: MouseEvent) => {
   const group = downloadGroupStates[key]
   group.collapsed = !group.collapsed
   if (group.collapsed) {
-    const header = event ? (event.currentTarget as HTMLElement).parentElement : null
+    const header = (event?.currentTarget as HTMLElement | undefined)?.closest('.section-header')
     const headerTop = header?.getBoundingClientRect().top
     if (header && headerTop !== undefined) {
       await nextTick()
@@ -1418,7 +1593,10 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
           continue
         }
         const failedGroups = downloadGroups.value.filter(
-          (group) => (readCollapsed || !group.collapsed) && group.error,
+          (group) =>
+            (readCollapsed || !group.collapsed) &&
+            group.error &&
+            (group.key !== 'completed' || !completedSearch.value),
         )
         if (failedGroups.length) {
           const cached = OfflineDownloadService.getAll()
@@ -1441,7 +1619,7 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
           }
           rebuildVisibleTasks()
           hasStorageInfo.value = false
-        } else {
+        } else if (!completedSearch.value && !downloadGroupStates.completed.loading) {
           OfflineDownloadService.setAll(tasks.value)
           const completed = downloadGroupStates.completed.items.filter(
             (item): item is CompletedDownloadGroup => 'chapters' in item,
@@ -1460,18 +1638,17 @@ const syncDownloadState = async (includeCollapsed = false): Promise<void> => {
           ['queued', 'downloading', 'paused', 'verifying'].includes(task.status),
         )
         downloadGroupStates.failed.items = cached.filter((task) => task.status === 'failed')
-        downloadGroupStates.completed.items = OfflineDownloadService.getCompletedGroups()
         for (const group of downloadGroups.value) {
+          if (group.key === 'completed') {
+            if (completedSearch.value) continue
+            group.items = OfflineDownloadService.getCompletedGroups()
+          }
           setGroupPages(group, [
             { items: group.items.slice(0, 150), nextCursor: null, previousCursor: null },
           ])
+          group.totalCount = group.items.length
+          group.initialized = true
         }
-        downloadGroupStates.active.totalCount = downloadGroupStates.active.items.length
-        downloadGroupStates.failed.totalCount = downloadGroupStates.failed.items.length
-        downloadGroupStates.completed.totalCount = downloadGroupStates.completed.items.length
-        downloadGroupStates.active.initialized = true
-        downloadGroupStates.failed.initialized = true
-        downloadGroupStates.completed.initialized = true
         rebuildVisibleTasks()
         hasStorageInfo.value = false
       }
@@ -2472,15 +2649,18 @@ const clearFailed = async () => {
 }
 
 .section-header {
-  display: flex;
   position: sticky;
   top: 0;
+  padding: 0 2px;
+}
+
+.section-header-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   margin: 0;
   min-height: 44px;
   gap: 8px;
-  padding: 0 2px;
 }
 
 .section-header.is-stuck {
@@ -2534,6 +2714,172 @@ const clearFailed = async () => {
   transform: rotate(-90deg);
 }
 
+.completed-search-toggle,
+.completed-search-submit {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.completed-search-toggle {
+  width: 44px;
+  height: 44px;
+  justify-items: end;
+  margin-inline-end: -4px;
+  background: transparent;
+  color: #8a6048;
+  font-size: 14px;
+}
+
+.completed-search-toggle ion-icon {
+  box-sizing: content-box;
+  padding: 5px 7px;
+  border-radius: 999px;
+}
+
+.completed-search-toggle.is-expanded ion-icon {
+  background: #ffe7da;
+  color: #e8843c;
+  box-shadow: 0 1px 2px rgb(113 72 45 / 0.2);
+}
+
+.completed-search-drawer {
+  display: grid;
+  grid-template-rows: 1fr;
+  --search-open-duration: 140ms;
+  --search-close-duration: 160ms;
+  --search-sweep-duration: 400ms;
+}
+
+.completed-search-drawer-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.completed-search-enter-active {
+  transition: grid-template-rows var(--search-open-duration) ease-out;
+}
+
+.completed-search-leave-active {
+  transition: grid-template-rows var(--search-close-duration) ease-in;
+}
+
+.completed-search-enter-from,
+.completed-search-leave-to {
+  grid-template-rows: 0fr;
+}
+
+.completed-search-form {
+  --search-submit-start: 10px;
+  --search-submit-end: 4px;
+  display: flex;
+  position: relative;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 2px 36px 2px var(--search-submit-start);
+  border: 1px solid rgb(250 156 105 / 0.3);
+  border-radius: 15px;
+  background: #fffbf8;
+}
+
+.completed-search-enter-active .completed-search-form {
+  transition: transform var(--search-open-duration) ease-out;
+}
+
+.completed-search-leave-active .completed-search-form {
+  transition: transform var(--search-close-duration) ease-in;
+}
+
+.completed-search-enter-from .completed-search-form,
+.completed-search-leave-to .completed-search-form {
+  transform: translateY(-100%);
+}
+
+.completed-search-form ion-searchbar {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  --background: transparent;
+  --border-radius: 8px;
+  --box-shadow: none;
+}
+
+.completed-search-form :deep(.searchbar-search-icon) {
+  display: none !important;
+}
+
+.completed-search-form :deep(.searchbar-input-container) {
+  min-height: 0;
+}
+
+.completed-search-form :deep(.searchbar-input) {
+  height: 28px;
+  padding-block: 0;
+  padding-inline-start: 4px !important;
+  line-height: 28px;
+}
+
+.completed-search-submit {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: var(--search-submit-end);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fa9c69;
+  color: #fff;
+  font-size: 14px;
+}
+
+.completed-search-drawer.is-revealing .completed-search-form :deep(.searchbar-input) {
+  animation: completed-search-reveal var(--search-sweep-duration) ease-in-out var(--search-open-duration) backwards;
+}
+
+.completed-search-drawer.is-revealing .completed-search-submit {
+  animation: completed-search-sweep var(--search-sweep-duration) ease-in-out var(--search-open-duration) backwards;
+}
+
+/* 展开后同步滑动按钮与输入框遮罩，收起时将它们一起带走。 */
+.completed-search-enter-from .completed-search-submit,
+.completed-search-leave-active .completed-search-submit,
+.completed-search-enter-from .completed-search-form :deep(.searchbar-input),
+.completed-search-leave-active .completed-search-form :deep(.searchbar-input) {
+  animation-play-state: paused;
+}
+
+@keyframes completed-search-sweep {
+  from {
+    inset-inline-end: calc(100% - var(--search-submit-start) - 28px);
+  }
+}
+
+@keyframes completed-search-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+.completed-search-toggle:disabled,
+.completed-search-submit:disabled,
+.clear-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.completed-search-empty {
+  margin: 0;
+  padding: 12px;
+  color: #8a6048;
+  font-size: 14px;
+  text-align: center;
+}
+
 .section-content {
   overflow: visible;
 }
@@ -2581,15 +2927,19 @@ const clearFailed = async () => {
   pointer-events: none;
 }
 
-.section-title {
+.section-title,
+.section-count,
+.completed-search-form :deep(.searchbar-input) {
   font-size: 13px;
+}
+
+.section-title {
   font-weight: 600;
   color: #8a6048;
 }
 
 .section-count {
   color: #b89078;
-  font-size: 13px;
   font-weight: 500;
 }
 
@@ -2616,6 +2966,8 @@ const clearFailed = async () => {
 }
 
 .sort-btn:focus-visible,
+.completed-search-toggle:focus-visible,
+.completed-search-submit:focus-visible,
 .clear-btn:focus-visible {
   outline: 2px solid #c06f45;
   outline-offset: 2px;
@@ -2628,6 +2980,11 @@ const clearFailed = async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .completed-search-drawer {
+    --search-open-duration: 0ms;
+    --search-close-duration: 0ms;
+    --search-sweep-duration: 0ms;
+  }
   .section-toggle-icon {
     transition-duration: 0.01ms;
   }

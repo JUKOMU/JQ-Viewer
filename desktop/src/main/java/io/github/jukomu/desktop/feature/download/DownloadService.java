@@ -163,7 +163,7 @@ public final class DownloadService implements AutoCloseable {
         DownloadTasksPageRequest query = request == null
             ? new DownloadTasksPageRequest("active", "time", "desc", null, 50) : request;
         DownloadStore.TaskPage page = store.page(query.status(), query.sort(), query.direction(),
-            query.cursor(), query.effectiveLimit());
+            query.cursor(), query.effectiveLimit(), query.search());
         List<?> items = "completed".equals(query.status())
             ? page.albums().stream().map(this::completedResponse).toList()
             : page.tasks().stream().map(this::response).toList();

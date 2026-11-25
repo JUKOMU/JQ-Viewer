@@ -55,6 +55,7 @@ vi.mock('@ionic/vue', () => {
     IonPopover: withSlot('IonPopover'),
     IonRefresher: withSlot('IonRefresher'),
     IonRefresherContent: withSlot('IonRefresherContent'),
+    IonSearchbar: withSlot('IonSearchbar', 'input'),
     IonSpinner: withSlot('IonSpinner', 'span'),
     IonToolbar: withSlot('IonToolbar'),
     onIonViewWillEnter: (hook: () => void) => {
@@ -392,6 +393,120 @@ describe('DownloadPage PDF keepAlive 生命周期', () => {
 
     const content = wrapper.findAllComponents({ name: 'IonContent' })[0]
     expect(content.attributes('scroll-events')).toBe('true')
+    wrapper.unmount()
+  })
+
+  test('已完成搜索须手动提交，定位到分组开头，空关键词恢复完整列表', async () => {
+    mocks.route.query = { view: 'downloads' }
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status, search, cursor }) => {
+      if (status !== 'completed') return emptyPage()
+      if (search === '月亮') {
+        return {
+          ...emptyPage(),
+          items: [groupAt(cursor ? 3 : 2)],
+          totalCount: 2,
+          nextCursor: cursor ? null : 'moon-next',
+        }
+      }
+      return { ...emptyPage(), items: [groupAt(1), groupAt(2), groupAt(3)], totalCount: 3 }
+    })
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const group = wrapper.get('#completed-download-group')
+    const content = wrapper.findAllComponents({ name: 'IonContent' })[0].element as HTMLElement & {
+      getScrollElement?: () => Promise<HTMLElement>
+    }
+    content.getScrollElement = async () => content
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 40))
+    vi.spyOn(group.element, 'getBoundingClientRect')
+      .mockImplementation(() => new DOMRect(0, 540 - content.scrollTop))
+    content.scrollTop = 250
+    mocks.getDownloadTasksPage.mockClear()
+
+    await group.get('.completed-search-toggle').trigger('click')
+    const searchbar = group.getComponent({ name: 'IonSearchbar' })
+    searchbar.vm.$emit('ionInput', { detail: { value: '  月亮  ' } })
+    await nextTick()
+    expect(mocks.getDownloadTasksPage).not.toHaveBeenCalled()
+    expect(content.scrollTop).toBe(250)
+
+    await group.get('form').trigger('submit')
+    await flushPromises()
+    expect(mocks.getDownloadTasksPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'completed', search: '月亮' }),
+    )
+    expect(content.scrollTop).toBe(500)
+    expect(group.findAll('.task-card')).toHaveLength(1)
+    expect(group.get('.clear-btn').attributes('disabled')).toBeDefined()
+
+    const state = (wrapper.vm as any).$.setupState
+    await state.loadGroup('completed')
+    expect(mocks.getDownloadTasksPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'completed', search: '月亮', cursor: 'moon-next' }),
+    )
+    expect(group.findAll('.task-card')).toHaveLength(2)
+
+    searchbar.vm.$emit('ionClear')
+    await flushPromises()
+    expect(mocks.getDownloadTasksPage.mock.calls.at(-1)?.[0].search).toBeUndefined()
+    expect(group.findAll('.task-card')).toHaveLength(3)
+    expect(group.get('.completed-search-toggle').attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
+  })
+
+  test('已完成搜索失败后刷新仍可重试，离线快照不会混入结果', async () => {
+    mocks.route.query = { view: 'downloads' }
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status, search }) => {
+      if (status !== 'completed') return emptyPage()
+      if (search) throw new Error('查询失败')
+      return { ...emptyPage(), items: [groupAt(1)], totalCount: 1 }
+    })
+    mocks.offlineGetCompletedGroups.mockReturnValue([groupAt(99)])
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const group = wrapper.get('#completed-download-group')
+    await group.get('.completed-search-toggle').trigger('click')
+    group.getComponent({ name: 'IonSearchbar' }).vm.$emit('ionInput', { detail: { value: '月亮' } })
+    await group.get('form').trigger('submit')
+    await flushPromises()
+
+    mocks.offlineSetAll.mockClear()
+    const state = (wrapper.vm as any).$.setupState
+    await state.syncDownloadState()
+    expect(mocks.offlineSetAll).not.toHaveBeenCalled()
+    expect(group.findAll('.task-card')).toHaveLength(0)
+    expect(group.get('.browse-group-retry').text()).toContain('加载失败')
+    await group.get('.browse-group-retry').trigger('click')
+    await flushPromises()
+    expect(mocks.getDownloadTasksPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'completed', search: '月亮' }),
+    )
+    wrapper.unmount()
+  })
+
+  test('收起已完成分组时保留标题栏位置和已展开的搜索框', async () => {
+    mocks.route.query = { view: 'downloads' }
+    mocks.getDownloadTasksPage.mockImplementation(async ({ status }) => status === 'completed'
+      ? { ...emptyPage(), items: [groupAt(1)], totalCount: 1 }
+      : emptyPage())
+    const wrapper = mount(DownloadPage)
+    await flushPromises()
+    const group = wrapper.get('#completed-download-group')
+    const content = wrapper.findAllComponents({ name: 'IonContent' })[0].element as HTMLElement & {
+      getScrollElement?: () => Promise<HTMLElement>
+    }
+    content.getScrollElement = async () => content
+    content.scrollTop = 250
+    vi.spyOn(group.get('.section-header').element, 'getBoundingClientRect')
+      .mockImplementation(() => new DOMRect(0, group.find('.section-content').exists() ? 180 : 129))
+
+    await group.get('.completed-search-toggle').trigger('click')
+    await group.get('.section-toggle').trigger('click')
+    await flushPromises()
+
+    expect(group.find('.section-content').exists()).toBe(false)
+    expect(group.get('.completed-search-toggle').attributes('aria-expanded')).toBe('true')
+    expect(content.scrollTop).toBe(199)
     wrapper.unmount()
   })
 

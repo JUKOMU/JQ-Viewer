@@ -78,12 +78,13 @@ public class DownloadPluginContractInstrumentedTest {
         downloadService.usedBytes = 123L;
         downloadService.availableBytes = 456L;
         downloadService.totalBytes = 789L;
-        RecordingPluginCall call = call("getDownloadTasksPage", "status", "active",
-            "sort", "time", "direction", "desc", "limit", 50);
+        RecordingPluginCall call = call("getDownloadTasksPage", "status", "completed",
+            "sort", "time", "direction", "desc", "limit", 50, "search", "海岸");
 
         plugin.getDownloadTasksPage(call);
 
         JSONArray tasks = call.resolvedData.getJSONArray("items");
+        assertEquals("海岸", downloadService.searchKeyword);
         assertEquals(1, tasks.length());
         assertEquals("a_b", tasks.getJSONObject(0).getString("taskId"));
         assertEquals(1, call.resolvedData.getInt("totalCount"));
@@ -226,6 +227,7 @@ public class DownloadPluginContractInstrumentedTest {
         private long usedBytes;
         private long availableBytes;
         private long totalBytes;
+        private String searchKeyword;
         private RuntimeException failure;
         private String albumId;
         private String chapterId;
@@ -259,8 +261,9 @@ public class DownloadPluginContractInstrumentedTest {
 
         @Override
         public JSONObject getDownloadTasksPage(String status, String sort, String direction,
-                                               String cursor, int limit) {
+                                               String cursor, int limit, String search) {
             failIfNeeded();
+            searchKeyword = search;
             try {
                 JSONObject page = new JSONObject();
                 page.put("items", tasks);

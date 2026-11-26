@@ -1,5 +1,9 @@
 // @vitest-environment node
 
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -7,6 +11,7 @@ import {
   createVisitSample,
   formatVisitValue,
   mergeVisitHistory,
+  updateVisitHistory,
 } from '../../scripts/release-visits.mjs'
 
 function release(id, tagName, assets) {
@@ -99,6 +104,44 @@ describe('release visits', () => {
     ])
     expect(buildChartPoints(history)).toHaveLength(14)
     expect(buildChartPoints(history)[0]).toEqual({ date: '2026-08-02', increment: 10, total: 110 })
+  })
+
+  it('archives past months and preserves daily increments across retries and missed days', ({ onTestFinished }) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-visits-'))
+    onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }))
+    const historyFile = path.join(dir, 'release-visits.json')
+    const july = [{ date: '2026-07-31', releases: [] }]
+    const august = Array.from({ length: 31 }, (_, index) =>
+      createVisitSample(
+        [release(10, 'v1', [asset(100, 'app.apk', 100 + index)])],
+        new Date(Date.UTC(2026, 7, index + 1)),
+      ),
+    )
+    let full = { schemaVersion: 1, samples: [...july, ...august] }
+    fs.writeFileSync(historyFile, JSON.stringify(full))
+
+    // 从 9 月 2 日开始采样，并覆盖首个展示日移至当月的边界。
+    for (let day = 2; day <= 16; day++) {
+      const sample = createVisitSample(
+        [release(10, 'v1', [asset(100, 'app.apk', 130 + day)])],
+        new Date(Date.UTC(2026, 8, day)),
+      )
+      full = mergeVisitHistory(full, sample)
+      const expected = buildChartPoints(full)
+      expect(updateVisitHistory(dir, sample)).toEqual(expected)
+      expect(updateVisitHistory(dir, sample)).toEqual(expected)
+      const retained = JSON.parse(fs.readFileSync(historyFile, 'utf8'))
+      expect(retained).toEqual({
+        schemaVersion: 1,
+        samples: full.samples.slice(-Math.max(14, day - 1)),
+      })
+    }
+
+    for (const [month, samples] of [['2026.07', july], ['2026.08', august]]) {
+      const archive = path.join(dir, month, `release-visits-${month}.json`)
+      expect(JSON.parse(fs.readFileSync(archive, 'utf8'))).toEqual({ schemaVersion: 1, samples })
+    }
+    expect(fs.readdirSync(dir).sort()).toEqual(['2026.07', '2026.08', 'release-visits.json'])
   })
 
   it('formats values at and above one thousand with one decimal k precision', () => {

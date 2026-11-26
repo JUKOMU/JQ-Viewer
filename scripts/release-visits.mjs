@@ -215,29 +215,70 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'))
 }
 
+function writeHistory(filePath, samples) {
+  const history = { schemaVersion: historySchemaVersion, samples }
+  fs.writeFileSync(filePath, JSON.stringify(history, null, 2) + '\n')
+}
+
+function sampleMonth(sample) {
+  return sample.date.slice(0, 7).replace('-', '.')
+}
+
+function archivePath(dataDir, month) {
+  return path.join(dataDir, month, `release-visits-${month}.json`)
+}
+
+/** 写入已结束月份的归档，保留当月和最近 14 个采样日，并返回本次绘图的数据点。 */
+export function updateVisitHistory(dataDir, sample) {
+  const historyPath = path.join(dataDir, 'release-visits.json')
+  const history = mergeVisitHistory(readJson(historyPath), sample)
+  const currentMonth = sampleMonth(sample)
+  for (const [month, samples] of Map.groupBy(history.samples, sampleMonth)) {
+    const file = archivePath(dataDir, month)
+    if (month < currentMonth && !fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      writeHistory(file, samples)
+    }
+  }
+
+  const retained = history.samples.filter(
+    (item, index) =>
+      sampleMonth(item) === currentMonth || index >= history.samples.length - chartDayLimit,
+  )
+
+  // 同日重跑时，窗口首日的前一次采样可能只在月归档中。
+  if (history.samples.length === chartDayLimit) {
+    const first = history.samples[0]
+    const months = fs.readdirSync(dataDir).filter(
+      (name) => /^\d{4}\.\d{2}$/.test(name) && name <= sampleMonth(first),
+    )
+    for (const month of months.sort().reverse()) {
+      const previous = readJson(archivePath(dataDir, month)).samples.findLast(
+        (item) => item.date < first.date,
+      )
+      if (previous) {
+        history.samples.unshift(previous)
+        break
+      }
+    }
+  }
+
+  writeHistory(historyPath, retained)
+  return buildChartPoints(history)
+}
+
 function main() {
-  const [command, releasesPath, historyPath, outputHistoryPath, outputImagePath] =
-    process.argv.slice(2)
-  if (
-    command !== 'update' ||
-    !releasesPath ||
-    !historyPath ||
-    !outputHistoryPath ||
-    !outputImagePath
-  ) {
+  const [command, releasesPath, dataDir, outputImagePath] = process.argv.slice(2)
+  if (command !== 'update' || !releasesPath || !dataDir || !outputImagePath) {
     throw new Error(
-      'usage: node scripts/release-visits.mjs update <releases-json> <history-json> <history-output> <image-output>',
+      'usage: node scripts/release-visits.mjs update <releases-json> <data-directory> <image-output>',
     )
   }
 
   const releasePages = readJson(releasesPath)
   const releases = Array.isArray(releasePages[0]) ? releasePages.flat() : releasePages
-  const history = readJson(historyPath)
-  const nextHistory = mergeVisitHistory(history, createVisitSample(releases))
-
-  fs.mkdirSync(path.dirname(outputHistoryPath), { recursive: true })
-  fs.writeFileSync(outputHistoryPath, JSON.stringify(nextHistory, null, 2) + '\n')
-  renderVisitChart(buildChartPoints(nextHistory), outputImagePath)
+  const points = updateVisitHistory(dataDir, createVisitSample(releases))
+  renderVisitChart(points, outputImagePath)
 }
 
 const thisFile = fileURLToPath(import.meta.url)

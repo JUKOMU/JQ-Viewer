@@ -617,8 +617,8 @@ public final class ExportService implements AutoCloseable {
         String albumId = requireText(request.albumId(), "albumId");
         if (request.target() == null) throw ApiException.invalidRequest("target不能为空");
         String folderRef = requireText(request.target().folder(), "target.folder");
-        String targetName = requireText(request.target().relativePath(), "target.relativePath")
-            .replace('\\', '/');
+        String targetName = ExportTargetResolver.normalizeRelativePath(
+            requireText(request.target().relativePath(), "target.relativePath"));
         String extension = "." + format;
         if (!targetName.toLowerCase(Locale.ROOT).endsWith(extension)) {
             throw ApiException.invalidRequest("target.relativePath必须以" + extension + "结尾");
@@ -666,12 +666,13 @@ public final class ExportService implements AutoCloseable {
             .map(chapter -> new RequestedChapter(chapter.albumId(), chapter.chapterId(),
                 chapter.chapterTitle(), chapter.sortOrder()))
             .toList();
+        String targetName = ExportTargetResolver.normalizeRelativePath(task.targetName());
         String displayPath = ExportTargetResolver.resolve(
-            task.targetFolderRef(), task.targetName()).toString();
+            task.targetFolderRef(), targetName).toString();
         return new NormalizedTask(
             task.format(), task.mode(), task.albumId(), task.albumTitle(), task.coverUrl(), task.authors(),
             task.isSingleEpisode(), task.displayTitle(), requested, task.targetFolderRef(),
-            task.targetName(), displayPath, task.useOriginal(), task.compressionRatio(),
+            targetName, displayPath, task.useOriginal(), task.compressionRatio(),
             task.splitPages(), task.allowOverwrite(), task.deleteSourceAfterExport(),
             task.retainDownloadEntry());
     }

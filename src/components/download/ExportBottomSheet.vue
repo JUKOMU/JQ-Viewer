@@ -358,19 +358,7 @@ const templatePath = computed(() => {
   const data = currentTemplateData.value
   if (!data) return ExportService.previewPath(selectedFormat.value)
 
-  const dirRendered = ExportService.renderTemplate(dirTpl, data)
-  const nameRendered = ExportService.renderTemplate(nameTpl, data)
-  const baseTrimmed = base.replace(/\/+$/, '')
-  const dirSegments = dirRendered
-    .split('/')
-    .map((s) => ExportService.sanitizeSegment(s))
-    .filter((s) => s.length > 0)
-  const dirClean = dirSegments.join('/')
-  const nameClean = ExportService.sanitizeSegment(nameRendered)
-  if (dirClean) {
-    return `${baseTrimmed}/${dirClean}/${nameClean}.${selectedFormat.value}`
-  }
-  return `${baseTrimmed}/${nameClean}.${selectedFormat.value}`
+  return ExportService.buildTemplatePath(base, dirTpl, nameTpl, data, selectedFormat.value)
 })
 
 // ---- 同步路径预览 ----

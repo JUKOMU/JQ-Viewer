@@ -30,14 +30,21 @@ final class ExportTargetPath {
 
         String[] rawSegments = normalized.split("/", -1);
         List<String> result = new ArrayList<>(rawSegments.length);
-        for (String segment : rawSegments) {
+        for (int index = 0; index < rawSegments.length; index++) {
+            String segment = rawSegments[index];
             if (segment.isEmpty()) {
                 throw new IllegalArgumentException("targetName 不能包含空目录段");
             }
             if (".".equals(segment) || "..".equals(segment)) {
                 throw new IllegalArgumentException("targetName 不能包含 . 或 .. 目录段");
             }
-            result.add(segment);
+            String sanitized = index == rawSegments.length - 1
+                ? sanitizeFileName(segment)
+                : sanitizeSegment(segment);
+            if (index == rawSegments.length - 1 && sanitized.isEmpty()) {
+                throw new IllegalArgumentException("targetName 文件名不能为空");
+            }
+            if (!sanitized.isEmpty()) result.add(sanitized);
         }
         return Collections.unmodifiableList(result);
     }
@@ -60,5 +67,28 @@ final class ExportTargetPath {
         return value.length() >= 2
             && Character.isLetter(value.charAt(0))
             && value.charAt(1) == ':';
+    }
+
+    private static String sanitizeSegment(String segment) {
+        String sanitized = segment
+            .replace(':', '_')
+            .replace('*', '_')
+            .replace('?', '_')
+            .replace('"', '_')
+            .replace('<', '_')
+            .replace('>', '_')
+            .replace('|', '_')
+            .replaceAll("_+", "_")
+            .replaceAll("^[_.\\s]+|[_.\\s]+$", "");
+        return sanitized.substring(0, Math.min(255, sanitized.length()));
+    }
+
+    private static String sanitizeFileName(String segment) {
+        int separator = segment.lastIndexOf('.');
+        String extension = separator >= 0 ? segment.substring(separator) : "";
+        String base = separator >= 0 ? segment.substring(0, separator) : segment;
+        String sanitizedBase = sanitizeSegment(base);
+        int maxBaseLength = Math.max(0, 255 - extension.length());
+        return sanitizedBase.substring(0, Math.min(maxBaseLength, sanitizedBase.length())) + extension;
     }
 }

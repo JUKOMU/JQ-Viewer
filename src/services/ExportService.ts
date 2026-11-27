@@ -132,19 +132,32 @@ function formatNumericRange(start: number, end: number): string {
   return start === end ? `第${start}话` : `第${start}-${end}话`
 }
 
-function sanitizeSegmentValue(segment: string): string {
+function sanitizeSegmentValue(segment: string, maxLength = 255): string {
   return segment
-    .replace(/[\\:*?"<>|]/g, '_') // 非法字符 → _
+    .replace(/[\\/:*?"<>|]/g, '_') // 非法字符 → _
     .replace(/_+/g, '_') // 合并连续 _
     .replace(/^[_.\s]+|[_.\s]+$/g, '') // 去头尾 _ . 空格
-    .substring(0, 255) // 截断超长
+    .substring(0, maxLength) // 截断超长
+}
+
+function sanitizeFileNameValue(fileName: string, format?: ExportFormat): string {
+  const extension = format ? `.${format}` : ''
+  const hasExpectedExtension = Boolean(
+    extension && fileName.toLowerCase().endsWith(extension.toLowerCase()),
+  )
+  const base = hasExpectedExtension ? fileName.slice(0, -extension.length) : fileName
+  const cleanBase = sanitizeSegmentValue(
+    base,
+    Math.max(0, 255 - (hasExpectedExtension ? extension.length : 0)),
+  )
+  return `${cleanBase}${hasExpectedExtension ? extension : ''}`
 }
 
 function sanitizeChapterLabel(chapter: ExportTaskChapter): string {
-  const title = sanitizeSegmentValue(chapter.chapterTitle.replace(/\//g, '_'))
+  const title = sanitizeSegmentValue(chapter.chapterTitle)
   if (title) return title
 
-  const chapterId = sanitizeSegmentValue(chapter.chapterId.replace(/\//g, '_'))
+  const chapterId = sanitizeSegmentValue(chapter.chapterId)
   return chapterId || '章节'
 }
 
@@ -221,6 +234,59 @@ export function withExportExtension(path: string, format: ExportFormat): string 
   return `${path.replace(/\.(pdf|cbz|zip)$/i, '')}.${format}`
 }
 
+function renderTagConditions(
+  template: string,
+  tags: string[],
+  sanitizeValue?: (value: string) => string,
+): string {
+  return template.replace(/\{tag=([^}]+)\}/g, (_match, expr: string) => {
+    const trimmed = expr.trim()
+    if (!trimmed) return ''
+
+    const hasOr = trimmed.includes('|')
+    const hasAnd = trimmed.includes('&')
+    let value = ''
+
+    if (hasOr && hasAnd) return ''
+
+    if (hasOr) {
+      const orTags = trimmed
+        .split('|')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const matched = orTags.filter((t) => tags.includes(t))
+      value = matched.join('、')
+    } else if (hasAnd) {
+      const andTags = trimmed
+        .split('&')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const allMatch = andTags.every((t) => tags.includes(t))
+      value = allMatch ? andTags.join('、') : ''
+    } else {
+      value = tags.includes(trimmed) ? trimmed : ''
+    }
+
+    return sanitizeValue ? sanitizeValue(value) : value
+  })
+}
+
+function renderTemplateValue(
+  template: string,
+  data: ExportTemplateData,
+  sanitizeValues = false,
+): string {
+  let result = template
+  for (const v of TEMPLATE_VARS) {
+    const value = v.render(data)
+    result = result.replace(
+      new RegExp(escapeRegex(v.key), 'g'),
+      sanitizeValues ? sanitizeSegmentValue(value) : value,
+    )
+  }
+  return renderTagConditions(result, data.tags, sanitizeValues ? sanitizeSegmentValue : undefined)
+}
+
 /** 按当前原生卷名规则列出任务可能写入的最终文件路径。 */
 export function buildExportOutputPaths(
   savePath: string,
@@ -240,6 +306,104 @@ export function buildExportOutputPaths(
   })
 }
 
+function buildTemplatePath(
+  base: string,
+  directoryTemplate: string,
+  fileNameTemplate: string,
+  data: ExportTemplateData,
+  format: ExportFormat,
+): string {
+  const dir = renderTemplateValue(directoryTemplate, data, true)
+  const name = renderTemplateValue(fileNameTemplate, data, true)
+  const baseTrimmed = base.replace(/\/+$/, '')
+  const dirSegments = dir
+    .split('/')
+    .map((segment) => sanitizeSegmentValue(segment))
+    .filter((segment) => segment.length > 0)
+  const dirClean = dirSegments.join('/')
+  const nameClean = sanitizeFileNameValue(`${name}.${format}`, format)
+  if (dirClean) {
+    return `${baseTrimmed}/${dirClean}/${nameClean}`
+  }
+  return `${baseTrimmed}/${nameClean}`
+}
+
+function normalizeExportRelativePath(relativePath: string, format: ExportFormat): string {
+  const normalized = relativePath.replace(/\\/g, '/')
+  if (!normalized) throw new Error('导出文件名不能为空')
+
+  const rawSegments = normalized.split('/')
+  if (rawSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
+    throw new Error('导出文件路径包含无效路径段')
+  }
+
+  const fileIndex = rawSegments.length - 1
+  const cleanSegments = rawSegments
+    .map((segment, index) =>
+      index === fileIndex
+        ? sanitizeFileNameValue(segment, format)
+        : sanitizeSegmentValue(segment),
+    )
+    .filter((segment, index) => index === fileIndex || segment.length > 0)
+
+  const fileName = cleanSegments[cleanSegments.length - 1]
+  if (!fileName) throw new Error('导出文件名不能为空')
+  return cleanSegments.join('/')
+}
+
+interface ExportPathParts {
+  folder: FolderRef
+  normalizedFolder: string
+  relativePath: string
+}
+
+function extractExportPathParts(
+  displayPath: string,
+  folder?: FolderRef,
+  folderDisplayPath?: string,
+): ExportPathParts {
+  if (!folder) throw new Error('请先选择导出目录')
+
+  const normalizedPath = displayPath.replace(/\\/g, '/')
+  const rawFolder = (folderDisplayPath || '').replace(/\\/g, '/')
+  const normalizedFolder = rawFolder === '/' ? '/' : rawFolder.replace(/\/+$/, '')
+  if (!normalizedFolder) throw new Error('导出目录引用缺少展示路径')
+
+  const folderPrefix = normalizedFolder === '/' ? '/' : `${normalizedFolder}/`
+  if (!normalizedPath.startsWith(folderPrefix)) {
+    throw new Error('导出文件必须位于已选择的导出目录内')
+  }
+
+  const relativePath = normalizedPath.slice(folderPrefix.length)
+  if (!relativePath) throw new Error('导出文件名不能为空')
+  return { folder, normalizedFolder, relativePath }
+}
+
+function normalizeExportDisplayPath(
+  displayPath: string,
+  folder: FolderRef | undefined,
+  folderDisplayPath: string | undefined,
+  format: ExportFormat,
+): { displayPath: string; target: ExportTarget } {
+  const parts = extractExportPathParts(displayPath, folder, folderDisplayPath)
+  const rawSegments = parts.relativePath.replace(/\\/g, '/').split('/')
+  if (rawSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
+    throw new Error('导出文件路径包含无效路径段')
+  }
+  const lastSegment = rawSegments.pop()
+  if (!lastSegment) throw new Error('导出文件名不能为空')
+  rawSegments.push(withExportExtension(lastSegment, format))
+  const relativePath = normalizeExportRelativePath(rawSegments.join('/'), format)
+  const normalizedDisplayPath =
+    parts.normalizedFolder === '/'
+      ? `/${relativePath}`
+      : `${parts.normalizedFolder}/${relativePath}`
+  return {
+    displayPath: normalizedDisplayPath,
+    target: { folder: parts.folder, relativePath },
+  }
+}
+
 /**
  * 根据展示路径与可选导出目录构造 ExportTarget。
  * 未提供目录引用时，仅从展示路径提取父目录和文件名；提供目录引用时，
@@ -249,20 +413,13 @@ function buildExportTarget(
   displayPath: string,
   folder?: FolderRef,
   folderDisplayPath?: string,
+  format: ExportFormat = 'pdf',
 ): ExportTarget {
-  const normalizedPath = displayPath.replace(/\\/g, '/')
-  if (!folder) throw new Error('请先选择导出目录')
-
-  const rawFolder = (folderDisplayPath || '').replace(/\\/g, '/')
-  const normalizedFolder = rawFolder === '/' ? '/' : rawFolder.replace(/\/+$/, '')
-  if (!normalizedFolder) throw new Error('导出目录引用缺少展示路径')
-  const folderPrefix = normalizedFolder === '/' ? '/' : `${normalizedFolder}/`
-  if (!normalizedPath.startsWith(folderPrefix)) {
-    throw new Error('导出文件必须位于已选择的导出目录内')
+  const parts = extractExportPathParts(displayPath, folder, folderDisplayPath)
+  return {
+    folder: parts.folder,
+    relativePath: normalizeExportRelativePath(parts.relativePath, format),
   }
-  const relativePath = normalizedPath.slice(folderPrefix.length)
-  if (!relativePath) throw new Error('导出文件名不能为空')
-  return { folder, relativePath }
 }
 
 export const ExportService = {
@@ -272,6 +429,7 @@ export const ExportService = {
   buildExportOutputPaths,
   withExportExtension,
   buildExportTarget,
+  buildTemplatePath,
   normalizeExportChapters,
   toExportTaskChapter,
 
@@ -380,49 +538,24 @@ export const ExportService = {
   },
 
   renderTemplate(template: string, data: ExportTemplateData): string {
-    let result = template
-    for (const v of TEMPLATE_VARS) {
-      result = result.replace(new RegExp(escapeRegex(v.key), 'g'), v.render(data))
-    }
-    return ExportService.renderTagConditions(result, data.tags)
+    return renderTemplateValue(template, data)
+  },
+
+  renderDirectoryTemplate(template: string, data: ExportTemplateData): string {
+    return renderTemplateValue(template, data, true)
+      .split('/')
+      .map((segment) => sanitizeSegmentValue(segment))
+      .filter((segment) => segment.length > 0)
+      .join('/')
   },
 
   /** 处理 {tag=xxx} 内联条件：匹配到则渲染标签名，否则为空 */
   renderTagConditions(template: string, tags: string[]): string {
-    return template.replace(/\{tag=([^}]+)\}/g, (_match, expr: string) => {
-      const trimmed = expr.trim()
-      if (!trimmed) return ''
-
-      const hasOr = trimmed.includes('|')
-      const hasAnd = trimmed.includes('&')
-
-      if (hasOr && hasAnd) return ''
-
-      if (hasOr) {
-        const orTags = trimmed
-          .split('|')
-          .map((s) => s.trim())
-          .filter(Boolean)
-        const matched = orTags.filter((t) => tags.includes(t))
-        return matched.join('、')
-      }
-
-      if (hasAnd) {
-        const andTags = trimmed
-          .split('&')
-          .map((s) => s.trim())
-          .filter(Boolean)
-        const allMatch = andTags.every((t) => tags.includes(t))
-        return allMatch ? andTags.join('、') : ''
-      }
-
-      return tags.includes(trimmed) ? trimmed : ''
-    })
+    return renderTagConditions(template, tags)
   },
 
   /**
    * 净化文件名/路径段，替换非法字符。
-   * 保留 / 作为目录分隔符（仅用于目录模板）。
    */
   sanitizeSegment(segment: string): string {
     return sanitizeSegmentValue(segment)
@@ -430,21 +563,13 @@ export const ExportService = {
 
   /** 构建完整保存路径: {exportPath}/{renderedDir}/{renderedName}.{format} */
   buildFullPath(data: ExportTemplateData, format: ExportFormat = 'pdf'): string {
-    const base = ExportService.getExportPath()
-    const dir = ExportService.renderTemplate(ExportService.getDirTemplate(), data)
-    const name = ExportService.renderTemplate(ExportService.getNameTemplate(), data)
-    const baseTrimmed = base.replace(/\/+$/, '')
-    // 对目录模板的每一段进行净化
-    const dirSegments = dir
-      .split('/')
-      .map((s) => ExportService.sanitizeSegment(s))
-      .filter((s) => s.length > 0)
-    const dirClean = dirSegments.join('/')
-    const nameClean = ExportService.sanitizeSegment(name)
-    if (dirClean) {
-      return `${baseTrimmed}/${dirClean}/${nameClean}.${format}`
-    }
-    return `${baseTrimmed}/${nameClean}.${format}`
+    return buildTemplatePath(
+      ExportService.getExportPath(),
+      ExportService.getDirTemplate(),
+      ExportService.getNameTemplate(),
+      data,
+      format,
+    )
   },
 
   buildMergedFullPath(chapters: readonly DownloadTask[], format: ExportFormat = 'pdf'): string {
@@ -466,18 +591,19 @@ export const ExportService = {
       }
 
       const templateData = ExportService.buildMergedTemplateData(selectedChapters)
-      const displayPath = withExportExtension(options.editedPath, options.format)
+      const normalizedEditedPath = normalizeExportDisplayPath(
+        options.editedPath,
+        options.exportFolder,
+        options.exportFolderDisplayPath,
+        options.format,
+      )
       const task: ExportTask = {
         format: options.format,
         mode: 'merged',
         albumId,
         chapters: selectedChapters.map(({ albumId, chapterId }) => ({ albumId, chapterId })),
-        target: buildExportTarget(
-          displayPath,
-          options.exportFolder,
-          options.exportFolderDisplayPath,
-        ),
-        displayPath,
+        target: normalizedEditedPath.target,
+        displayPath: normalizedEditedPath.displayPath,
         useOriginal,
         compressionRatio,
         splitPages: options.splitPages,
@@ -488,7 +614,7 @@ export const ExportService = {
       return {
         tasks: [task],
         outputDisplayPaths: buildExportOutputPaths(
-          displayPath,
+          normalizedEditedPath.displayPath,
           templateData.pageCount,
           options.splitPages,
           options.format,
@@ -496,28 +622,43 @@ export const ExportService = {
       }
     }
 
-    const tasks = selectedChapters.map<ExportTask>((chapter) => ({
-      format: options.format,
-      mode: 'chapter',
-      albumId: chapter.albumId,
-      chapterId: chapter.chapterId,
-      displayPath:
-        selectedChapters.length === 1
-          ? withExportExtension(options.editedPath, options.format)
-          : ExportService.buildFullPath(ExportService.buildTemplateData(chapter), options.format),
-      target: buildExportTarget(
-        selectedChapters.length === 1
-          ? withExportExtension(options.editedPath, options.format)
-          : ExportService.buildFullPath(ExportService.buildTemplateData(chapter), options.format),
-        options.exportFolder,
-        options.exportFolderDisplayPath,
-      ),
-      useOriginal,
-      compressionRatio,
-      splitPages: options.splitPages,
-      deleteSourceAfterExport: options.deleteSourceAfterExport,
-      retainDownloadEntry: options.retainDownloadEntry,
-    }))
+    const normalizedEditedPath =
+      selectedChapters.length === 1
+        ? normalizeExportDisplayPath(
+            options.editedPath,
+            options.exportFolder,
+            options.exportFolderDisplayPath,
+            options.format,
+          )
+        : null
+    const tasks = selectedChapters.map<ExportTask>((chapter) => {
+      const templatePath = ExportService.buildFullPath(
+        ExportService.buildTemplateData(chapter),
+        options.format,
+      )
+      const normalizedPath = normalizedEditedPath ?? {
+        displayPath: templatePath,
+        target: buildExportTarget(
+          templatePath,
+          options.exportFolder,
+          options.exportFolderDisplayPath,
+          options.format,
+        ),
+      }
+      return {
+        format: options.format,
+        mode: 'chapter',
+        albumId: chapter.albumId,
+        chapterId: chapter.chapterId,
+        displayPath: normalizedPath.displayPath,
+        target: normalizedPath.target,
+        useOriginal,
+        compressionRatio,
+        splitPages: options.splitPages,
+        deleteSourceAfterExport: options.deleteSourceAfterExport,
+        retainDownloadEntry: options.retainDownloadEntry,
+      }
+    })
 
     return {
       tasks,

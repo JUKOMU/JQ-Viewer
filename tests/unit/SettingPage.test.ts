@@ -137,6 +137,8 @@ vi.mock('@/services/ExportService', () => ({
     getNameTemplate: vi.fn(() => '{title}'),
     previewPath: vi.fn(() => '/exports/'),
     renderTemplate: vi.fn(() => ''),
+    renderDirectoryTemplate: vi.fn(() => ''),
+    sanitizeSegment: vi.fn(() => ''),
     ensureAbsolutePath: vi.fn(),
   },
 }))

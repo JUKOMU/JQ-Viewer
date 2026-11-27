@@ -19,6 +19,14 @@ public class ExportTargetPathTest {
     }
 
     @Test
+    public void replacesInvalidCharactersAndKeepsTheExtension() {
+        assertEquals("chapter_name.pdf", ExportTargetPath.normalize("chapter?:name.pdf"));
+        assertEquals(".pdf", ExportTargetPath.normalize("???.pdf"));
+        assertEquals("book/chapter_name.pdf",
+            ExportTargetPath.normalize("book/??chapter:name??.pdf"));
+    }
+
+    @Test
     public void rejectsAbsoluteAndUnsafeSegments() {
         String[] invalid = {
             "/book.pdf", "\\book.pdf", "C:/book.pdf", "book.pdf/",

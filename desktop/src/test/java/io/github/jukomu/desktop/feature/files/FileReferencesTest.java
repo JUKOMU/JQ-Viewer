@@ -35,6 +35,21 @@ class FileReferencesTest {
     }
 
     @Test
+    void normalizesInvalidFileNamesAndRejectsUnsafeSegments() {
+        assertEquals("book/chapter_name.pdf",
+                ExportTargetResolver.normalizeRelativePath("book/??chapter:name??.pdf"));
+        assertEquals(".pdf", ExportTargetResolver.normalizeRelativePath("???.pdf"));
+        assertThrows(ApiException.class,
+                () -> ExportTargetResolver.normalizeRelativePath("book/../chapter.pdf"));
+        assertThrows(ApiException.class,
+                () -> ExportTargetResolver.normalizeRelativePath("book/./chapter.pdf"));
+        assertThrows(ApiException.class,
+                () -> ExportTargetResolver.normalizeRelativePath("book//chapter.pdf"));
+        assertThrows(ApiException.class,
+                () -> ExportTargetResolver.normalizeRelativePath("book/chapter.pdf/"));
+    }
+
+    @Test
     void exportTargetCannotEscapeThroughSymbolicLink() throws Exception {
         Path folder = Files.createTempDirectory("jq-viewer-export-root-");
         Path outside = Files.createTempDirectory("jq-viewer-export-outside-");

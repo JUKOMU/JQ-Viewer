@@ -14,11 +14,18 @@ public final class ExportTargetResolver {
     }
 
     public static Path resolve(String folderReference, String relativePath) {
+        return resolveValidated(folderReference, normalizeRelativePath(relativePath));
+    }
+
+    public static Path resolvePersisted(String folderReference, String relativePath) {
+        return resolveValidated(folderReference, validateRelativePath(relativePath));
+    }
+
+    private static Path resolveValidated(String folderReference, String relativePath) {
         Path root = FileReferences.parseFolder(folderReference);
-        String normalizedPath = normalizeRelativePath(relativePath);
 
         try {
-            Path relative = Path.of(normalizedPath);
+            Path relative = Path.of(relativePath);
             if (relative.isAbsolute()) {
                 throw ApiException.invalidRequest("relativePath必须是相对路径");
             }
@@ -36,14 +43,7 @@ public final class ExportTargetResolver {
     }
 
     public static String normalizeRelativePath(String relativePath) {
-        if (relativePath == null || relativePath.isBlank()) {
-            throw ApiException.invalidRequest("relativePath不能为空");
-        }
-
-        String normalized = relativePath.replace('\\', '/');
-        if (normalized.startsWith("/") || isWindowsAbsolute(normalized)) {
-            throw ApiException.invalidRequest("relativePath必须是相对路径");
-        }
+        String normalized = validateRelativePath(relativePath);
 
         String[] rawSegments = normalized.split("/", -1);
         StringBuilder result = new StringBuilder(normalized.length());
@@ -76,7 +76,8 @@ public final class ExportTargetResolver {
             .replace('|', '_')
             .replaceAll("_+", "_")
             .replaceAll("^[_.\\s]+|[_.\\s]+$", "");
-        return sanitized.substring(0, Math.min(255, sanitized.length()));
+        return sanitized.substring(0, Math.min(255, sanitized.length()))
+            .replaceAll("[_.\\s]+$", "");
     }
 
     private static String sanitizeFileName(String segment) {
@@ -92,5 +93,22 @@ public final class ExportTargetResolver {
         return value.length() >= 2
             && Character.isLetter(value.charAt(0))
             && value.charAt(1) == ':';
+    }
+
+    private static String validateRelativePath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw ApiException.invalidRequest("relativePath不能为空");
+        }
+
+        String normalized = relativePath.replace('\\', '/');
+        if (normalized.startsWith("/") || isWindowsAbsolute(normalized)) {
+            throw ApiException.invalidRequest("relativePath必须是相对路径");
+        }
+        for (String segment : normalized.split("/", -1)) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                throw ApiException.invalidRequest("relativePath包含无效路径段");
+            }
+        }
+        return normalized;
     }
 }

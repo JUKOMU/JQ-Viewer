@@ -44,6 +44,56 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExportServiceTest {
     @Test
+    void schedulesAcceptedTasksWhenLaterBatchTaskHasInvalidPath() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            fixture.addDownload("album-1", "chapter-2", 1);
+
+            ExportBatchResponse batch = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "first.pdf", 0, false),
+                    fixture.task("chapter-2", "../outside.pdf", 0, false)));
+
+            ExportTaskResponse accepted = batch.tasks().get(0);
+            ExportTaskResponse rejected = batch.tasks().get(1);
+            assertTrue(accepted.accepted());
+            assertFalse(rejected.accepted());
+            assertEquals("internal", rejected.errorCode());
+            assertEquals("completed", fixture.awaitTerminal(accepted.exportId()).status());
+        }
+    }
+
+    @Test
+    void retriesPersistedTargetNameWithoutRenormalizingIt() throws Exception {
+        try (Fixture fixture = fixture(new TrackingWriter())) {
+            fixture.addDownload("album-1", "chapter-1", 1);
+            ExportTaskResponse completed = fixture.service.submit(List.of(
+                    fixture.task("chapter-1", "original.pdf", 0, false))).tasks().get(0);
+            fixture.awaitTerminal(completed.exportId());
+
+            String displayPath = fixture.output.resolve("book__name.pdf").toString();
+            try (var taskUpdate = fixture.database.connection().prepareStatement(
+                    "UPDATE export_tasks SET status='failed',phase='failed',target_name=?,display_path=? "
+                        + "WHERE export_id=?")) {
+                taskUpdate.setString(1, "book__name.pdf");
+                taskUpdate.setString(2, displayPath);
+                taskUpdate.setString(3, completed.exportId());
+                assertEquals(1, taskUpdate.executeUpdate());
+            }
+            try (var volumeUpdate = fixture.database.connection().prepareStatement(
+                    "UPDATE export_task_volumes SET target_name=?,display_path=? WHERE export_id=?")) {
+                volumeUpdate.setString(1, "book__name.pdf");
+                volumeUpdate.setString(2, displayPath);
+                volumeUpdate.setString(3, completed.exportId());
+                assertEquals(1, volumeUpdate.executeUpdate());
+            }
+
+            assertEquals("queued", fixture.service.retry(completed.exportId(), true).status());
+            assertEquals("completed", fixture.awaitTerminal(completed.exportId()).status());
+            assertTrue(Files.isRegularFile(fixture.output.resolve("book__name.pdf")));
+        }
+    }
+
+    @Test
     void exportSnapshotsUseDownloadMetadataForEveryFormatAndRejectIncompleteMetadata() throws Exception {
         try (Fixture fixture = fixture(new TrackingWriter())) {
             fixture.addDownload("album-1", "chapter-1", 1);

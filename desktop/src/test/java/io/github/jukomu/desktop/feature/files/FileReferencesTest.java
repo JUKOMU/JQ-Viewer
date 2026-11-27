@@ -35,10 +35,22 @@ class FileReferencesTest {
     }
 
     @Test
+    void persistedTargetKeepsTheStoredFileName() {
+        Path folder = Path.of("build", "exports").toAbsolutePath().normalize();
+        String reference = FileReferences.folderRef(folder);
+
+        assertEquals(folder.resolve("book__name.pdf"),
+                ExportTargetResolver.resolvePersisted(reference, "book__name.pdf"));
+    }
+
+    @Test
     void normalizesInvalidFileNamesAndRejectsUnsafeSegments() {
         assertEquals("book/chapter_name.pdf",
                 ExportTargetResolver.normalizeRelativePath("book/??chapter:name??.pdf"));
         assertEquals(".pdf", ExportTargetResolver.normalizeRelativePath("???.pdf"));
+        String longName = "a".repeat(254) + "_x.pdf";
+        String normalized = ExportTargetResolver.normalizeRelativePath(longName);
+        assertEquals(normalized, ExportTargetResolver.normalizeRelativePath(normalized));
         assertThrows(ApiException.class,
                 () -> ExportTargetResolver.normalizeRelativePath("book/../chapter.pdf"));
         assertThrows(ApiException.class,

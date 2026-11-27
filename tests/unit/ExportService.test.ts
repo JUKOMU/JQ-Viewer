@@ -175,6 +175,18 @@ describe('PDF export plan', () => {
     )
   })
 
+  it('keeps segment normalization stable after truncation', () => {
+    const normalized = ExportService.sanitizeSegment(`${'a'.repeat(254)}_x`)
+
+    expect(ExportService.sanitizeSegment(normalized)).toBe(normalized)
+  })
+
+  it('normalizes a Windows drive root without mixed separators', () => {
+    expect(
+      ExportService.buildTemplatePath('C:\\', '', 'book', EXPORT_SAMPLE_DATA, 'pdf'),
+    ).toBe('C:/book.pdf')
+  })
+
   it('normalizes a manually edited path while preserving explicit directories', () => {
     const plan = ExportService.buildExportPlan({
       format: 'pdf',

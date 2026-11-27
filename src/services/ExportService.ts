@@ -138,6 +138,7 @@ function sanitizeSegmentValue(segment: string, maxLength = 255): string {
     .replace(/_+/g, '_') // 合并连续 _
     .replace(/^[_.\s]+|[_.\s]+$/g, '') // 去头尾 _ . 空格
     .substring(0, maxLength) // 截断超长
+    .replace(/[_.\s]+$/g, '') // 截断后再次清理尾部字符
 }
 
 function sanitizeFileNameValue(fileName: string, format?: ExportFormat): string {
@@ -315,7 +316,7 @@ function buildTemplatePath(
 ): string {
   const dir = renderTemplateValue(directoryTemplate, data, true)
   const name = renderTemplateValue(fileNameTemplate, data, true)
-  const baseTrimmed = base.replace(/\/+$/, '')
+  const baseTrimmed = base.replace(/[\\/]+$/, '')
   const dirSegments = dir
     .split('/')
     .map((segment) => sanitizeSegmentValue(segment))

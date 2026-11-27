@@ -156,6 +156,80 @@ describe('chapterRange template variable', () => {
 })
 
 describe('PDF export plan', () => {
+  it('replaces separators from template values without creating directories', async () => {
+    await ExportService.setDirTemplate('{id}/{title}')
+    await ExportService.setNameTemplate('{title}')
+
+    const data = {
+      ...EXPORT_SAMPLE_DATA,
+      title: '青梅/竹马',
+    }
+
+    expect(ExportService.buildFullPath(data)).toBe(
+      'Download/JQ-Viewer/295852/青梅_竹马/青梅_竹马.pdf',
+    )
+    expect(ExportService.renderDirectoryTemplate('{title}', data)).toBe('青梅_竹马')
+    expect(ExportService.renderDirectoryTemplate('固定?/{title}', data)).toBe('固定/青梅_竹马')
+    expect(ExportService.sanitizeSegment(ExportService.renderTemplate('{title}', data))).toBe(
+      '青梅_竹马',
+    )
+  })
+
+  it('keeps segment normalization stable after truncation', () => {
+    const normalized = ExportService.sanitizeSegment(`${'a'.repeat(254)}_x`)
+
+    expect(ExportService.sanitizeSegment(normalized)).toBe(normalized)
+  })
+
+  it('normalizes a Windows drive root without mixed separators', () => {
+    expect(
+      ExportService.buildTemplatePath('C:\\', '', 'book', EXPORT_SAMPLE_DATA, 'pdf'),
+    ).toBe('C:/book.pdf')
+  })
+
+  it('normalizes a manually edited path while preserving explicit directories', () => {
+    const plan = ExportService.buildExportPlan({
+      format: 'pdf',
+      mode: 'chapter',
+      selectedChapters: [downloadTask(2, 'chapter-2')],
+      useOriginal: true,
+      compressionRatio: 0.5,
+      editedPath: '/exports/my/??chapter:name??.pdf',
+      exportFolder: asFolderRef('folder:path:/exports'),
+      exportFolderDisplayPath: '/exports',
+      splitPages: 0,
+    })
+
+    expect(plan.tasks[0]).toEqual(
+      expect.objectContaining({
+        displayPath: '/exports/my/chapter_name.pdf',
+        target: {
+          folder: 'folder:path:/exports',
+          relativePath: 'my/chapter_name.pdf',
+        },
+      }),
+    )
+  })
+
+  it.each(['/exports/../outside.pdf', '/exports/./book.pdf', '/exports/book//chapter.pdf', '/exports/book.pdf/'])(
+    'rejects unsafe manually edited path %s',
+    (editedPath) => {
+      expect(() =>
+        ExportService.buildExportPlan({
+          format: 'pdf',
+          mode: 'chapter',
+          selectedChapters: [downloadTask(2, 'chapter-2')],
+          useOriginal: true,
+          compressionRatio: 0.5,
+          editedPath,
+          exportFolder: asFolderRef('folder:path:/exports'),
+          exportFolderDisplayPath: '/exports',
+          splitPages: 0,
+        }),
+      ).toThrow()
+    },
+  )
+
   it('persists only a folder descriptor through the platform preferences store', async () => {
     expect(ExportService.getExportFolder()).toBeNull()
 

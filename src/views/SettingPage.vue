@@ -780,10 +780,12 @@ const exportNameTemplate = ref(ExportService.getNameTemplate())
 const exportPathPreview = computed(() => ExportService.previewPath())
 
 const exportDirRender = computed(() =>
-  ExportService.renderTemplate(exportDirTemplate.value, EXPORT_SAMPLE_DATA),
+  ExportService.renderDirectoryTemplate(exportDirTemplate.value, EXPORT_SAMPLE_DATA),
 )
 const exportNameRender = computed(() =>
-  ExportService.renderTemplate(exportNameTemplate.value, EXPORT_SAMPLE_DATA),
+  ExportService.sanitizeSegment(
+    ExportService.renderTemplate(exportNameTemplate.value, EXPORT_SAMPLE_DATA),
+  ),
 )
 
 // ---- 搬迁弹窗状态 ----

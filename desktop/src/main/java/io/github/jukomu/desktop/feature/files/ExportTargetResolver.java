@@ -14,10 +14,15 @@ public final class ExportTargetResolver {
     }
 
     public static Path resolve(String folderReference, String relativePath) {
+        return resolveValidated(folderReference, normalizeRelativePath(relativePath));
+    }
+
+    public static Path resolvePersisted(String folderReference, String relativePath) {
+        return resolveValidated(folderReference, validateRelativePath(relativePath));
+    }
+
+    private static Path resolveValidated(String folderReference, String relativePath) {
         Path root = FileReferences.parseFolder(folderReference);
-        if (relativePath == null || relativePath.isBlank()) {
-            throw ApiException.invalidRequest("relativePath不能为空");
-        }
 
         try {
             Path relative = Path.of(relativePath);
@@ -35,5 +40,75 @@ public final class ExportTargetResolver {
         } catch (IOException exception) {
             throw ApiException.invalidRequest("导出目标路径无法解析");
         }
+    }
+
+    public static String normalizeRelativePath(String relativePath) {
+        String normalized = validateRelativePath(relativePath);
+
+        String[] rawSegments = normalized.split("/", -1);
+        StringBuilder result = new StringBuilder(normalized.length());
+        for (int index = 0; index < rawSegments.length; index++) {
+            String segment = rawSegments[index];
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                throw ApiException.invalidRequest("relativePath包含无效路径段");
+            }
+            String sanitized = index == rawSegments.length - 1
+                ? sanitizeFileName(segment)
+                : sanitizeSegment(segment);
+            if (index == rawSegments.length - 1 && sanitized.isEmpty()) {
+                throw ApiException.invalidRequest("relativePath文件名不能为空");
+            }
+            if (sanitized.isEmpty()) continue;
+            if (result.length() > 0) result.append('/');
+            result.append(sanitized);
+        }
+        return result.toString();
+    }
+
+    private static String sanitizeSegment(String segment) {
+        String sanitized = segment
+            .replace(':', '_')
+            .replace('*', '_')
+            .replace('?', '_')
+            .replace('"', '_')
+            .replace('<', '_')
+            .replace('>', '_')
+            .replace('|', '_')
+            .replaceAll("_+", "_")
+            .replaceAll("^[_.\\s]+|[_.\\s]+$", "");
+        return sanitized.substring(0, Math.min(255, sanitized.length()))
+            .replaceAll("[_.\\s]+$", "");
+    }
+
+    private static String sanitizeFileName(String segment) {
+        int separator = segment.lastIndexOf('.');
+        String extension = separator >= 0 ? segment.substring(separator) : "";
+        String base = separator >= 0 ? segment.substring(0, separator) : segment;
+        String sanitizedBase = sanitizeSegment(base);
+        int maxBaseLength = Math.max(0, 255 - extension.length());
+        return sanitizedBase.substring(0, Math.min(maxBaseLength, sanitizedBase.length())) + extension;
+    }
+
+    private static boolean isWindowsAbsolute(String value) {
+        return value.length() >= 2
+            && Character.isLetter(value.charAt(0))
+            && value.charAt(1) == ':';
+    }
+
+    private static String validateRelativePath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw ApiException.invalidRequest("relativePath不能为空");
+        }
+
+        String normalized = relativePath.replace('\\', '/');
+        if (normalized.startsWith("/") || isWindowsAbsolute(normalized)) {
+            throw ApiException.invalidRequest("relativePath必须是相对路径");
+        }
+        for (String segment : normalized.split("/", -1)) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                throw ApiException.invalidRequest("relativePath包含无效路径段");
+            }
+        }
+        return normalized;
     }
 }
